@@ -38,9 +38,7 @@ ai-framework/
 │   ├── index.html          # 실제 영역 · 테스트 영역 · 비교 패널 · patch 목록 · 로그
 │   ├── style.css           # 라이트/다크, 모바일 대응
 │   └── main.js             # 화면 동작 연결
-├── test/                   # vitest + jsdom 단위 테스트 (82개)
-└── docs/
-    └── presentation-qna.md # 발표 예상 질문과 답변
+└── test/                   # vitest + jsdom 단위 테스트 (82개)
 ```
 
 ### 데이터 흐름
