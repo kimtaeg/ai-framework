@@ -31,3 +31,6 @@ core
 # Claude Code 개인 설정 (Jev 훅)
 .claude/settings.local.json
 .claude/hooks/
+
+# Node
+node_modules/
