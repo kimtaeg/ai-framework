@@ -3,10 +3,7 @@
 // 사용자가 쓴 그대로를 기준으로 에러를 알려 준다.
 
 import { toVNode } from './domToVNode.js';
-
-const VOID_TAGS = new Set([
-  'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'source', 'track', 'wbr',
-]);
+import { VOID_TAGS } from './htmlTags.js';
 
 // <태그 속성="값 > 포함 가능"> / </태그> / <태그 />
 const TAG_PATTERN =
@@ -55,7 +52,7 @@ export function parseHTML(source) {
   return roots[0];
 }
 
-function lineOf(text, index) {
+function getLineNumber(text, index) {
   return text.slice(0, index).split('\n').length;
 }
 
@@ -66,7 +63,7 @@ function checkTags(source) {
   // 태그로 인식되지 않은 '<' 가 남아 있으면 '>' 누락 등으로 깨진 태그다
   const leftover = /<\/?[a-zA-Z]/.exec(text.replace(TAG_PATTERN, (m) => ' '.repeat(m.length)));
   if (leftover) {
-    throw new HTMLParseError('태그가 제대로 닫히지 않았습니다. (\'>\' 누락?)', lineOf(text, leftover.index));
+    throw new HTMLParseError('태그가 제대로 닫히지 않았습니다. (\'>\' 누락?)', getLineNumber(text, leftover.index));
   }
 
   const stack = [];
@@ -75,7 +72,7 @@ function checkTags(source) {
   for (const match of text.matchAll(TAG_PATTERN)) {
     const [, slash, rawName, , selfClose] = match;
     const name = rawName.toLowerCase();
-    const line = lineOf(text, match.index);
+    const line = getLineNumber(text, match.index);
 
     if (!slash) openCount++;
     if (VOID_TAGS.has(name)) continue;

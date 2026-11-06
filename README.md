@@ -31,13 +31,14 @@ ai-framework/
 │   ├── domToVNode.js       # 실제 DOM → VNode
 │   ├── parseHTML.js        # HTML 문자열 → VNode (태그 짝·중첩 규칙 검사, 줄 번호 에러)
 │   ├── toHTML.js           # VNode → 들여쓴 HTML 문자열
+│   ├── htmlTags.js         # VOID_TAGS — parseHTML·toHTML이 공유하는 void 태그 목록
 │   ├── history.js          # 뒤로/앞으로 기록 (배열 + 현재 인덱스)
 │   └── mutationStats.js    # MutationRecord → 추가/삭제/속성/텍스트 변경 수
 ├── phase1/                 # 검증 페이지
 │   ├── index.html          # 실제 영역 · 테스트 영역 · 비교 패널 · patch 목록 · 로그
 │   ├── style.css           # 라이트/다크, 모바일 대응
 │   └── main.js             # 화면 동작 연결
-├── test/                   # vitest + jsdom 단위 테스트 (80개)
+├── test/                   # vitest + jsdom 단위 테스트 (82개)
 └── docs/
     └── presentation-qna.md # 발표 예상 질문과 답변
 ```

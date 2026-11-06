@@ -35,7 +35,14 @@ const totalPatch = $('total-patch');
 const totalInner = $('total-inner');
 
 const PREVIEW_LENGTH = 48;
+const PATCH_LABEL = 'Patch';
 const history = new History();
+
+// 뒤로/앞으로 버튼마다 다른 것: 화면 라벨, 로그 종류, History 이동 방향
+const MOVES = {
+  back: { label: '뒤로가기', logKind: 'BACK', go: () => history.back() },
+  forward: { label: '앞으로가기', logKind: 'FORWARD', go: () => history.forward() },
+};
 
 // 실제 영역을 계속 감시한다. patch 직후에는 takeRecords()로 바로 꺼내 세고,
 // 그 밖의 시점에 생긴 변경만 콜백으로 들어온다.
@@ -77,34 +84,33 @@ function handlePatch() {
 
   const prev = history.current();
   const patches = diff(prev, next);
-  showPatches(patches, prev, next, 'Patch');
+  showPatches(patches, prev, next, PATCH_LABEL);
+  compareMutations(prev, next, patches, PATCH_LABEL);
 
   if (patches.length === 0) {
-    compareMutations(prev, next, patches, 'Patch');
     addLog('SKIP', '변경 없음 — 기록을 추가하지 않음');
     return;
   }
 
-  compareMutations(prev, next, patches, 'Patch');
   history.push(next);
   flashPatched(patches);
   syncHistoryControls();
   addLog('PATCH', `${patches.length}개 적용 → 기록 ${positionText()}`);
 }
 
-function handleMove(direction) {
+function handleMove(move) {
   const prev = history.current();
-  const next = direction === 'back' ? history.back() : history.forward();
+  const next = move.go();
   if (next === prev) return; // 양 끝: 버튼이 비활성이라 보통 오지 않는다
 
   const patches = diff(prev, next);
-  compareMutations(prev, next, patches, direction === 'back' ? '뒤로가기' : '앞으로가기');
+  compareMutations(prev, next, patches, move.label);
   flashPatched(patches);
 
   showSource(next);
-  showPatches(patches, prev, next, direction === 'back' ? '뒤로가기' : '앞으로가기');
+  showPatches(patches, prev, next, move.label);
   syncHistoryControls();
-  addLog(direction === 'back' ? 'BACK' : 'FORWARD', `${patches.length}개 적용 → 기록 ${positionText()}`);
+  addLog(move.logKind, `${patches.length}개 적용 → 기록 ${positionText()}`);
 }
 
 // ── DOM 변경 측정 ────────────────────────────
@@ -352,7 +358,7 @@ source.addEventListener('keydown', (event) => {
   }
 });
 btnPatch.addEventListener('click', handlePatch);
-btnBack.addEventListener('click', () => handleMove('back'));
-btnForward.addEventListener('click', () => handleMove('forward'));
+btnBack.addEventListener('click', () => handleMove(MOVES.back));
+btnForward.addEventListener('click', () => handleMove(MOVES.forward));
 
 init();

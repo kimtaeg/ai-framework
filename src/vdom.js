@@ -29,10 +29,10 @@ export function render(vnode, isSvg = false) {
   if (typeof vnode === 'string') {
     return document.createTextNode(vnode);
   }
-  const inSvg = isSvg || vnode.type === 'svg';
-  const el = inSvg ? document.createElementNS(SVG_NS, vnode.type) : document.createElement(vnode.type);
+  const isInSvg = isSvg || vnode.type === 'svg';
+  const el = isInSvg ? document.createElementNS(SVG_NS, vnode.type) : document.createElement(vnode.type);
   for (const child of vnode.children) {
-    el.appendChild(render(child, inSvg && vnode.type !== 'foreignObject'));
+    el.appendChild(render(child, isInSvg && vnode.type !== 'foreignObject'));
   }
   // 자식 다음에 props를 넣는다: <select value>는 <option>이 있어야 반영된다
   for (const [key, value] of Object.entries(vnode.props)) {
