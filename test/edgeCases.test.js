@@ -6,6 +6,15 @@ import { diff, patch } from '../src/diff.js';
 import { parseHTML } from '../src/parseHTML.js';
 import { toHTML } from '../src/toHTML.js';
 
+describe('h()의 boolean 자식', () => {
+  it('true/false는 그리지 않는다 (render·toHTML이 깨지지 않는다)', () => {
+    const vnode = h('div', null, true, 'a', false, null, undefined, 0);
+    expect(vnode.children).toEqual(['a', '0']);
+    expect(() => render(vnode)).not.toThrow();
+    expect(toHTML(vnode)).toBe('<div>a0</div>');
+  });
+});
+
 describe('공백 텍스트', () => {
   it('같은 줄의 공백은 내용이라 남긴다 (<b>a</b> <i>b</i>)', () => {
     expect(parseHTML('<p><b>a</b> <i>b</i></p>')).toEqual(h('p', null, h('b', null, 'a'), ' ', h('i', null, 'b')));
@@ -44,6 +53,13 @@ describe('브라우저가 구조를 몰래 고치는 입력', () => {
 
 describe('SVG', () => {
   const SOURCE = '<div><svg viewBox="0 0 10 10"><circle r="5"/><foreignObject><p>x</p></foreignObject></svg></div>';
+
+  it('foreignObject 안은 HTML 문맥이라 <div/>를 허용하지 않는다', () => {
+    expect(() => parseHTML('<svg><foreignObject><div/><p>x</p></foreignObject></svg>')).toThrow(
+      '스스로 닫을 수 없습니다'
+    );
+    expect(() => parseHTML('<svg><foreignObject><p>x</p></foreignObject><circle r="1"/></svg>')).not.toThrow();
+  });
 
   it('SVG 안의 self-closing은 허용하고, 태그 대소문자를 지킨다', () => {
     const vnode = parseHTML(SOURCE);

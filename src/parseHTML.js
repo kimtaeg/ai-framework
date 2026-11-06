@@ -89,7 +89,9 @@ function checkTags(source) {
       stack.pop();
     } else if (selfClose) {
       // HTML에서 <div/>의 '/'는 무시되어 열린 태그가 된다. SVG 안에서만 스스로 닫을 수 있다.
-      const isInSvg = stack.some((tag) => tag.name === 'svg');
+      // 가장 가까운 문맥을 본다: foreignObject 안쪽은 SVG 안이어도 다시 HTML 문맥이다.
+      const context = stack.findLast((tag) => tag.name === 'svg' || tag.name === 'foreignobject');
+      const isInSvg = context?.name === 'svg';
       if (!isInSvg) throw new HTMLParseError(`<${name}/>처럼 일반 요소는 스스로 닫을 수 없습니다. </${name}>을 쓰세요.`, line);
     } else {
       stack.push({ name, line });

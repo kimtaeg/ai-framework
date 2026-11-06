@@ -262,7 +262,7 @@ function showPatches(patches, prev, next, label) {
   patchCount.textContent = patches.length;
   patchList.replaceChildren(...patches.map((p) => patchItem(p, p.type === CREATE ? next : prev)));
   patchEmpty.hidden = patches.length > 0;
-  patchEmpty.textContent = '바뀐 부분이 없어 적용할 patch가 없습니다.';
+  if (patches.length === 0) patchEmpty.textContent = '바뀐 부분이 없어 적용할 patch가 없습니다.';
 }
 
 function patchItem(p, tree) {

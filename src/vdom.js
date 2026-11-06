@@ -10,7 +10,8 @@ export function h(type, props, ...children) {
     props: props ?? {},
     children: children
       .flat(Infinity)
-      .filter((c) => c !== null && c !== undefined && c !== false)
+      // JSX와 같은 규칙: null·undefined·true·false는 그리지 않는다 (cond && <x/>, cond || 'x')
+      .filter((c) => c !== null && c !== undefined && typeof c !== 'boolean')
       .map((c) => (typeof c === 'number' ? String(c) : c)),
   };
 }
