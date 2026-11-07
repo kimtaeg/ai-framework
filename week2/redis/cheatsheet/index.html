@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>미니 레디스 한 장 요약</title>
+  <link rel="stylesheet" href="../../../styles/base.css" />
+  <style>
+    main { max-width: 1200px; }
+    .cs-top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+    .cs-top h1 { margin: 0; }
+    .cs-top p { margin: 4px 0 0; color: var(--muted); }
+    .cs { columns: 3 300px; column-gap: 14px; }
+    .cs > div { break-inside: avoid; margin-bottom: 14px; border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--surface); font-size: 13px; line-height: 1.6; }
+    .cs h2 { font-size: 14px; margin: 0 0 6px; color: var(--accent); }
+    .cs ul, .cs ol { margin: 0; padding-left: 18px; }
+    .cs li + li { margin-top: 2px; }
+    .cs code { font-family: var(--mono); font-size: 11.5px; background: var(--surface-2); padding: 0 4px; border-radius: 4px; }
+    .cs table { border-collapse: collapse; width: 100%; font-size: 12px; }
+    .cs th, .cs td { border: 1px solid var(--border); padding: 3px 6px; text-align: left; vertical-align: top; }
+    .cs th { background: var(--surface-2); }
+    .cs .flow { font: 12px/1.7 var(--mono); background: var(--surface-2); border-radius: 6px; padding: 6px 8px; }
+    .cs .qa dt { font-weight: 700; margin-top: 6px; }
+    .cs .qa dt:first-child { margin-top: 0; }
+    .cs .qa dd { margin: 0 0 0 10px; color: var(--muted); }
+    .cs .bad { color: var(--danger); }
+    .cs .good { color: var(--ok); }
+    @media print {
+      @page { size: A4; margin: 10mm; }
+      .topbar, .no-print { display: none !important; }
+      body { background: #fff; color: #000; font-size: 11px; }
+      main { padding: 0; max-width: none; }
+      .cs { columns: 3; column-gap: 8px; }
+      .cs > div { padding: 6px 8px; margin-bottom: 6px; border-color: #bbb; font-size: 10px; line-height: 1.45; box-shadow: none; }
+      .cs h2 { font-size: 11px; margin-bottom: 3px; color: #000; }
+      .cs code, .cs .flow, .cs th { background: #f2f2f2; }
+      .cs table { font-size: 9.5px; }
+      .cs .qa dd { color: #333; }
+      .cs-top h1 { font-size: 16px; }
+      .cs-top p { display: none; }
+    }
+  </style>
+
+  <!-- chat:css --><link rel="stylesheet" href="../../../tools/chat.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../../../index.html#redis">mini<span>Redis</span></a>
+    <nav>
+      <a href="../../../index.html#redis">홈</a>
+      <a href="../../../week2/redis/guide/index.html">학습 가이드</a>
+      <a href="../../../week2/redis/index.html">미니 레디스</a>
+      <a href="../../../week2/redis/examples/index.html">예제</a>
+      <a href="../../../week2/redis/sandbox/index.html">샌드박스</a>
+      <a href="../../../week2/redis/walkthrough/index.html">코드 해설</a>
+      <a href="../../../week2/redis/theory/index.html">레디스 이론</a>
+      <a href="../../../week2/redis/deepdive/index.html">개념 더 파고들기</a>
+      <a href="./index.html" aria-current="page">한 장 요약</a>
+      <a href="../../../week2/redis/docs/index.html">설명서</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="cs-top">
+      <div>
+        <h1>미니 레디스 한 장 요약</h1>
+        <p>발표 직전에 훑어보는 핵심 정리. 인쇄하면 A4 한 장에 맞춰집니다.</p>
+      </div>
+      <button class="primary no-print" onclick="window.print()">🖨 인쇄 / PDF 저장</button>
+    </div>
+
+    <div class="cs">
+      <div>
+        <h2>① 요청 하나의 흐름</h2>
+        <div class="flow">PUT /keys/k {value, ttl}<br>→ 입력 검사 (문자열, 1MB, ttl 정수)<br>→ command(['SET',k,v,'EX',ttl]) 동기 실행<br>→ fnv1a(k) &amp; (size-1) → 버킷 → 체인<br>→ AOF: ["SET",k,v,"PXAT",시각]<br>→ 201 / 200</div>
+      </div>
+
+      <div>
+        <h2>② 해시 테이블</h2>
+        <ul><li>해시: <b>FNV-1a</b> (XOR + 소수 곱, 32bit)</li><li>버킷 수 2ⁿ → <code>hash &amp; (m-1)</code></li><li>충돌: <b>체이닝</b> (연결 리스트 맨 앞에)</li><li>부하율 &gt; 1 → 2배, &lt; 0.1 → 축소</li><li>평균 O(1), 최악 O(n)</li></ul>
+      </div>
+
+      <div>
+        <h2>③ 점진적 리해시</h2>
+        <ul><li>테이블 2개 (옛 / 새)</li><li>연산마다 옛 버킷 1개 이동</li><li>조회·삭제: 둘 다 / 추가: 새 테이블만</li><li>한 번에 옮기면 20만 개 중 <span class="bad">131,072개</span>를 한 연산이 / 나눠 옮기면 <span class="good">8개</span></li></ul>
+      </div>
+
+      <div>
+        <h2>④ 만료 (TTL)</h2>
+        <ul><li>저장: <b>절대 시각</b> expireAt</li><li><b>지연 삭제</b>: 읽을 때 지났으면 삭제 + nil → 만료 값은 절대 안 나감</li><li><b>주기 삭제</b>: 100ms 마다 TTL 키 20개 표본, 25% 넘으면 반복 (최대 16번)</li><li>TTL: -2 키 없음, -1 만료 없음</li></ul>
+      </div>
+
+      <div>
+        <h2>⑤ 동시성</h2>
+        <ul><li>한 스레드에서 <b>동기 함수</b>로 → 명령 하나는 원자적</li><li>GET → +1 → SET 은 <span class="bad">원자적 아님</span> (lost update)</li><li>해결: INCR, SET NX, pipeline</li><li>약점: KEYS * 같은 긴 명령이 모두를 막음 → SCAN</li></ul>
+      </div>
+
+      <div>
+        <h2>⑥ 무효화</h2>
+        <table><tr><th>방법</th><th>쓸 때</th></tr><tr><td>TTL</td><td>"N초 옛 값 OK"</td></tr><tr><td>DEL</td><td>원본 수정 직후 (덮어쓰기보다 안전)</td></tr><tr><td>TAG / INVALIDATE</td><td>관련 키 한꺼번에</td></tr><tr><td>DELPATTERN</td><td><code>product:*</code></td></tr></table>
+      </div>
+
+      <div>
+        <h2>⑦ 영속성 (AOF)</h2>
+        <ul><li>쓰기마다 한 줄 JSON 덧붙임 → 재시작 때 재생</li><li>fsync: <b>always</b>(손실 0) / <b>everysec</b>(≤1초) / no</li><li>INCR 도 결과를 SET 으로 → 멱등</li><li>잘린 마지막 줄은 버림</li><li>재작성: 임시 파일 → fsync → <b>rename</b></li></ul>
+      </div>
+
+      <div>
+        <h2>⑧ 캐시 (cache-aside)</h2>
+        <div class="flow">GET 캐시 → HIT 면 끝<br>MISS → DB 조회 → SET 캐시 EX 60<br>원본 수정 → DEL 캐시</div><ul><li>없는 값도 짧게 캐시 (negative caching)</li><li>스탬피드 → SET NX 로 한 명만 채우기</li></ul>
+      </div>
+
+      <div>
+        <h2>⑨ API</h2>
+        <table><tr><td>GET /keys/:k</td><td>200 · 404</td></tr><tr><td>PUT /keys/:k</td><td>201 · 200 · 409</td></tr><tr><td>DELETE /keys/:k</td><td>{ deleted }</td></tr><tr><td>POST /invalidate</td><td>{ tags, pattern }</td></tr><tr><td>POST /command · /pipeline</td><td>명령 그대로</td></tr></table>
+      </div>
+
+      <div>
+        <h2>⑩ 예상 질문 한 줄 답</h2>
+        <dl class="qa"><dt>만료 값 요청?</dt><dd>읽을 때 확인해 삭제 + nil, 안 읽는 건 주기 삭제</dd><dt>동시성?</dt><dd>단일 스레드 · 동기 명령 → 명령 하나는 원자적</dd><dt>서버 다운?</dt><dd>AOF 재생, fsync 정책으로 손실량 선택</dd><dt>한계?</dt><dd>eviction · 복제 · 해시 씨앗 · SCAN 없음</dd><dt>테스트?</dt><dd>해시 퍼즈, 가짜 시계, 강제 종료 후 복원</dd></dl>
+      </div>
+    </div>
+  </main>
+  <!-- chat:js --><script src="../../../tools/chat.js"></script>
+</body>
+</html>

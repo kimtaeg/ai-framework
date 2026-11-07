@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>미니 레디스 실습</title>
+  <link rel="stylesheet" href="../../styles/base.css" />
+  <link rel="stylesheet" href="../week2.css" />
+  <!-- chat:css --><link rel="stylesheet" href="../../tools/chat.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../../index.html#redis">mini<span>Redis</span></a>
+    <nav>
+      <a href="../../index.html#redis">홈</a>
+      <a href="../../week2/redis/guide/index.html">학습 가이드</a>
+      <a href="./index.html" aria-current="page">미니 레디스</a>
+      <a href="../../week2/redis/examples/index.html">예제</a>
+      <a href="../../week2/redis/sandbox/index.html">샌드박스</a>
+      <a href="../../week2/redis/walkthrough/index.html">코드 해설</a>
+      <a href="../../week2/redis/theory/index.html">레디스 이론</a>
+      <a href="../../week2/redis/deepdive/index.html">개념 더 파고들기</a>
+      <a href="../../week2/redis/cheatsheet/index.html">한 장 요약</a>
+      <a href="../../week2/redis/docs/index.html">설명서</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>미니 레디스 Playground</h1>
+    <p class="lead">직접 만든 해시 테이블 위의 키-값 저장소입니다. 아래 실험은 모두 이 프로젝트의 <code>week2/redis/miniredis.js</code> 를 브라우저에서 그대로 실행합니다. 서버(<code>npm start</code>)로 열면 실제 HTTP API 실험도 켜집니다.</p>
+
+    <div class="toolbar card">
+      <span class="tb-label">바로 가기</span>
+      <a class="btn small" href="#console">1. 명령 콘솔</a>
+      <a class="btn small" href="#hashtable">2. 해시 테이블</a>
+      <a class="btn small" href="#ttl">3. 만료</a>
+      <a class="btn small" href="#cache">4. 캐시·성능</a>
+      <a class="btn small" href="#race">5. 동시성</a>
+      <a class="btn small" href="#aof">6. 서버 다운</a>
+      <a class="btn small" href="#api">7. API</a>
+      <span class="spacer"></span>
+      <span class="history-pos mono" id="mode-pill">브라우저 안에서 실행</span>
+    </div>
+
+        <!-- 1 -->
+        <section class="card panel" id="console">
+          <div class="card-head">명령 콘솔 <span class="sub">redis-cli 처럼 명령을 직접 입력</span></div>
+          <div class="card-body">
+          <p class="why">redis-cli 처럼 명령을 입력합니다. <b>TTL 이 지나면 키 목록에서 줄이 그어지고</b>, 읽거나 주기 삭제가 돌면 사라집니다.</p>
+          <div class="split">
+            <div>
+              <div class="console" id="con-log" aria-live="polite"></div>
+              <form class="prompt" id="con-form"><input id="con-input" placeholder='SET user:1 "김정글" EX 10' aria-label="명령 입력" autocomplete="off" /><button type="submit" class="primary">실행</button></form>
+              <div class="chips">
+                <button type="button" class="chip-btn" data-cmd='SET user:1 "김정글"'>SET</button>
+                <button type="button" class="chip-btn" data-cmd="GET user:1">GET</button>
+                <button type="button" class="chip-btn" data-cmd="SET otp 482913 EX 5|TTL otp">SET … EX 5</button>
+                <button type="button" class="chip-btn" data-cmd="INCR visits|INCR visits|GET visits">INCR</button>
+                <button type="button" class="chip-btn" data-cmd="SET lock:job 1 NX|SET lock:job 2 NX">SET NX</button>
+                <button type="button" class="chip-btn" data-cmd="MSET product:1 키보드 product:2 마우스|TAG product:1 products|TAG product:2 products">TAG</button>
+                <button type="button" class="chip-btn" data-cmd="INVALIDATE products">INVALIDATE</button>
+                <button type="button" class="chip-btn" data-cmd="KEYS *">KEYS *</button>
+                <button type="button" class="chip-btn" data-cmd="DEL user:1">DEL</button>
+                <button type="button" class="chip-btn" data-cmd="INFO">INFO</button>
+                <button type="button" class="chip-btn" data-cmd="INCR user:1">에러 보기</button>
+              </div>
+            </div>
+            <div>
+              <div class="stats" id="con-stats"></div>
+              <div class="table-wrap"><table class="data"><thead><tr><th>키</th><th>값</th><th>남은 시간</th><th>태그</th></tr></thead><tbody id="keys-body"></tbody></table></div>
+            </div>
+          </div>
+          <details class="small"><summary>지원하는 명령</summary>
+            <p class="mono">PING · SET key value [EX s | PX ms | EXAT | PXAT] [NX | XX] [KEEPTTL] · GET · GETDEL · MSET · MGET · DEL · EXISTS · EXPIRE · PEXPIRE · PEXPIREAT · TTL · PTTL · PERSIST · INCR · DECR · INCRBY · DECRBY · KEYS pattern · DBSIZE · FLUSHALL · INFO<br>miniRedis 확장: TAG key tag… · INVALIDATE tag… · DELPATTERN pattern</p>
+          </details>
+          </div>
+        </section>
+
+        <!-- 2 -->
+        <section class="card panel" id="hashtable">
+          <div class="card-head">해시 테이블 <span class="sub">버킷 · 체이닝 · 점진적 리해시</span></div>
+          <div class="card-body">
+          <p class="why">위 콘솔과 <b>같은 저장소</b>입니다. 키 → <b>FNV-1a 해시</b> → <code>hash &amp; (버킷 수 - 1)</code> 로 버킷을 고르고, 같은 버킷이면 줄줄이 잇습니다(<b>체이닝</b>, 두 번째부터 주황색). 원소가 버킷 수보다 많아지면(부하율 &gt; 1) 2배 테이블을 만들고 <b>연산할 때마다 버킷 하나씩</b> 옮깁니다(점진적 리해시).</p>
+          <div class="row">
+            <button type="button" id="ht-add1">키 1개 추가</button>
+            <button type="button" id="ht-add10">키 10개 추가</button>
+            <button type="button" id="ht-del">무작위 5개 삭제</button>
+            <button type="button" id="ht-step">리해시 한 걸음</button>
+            <button type="button" id="ht-reset" class="ghost">비우기</button>
+            <input id="ht-find" class="grow" placeholder="키를 입력하면 어느 버킷인지 보여 줌 (예: apple:0)" aria-label="키 찾기" />
+          </div>
+          <p class="small mono" id="ht-where"></p>
+          <div class="stats" id="ht-stats"></div>
+          <div class="ht" id="ht-view"></div>
+          <div class="note"><b>관찰 포인트</b>키를 4개 → 5개로 늘리는 순간 초록 테이블(새 테이블)이 생기고, 옛 테이블의 점선 버킷부터 하나씩 옮겨 갑니다. 옮기는 동안에도 GET 은 두 테이블을 모두 봐서 키를 놓치지 않아요. 한 번에 다 옮기면 100만 개일 때 서버가 그 순간 멈추기 때문에 이렇게 나눠서 옮깁니다.</div>
+          </div>
+        </section>
+
+        <!-- 3 -->
+        <section class="card panel" id="ttl">
+          <div class="card-head">만료 (TTL) <span class="sub">만료된 값을 요청받으면?</span></div>
+          <div class="card-body">
+          <p class="why">두 가지 방법을 함께 씁니다. <b>지연 삭제</b>: GET 할 때 만료 시각을 확인해서 지났으면 그 자리에서 지우고 "없음"(nil)을 답합니다 → 만료된 값은 절대 나가지 않습니다. <b>주기 삭제</b>: 100ms 마다 TTL 있는 키 20개를 무작위로 뽑아 만료된 것을 지우고, 25% 넘게 만료돼 있으면 한 번 더 → 아무도 안 읽는 키가 메모리를 차지하지 않게 합니다.</p>
+          <div class="row">
+            <button type="button" id="ttl-make" class="primary">TTL 1.5~2.5초 키 50개 + 영구 키 10개</button>
+            <label><input type="checkbox" id="ttl-active" checked /> 주기 삭제 켜기</label>
+            <button type="button" id="ttl-read">전부 GET 해 보기</button>
+            <button type="button" id="ttl-reset" class="ghost">초기화</button>
+          </div>
+          <div class="stats" id="ttl-stats"></div>
+          <div class="note warn"><b>해 보기</b>"주기 삭제 켜기"를 끄고 키를 만든 뒤 3초 기다리세요. <b>보이는 키</b>는 10개로 줄지만 <b>메모리</b>에는 60개가 그대로 남아 있습니다(만료됐지만 남은 키). 이때 "전부 GET"을 누르면 지연 삭제가 한꺼번에 지웁니다. 다시 켜면 주기 삭제가 알아서 치웁니다.</div>
+          </div>
+        </section>
+
+        <!-- 4 -->
+        <section class="card panel" id="cache">
+          <div class="card-head">캐시 <span class="sub">API 응답 저장 · 무효화 · 성능 비교</span></div>
+          <div class="card-body">
+          <p class="why"><b>cache-aside</b>: ① 캐시에 있으면 바로 응답(HIT) ② 없으면 DB 에서 가져와(MISS) ③ 캐시에 저장(TTL 60초). 원본이 바뀌면 캐시의 그 키를 <b>지웁니다(무효화)</b> → 다음 요청이 새 값을 다시 캐시합니다.</p>
+          <div class="row">
+            <label class="small">가짜 DB 응답 시간 <input type="range" id="cache-lat" min="30" max="500" step="10" value="150" aria-label="DB 응답 시간" /> <b id="cache-lat-out">150ms</b></label>
+          </div>
+          <div class="row">
+            <button type="button" id="cache-off">캐시 없이 10번 요청</button>
+            <button type="button" id="cache-on" class="primary">캐시 쓰고 10번 요청</button>
+            <button type="button" id="cache-update">가격 변경 + 무효화</button>
+            <button type="button" id="cache-stale">가격 변경만 (무효화 안 함)</button>
+            <button type="button" id="cache-clear" class="ghost">캐시 비우기</button>
+          </div>
+          <div class="legend"><span><i style="background:var(--db)"></i>DB 직접</span><span><i style="background:var(--miss)"></i>MISS (DB + 캐시 저장)</span><span><i style="background:var(--hit)"></i>HIT (캐시)</span></div>
+          <div class="bars" id="cache-bars"></div>
+          <p class="small" id="cache-sum"></p>
+          <div id="cache-real-box" hidden>
+            <div class="note good"><b>실제 서버로</b>서버의 느린 상품 API(<code>/api/demo/products/1</code>)가 미니 레디스 HTTP API(<code>/api/redis</code>)를 캐시로 씁니다. 응답 헤더 <code>X-Cache</code> 로 HIT/MISS 를 확인합니다.</div>
+            <button type="button" id="cache-real">서버에서 8번씩 비교하기</button>
+            <div class="bars" id="cache-real-out"></div>
+          </div>
+          </div>
+        </section>
+
+        <!-- 5 -->
+        <section class="card panel" id="race">
+          <div class="card-head">동시성 <span class="sub">GET + SET vs INCR</span></div>
+          <div class="card-body">
+          <p class="why">클라이언트 여러 명이 동시에 "좋아요 +1" 을 보냅니다. 요청마다 네트워크 시간이 달라서 도착 순서가 뒤섞입니다.</p>
+          <div class="row">
+            <label class="small">동시 요청 수 <input type="number" id="race-n" value="100" min="2" max="1000" /></label>
+            <button type="button" id="race-naive">GET → +1 → SET (나눠서)</button>
+            <button type="button" id="race-incr" class="primary">INCR (한 번에)</button>
+          </div>
+          <div id="race-out"></div>
+          <div class="note"><b>미니 레디스의 구조</b>모든 명령은 한 스레드(이벤트 루프)에서 하나씩 실행되고, 명령 실행 코드(<code>command()</code>)는 동기 함수라서 중간에 다른 요청이 끼어들 수 없습니다. 락이 없어도 명령 하나는 항상 원자적입니다. 여러 명령을 묶어야 하면 <code>/pipeline</code> 으로 한 번에 보내면 끼어들기 없이 실행됩니다. 실제 Redis 가 명령 처리를 한 스레드로 하는 이유도 같습니다.</div>
+          </div>
+        </section>
+
+        <!-- 6 -->
+        <section class="card panel" id="aof">
+          <div class="card-head">영속성 (AOF) <span class="sub">서버가 다운돼도 데이터를 지키려면</span></div>
+          <div class="card-body">
+          <p class="why">쓰기 명령이 성공할 때마다 <b>결과를 다시 만들 수 있는 명령</b>을 파일 끝에 한 줄씩 덧붙입니다(Append Only File). 다시 켜면 처음부터 다시 실행해 복원합니다. TTL 은 "10초 뒤"가 아니라 <b>"언제"(절대 시각)</b>로 적어서, 꺼져 있던 동안 지난 시간도 반영됩니다.</p>
+          <div class="row">
+            <label class="small">fsync 정책
+              <select id="aof-policy" aria-label="fsync 정책">
+                <option value="always">always — 명령마다 디스크에</option>
+                <option value="everysec" selected>everysec — 1초마다 (Redis 기본)</option>
+                <option value="no">no — 운영체제에 맡김 (8줄마다)</option>
+              </select>
+            </label>
+            <button type="button" id="aof-write" class="primary">주문 3건 쓰기</button>
+            <button type="button" id="aof-crash" class="danger">서버 강제 종료</button>
+            <button type="button" id="aof-restart">다시 켜기 (AOF 복원)</button>
+            <button type="button" id="aof-rewrite">AOF 재작성 (압축)</button>
+            <button type="button" id="aof-reset" class="ghost">초기화</button>
+          </div>
+          <p class="small" id="aof-state"></p>
+          <div class="aof" id="aof-view"></div>
+          <p class="small" id="aof-result"></p>
+          <div class="note warn"><b>해 보기</b>everysec 에서 "주문 3건 쓰기"를 누르고 <b>1초 안에</b> "서버 강제 종료"를 누르세요. 주황색(버퍼) 줄이 사라집니다. always 로 바꾸면 아무리 빨리 꺼도 잃지 않지만, 명령마다 디스크에 쓰느라 느립니다. <b>안전과 속도의 교환</b>입니다. 실제 파일 저장은 <code>week2/redis/persistence.js</code> 이고, 테스트에서 실제로 프로세스를 죽였다 켜며 확인합니다.</div>
+          </div>
+        </section>
+
+        <!-- 7 -->
+        <section class="card panel" id="api">
+          <div class="card-head">외부 API <span class="sub">HTTP 로 미니 레디스 쓰기</span></div>
+          <div class="card-body">
+          <p class="why">다른 프로그램은 HTTP + JSON 으로 미니 레디스를 씁니다. 같은 기능을 <code>week2/redis/client.js</code> 의 작은 클라이언트로도 쓸 수 있습니다.</p>
+          <div class="table-wrap"><table class="data">
+            <tr><th>메서드</th><th>주소</th><th>본문</th><th>응답</th></tr>
+            <tr><td>GET</td><td class="mono">/keys/:key</td><td>—</td><td class="mono">200 { key, value, ttl } · 404 없음/만료</td></tr>
+            <tr><td>PUT</td><td class="mono">/keys/:key</td><td class="mono">{ value, ttl?, px?, nx?, xx?, tags? }</td><td class="mono">201 생성 · 200 덮어씀 · 409 조건 실패</td></tr>
+            <tr><td>DELETE</td><td class="mono">/keys/:key</td><td>—</td><td class="mono">{ deleted }</td></tr>
+            <tr><td>POST</td><td class="mono">/keys/:key/expire</td><td class="mono">{ ttl } · { ttl: null } 해제</td><td class="mono">{ updated }</td></tr>
+            <tr><td>POST</td><td class="mono">/keys/:key/incr</td><td class="mono">{ by? }</td><td class="mono">{ value }</td></tr>
+            <tr><td>GET</td><td class="mono">/keys?pattern=user:*</td><td>—</td><td class="mono">{ keys }</td></tr>
+            <tr><td>POST</td><td class="mono">/invalidate</td><td class="mono">{ tags?, pattern? }</td><td class="mono">{ deleted }</td></tr>
+            <tr><td>POST</td><td class="mono">/command · /pipeline</td><td class="mono">{ args } · { commands: [[…]] }</td><td class="mono">{ result } · { results }</td></tr>
+            <tr><td>GET</td><td class="mono">/info</td><td>—</td><td class="mono">통계</td></tr>
+          </table></div>
+          <div id="api-file">
+            <div class="note"><b>서버로 열면 여기서 바로 요청을 보낼 수 있어요</b><code>npm start</code> 후 <code>http://localhost:5200/week2/redis/</code> 로 열면 <code>/api/redis/…</code> 로 쓸 수 있습니다. 단독 서버는 <code>node week2/redis/server.js</code> (포트 6380, AOF: week2/data/redis.aof).</div>
+          </div>
+          <div id="api-live" hidden>
+            <div class="chips">
+              <button type="button" class="chip-btn" data-api='PUT|/api/redis/keys/user:1|{"value":"{\"name\":\"정글\"}","ttl":60,"tags":["users"]}'>PUT user:1</button>
+              <button type="button" class="chip-btn" data-api="GET|/api/redis/keys/user:1">GET user:1</button>
+              <button type="button" class="chip-btn" data-api='POST|/api/redis/keys/visits/incr|{"by":1}'>INCR visits</button>
+              <button type="button" class="chip-btn" data-api='POST|/api/redis/invalidate|{"tags":["users"]}'>INVALIDATE users</button>
+              <button type="button" class="chip-btn" data-api="GET|/api/redis/keys?pattern=*">KEYS *</button>
+              <button type="button" class="chip-btn" data-api="GET|/api/redis/info">INFO</button>
+              <button type="button" class="chip-btn" data-api='PUT|/api/redis/keys/bad|{"value":123}'>잘못된 요청</button>
+            </div>
+            <div class="row" style="margin-top:8px">
+              <select id="api-method" aria-label="메서드"><option>GET</option><option>PUT</option><option>POST</option><option>DELETE</option></select>
+              <input id="api-path" class="grow mono" value="/api/redis/info" aria-label="주소" />
+              <button type="button" id="api-send" class="primary">보내기</button>
+            </div>
+            <textarea id="api-body" class="sql" style="min-height:60px;margin-top:8px" placeholder='본문 (JSON)' aria-label="본문"></textarea>
+            <pre class="aof" id="api-out" style="height:auto;max-height:240px"></pre>
+          </div>
+          </div>
+        </section>
+  </main>
+
+  <script>
+    (function () {
+      var s = document.createElement("script");
+      if (location.protocol === "file:") {
+        s.src = "./bundle.js";
+      } else {
+        s.type = "module";
+        s.src = "./main.js";
+      }
+      document.body.appendChild(s);
+    })();
+  </script>
+  <!-- chat:js --><script src="../../tools/chat.js"></script>
+</body>
+</html>

@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>미니 레디스 개념 더 파고들기</title>
+  <link rel="stylesheet" href="../../../styles/base.css" />
+  <link rel="stylesheet" href="../../../deepdive/deepdive.css" />
+  <link rel="stylesheet" href="../../week2.css" />
+  <!-- chat:css --><link rel="stylesheet" href="../../../tools/chat.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../../../index.html#redis">mini<span>Redis</span></a>
+    <nav>
+      <a href="../../../index.html#redis">홈</a>
+      <a href="../../../week2/redis/guide/index.html">학습 가이드</a>
+      <a href="../../../week2/redis/index.html">미니 레디스</a>
+      <a href="../../../week2/redis/examples/index.html">예제</a>
+      <a href="../../../week2/redis/sandbox/index.html">샌드박스</a>
+      <a href="../../../week2/redis/walkthrough/index.html">코드 해설</a>
+      <a href="../../../week2/redis/theory/index.html">레디스 이론</a>
+      <a href="./index.html" aria-current="page">개념 더 파고들기</a>
+      <a href="../../../week2/redis/cheatsheet/index.html">한 장 요약</a>
+      <a href="../../../week2/redis/docs/index.html">설명서</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>미니 레디스 개념 더 파고들기</h1>
+    <p class="lead">"무엇을 만들었나" 는 실습과 이론에서 봤다면, 여기서는 <b>"왜 그렇게 만들었을까 / 다르게 만들면 무슨 일이 생길까"</b> 를 파고듭니다. 실험은 모두 이 프로젝트의 실제 해시 테이블 · 미니 레디스 코드로 실행됩니다(<code>week2/redis/deepdive/labs.js</code>).</p>
+
+    <div class="how card">
+      <div class="how-steps">
+        <div><span class="n">1</span><b>핵심 질문</b><small>먼저 스스로 답해 보기</small></div>
+        <div><span class="n">2</span><b>직관</b><small>비유로 감 잡기</small></div>
+        <div><span class="n">3</span><b>원리</b><small>코드 수준의 이유</small></div>
+        <div><span class="n">4</span><b>실험</b><small>예측하고 돌려 보기</small></div>
+        <div><span class="n">5</span><b>더 깊이</b><small>반례와 생각 실험</small></div>
+      </div>
+      <div class="progress-box">
+        <div class="pb-head"><b>이해했어요</b> <span id="dd-progress-n">0 / 8</span> <button type="button" class="link-btn" id="dd-reset">초기화</button></div>
+        <div class="pb-track"><div class="pb-fill" id="dd-progress-bar"></div></div>
+        <p class="small muted">주제 끝의 체크 상자를 누르면 이 브라우저에 저장됩니다.</p>
+      </div>
+    </div>
+
+    <div class="layout">
+      <aside class="toc card" id="toc">
+        <div class="group">해시 테이블</div>
+        <a href="#hashfn">1. 좋은 해시 함수란</a>
+        <a href="#load">2. 부하율은 왜 1 근처</a>
+        <a href="#rehash">3. 한 번에 vs 점진적 리해시</a>
+        <div class="group">레디스의 설계</div>
+        <a href="#single">4. 긴 명령 하나가 모두를 막는다</a>
+        <a href="#sample">5. 표본 20개로 충분할까</a>
+        <a href="#stampede">6. 캐시가 만료되는 순간</a>
+        <a href="#aofsize">7. AOF 는 왜 계속 커지나</a>
+        <div class="group">정리</div>
+        <a href="#limits">8. 한계 찾기</a>
+      </aside>
+
+      <article id="content">
+        <section class="card deep" id="hashfn">
+          <div class="sec-head"><span class="num">1</span><h2>좋은 해시 함수란 무엇인가</h2></div>
+          <div class="question"><b>핵심 질문</b>키를 숫자로 바꾸기만 하면 되는데, 왜 FNV-1a 처럼 복잡하게 섞을까? 글자 코드를 더하기만 하면 안 될까?</div>
+          <div class="intuition"><b>직관</b>사물함 번호를 "이름 글자 수" 로 정하면 세 글자 이름은 전부 3번 사물함으로 갑니다. 번호 규칙이 <b>입력의 작은 차이를 큰 차이로 퍼뜨려야</b> 사물함이 고르게 쓰입니다.</div>
+          <h3>원리</h3>
+          <p>해시 테이블의 O(1) 은 "키가 버킷에 고르게 퍼진다" 는 가정 위에 있습니다. 나쁜 해시는 비슷한 키(<code>user:1</code>, <code>user:2</code>, 철자 순서만 바뀐 키)를 같은 버킷에 몰아서 체인을 길게 만들고, 그 순간 조회가 O(n) 이 됩니다. FNV-1a 는 글자마다 XOR 후 큰 소수를 곱해서 한 글자만 달라도 모든 비트가 바뀌게(눈사태 효과) 합니다.</p>
+          <div class="lab">
+            <div class="lab-head"><span class="tag">실험 1</span> 키 2,000개를 버킷 64개에 넣으면</div>
+            <div class="row">
+              <label class="small">해시 함수 <select id="hash-fn" aria-label="해시 함수"></select></label>
+              <label class="small">키 모양 <select id="hash-keys" aria-label="키 모양"><option value="user">user:0 … user:1999</option><option value="anagram" selected>철자 순서만 다른 키 (abcdefgh 섞기)</option><option value="mail">a0@mail.com …</option></select></label>
+            </div>
+            <div id="hash-hist"></div>
+            <div id="hash-out"></div>
+          </div>
+          <details class="think"><summary>더 깊이: 해시를 일부러 망가뜨리는 공격이 있다?</summary><div class="a">해시 함수를 아는 공격자가 같은 버킷으로 가는 키 수만 개를 보내면 서버가 체인을 따라가느라 멈춥니다(HashDoS, 2011년 여러 웹 프레임워크가 당함). 그래서 언어들은 프로세스마다 무작위 씨앗(seed)을 섞는 SipHash 같은 함수를 씁니다. Redis 도 dict 해시에 SipHash 를 씁니다. 미니 레디스의 FNV-1a 는 씨앗이 없어서 이 공격에 약합니다 — 개선 지점.</div></details>
+          <div class="connect"><b>내 코드에서</b> <code>week2/redis/hashtable.js</code> 의 <code>fnv1a()</code>, 생성자의 <code>hash</code> 옵션으로 다른 해시를 끼워 볼 수 있습니다(테스트에서 <code>() =&gt; 0</code> 으로 최악을 검증).</div>
+          <label class="got"><input type="checkbox" class="got-it" data-id="hashfn" /> 해시 함수가 "고르게 퍼뜨려야" 하는 이유를 설명할 수 있어요</label>
+        </section>
+
+        <section class="card deep" id="load">
+          <div class="sec-head"><span class="num">2</span><h2>부하율은 왜 1 근처에서 키울까</h2></div>
+          <div class="question"><b>핵심 질문</b>버킷을 아주 많이 만들어 두면 충돌이 거의 없을 텐데, 왜 원소 수만큼만 둘까?</div>
+          <div class="intuition"><b>직관</b>손님 100명에 테이블 1000개면 아무도 합석하지 않지만 식당이 텅 비어 임대료만 나갑니다. 테이블 10개면 한 테이블에 10명. 적당한 지점이 있습니다.</div>
+          <h3>원리</h3>
+          <p>체이닝에서 부하율 α(원소/버킷)일 때 찾는 키를 만나기까지 평균 비교 수는 약 <b>1 + α/2</b>. α 를 0.25 로 낮춰도 1.125 → 1.0 정도밖에 안 줄지만 메모리는 4배. 반대로 α 가 8 이면 5번. 그래서 Redis 는 α ≥ 1 이면 2배로 키웁니다(개방 주소법은 빈칸을 찾아 헤매야 해서 보통 0.5~0.75 에서 키움).</p>
+          <div class="lab">
+            <div class="lab-head"><span class="tag">실험 2</span> 확장을 끄고 부하율을 고정해서 재기 (키 4,096개)</div>
+            <button type="button" id="load-run" class="primary">재기</button>
+            <div id="load-out"></div>
+          </div>
+          <details class="think"><summary>더 깊이: 줄이는 기준(0.1)은 왜 키우는 기준(1)과 다를까?</summary><div class="a">키우는 기준과 줄이는 기준이 같으면(예: 둘 다 0.5) 경계에서 하나 넣고 빼기를 반복할 때마다 크기 변경이 일어납니다(thrashing). 기준 사이를 넓게 두면 "히스테리시스" 가 생겨 한 번 바꾼 뒤에는 한동안 안정됩니다.</div></details>
+          <div class="connect"><b>내 코드에서</b> <code>GROW_AT = 1</code>, <code>SHRINK_AT = 0.1</code>. 실험은 <code>resizable = false</code> 로 확장을 끄고 잽니다.</div>
+          <label class="got"><input type="checkbox" class="got-it" data-id="load" /> 부하율과 메모리의 교환 관계를 말할 수 있어요</label>
+        </section>
+
+        <section class="card deep" id="rehash">
+          <div class="sec-head"><span class="num">3</span><h2>한 번에 리해시 vs 점진적 리해시</h2></div>
+          <div class="question"><b>핵심 질문</b>전체 시간은 비슷하거나 한 번에 하는 쪽이 더 빠를 수도 있는데, 왜 굳이 복잡하게 나눠서 옮길까?</div>
+          <div class="intuition"><b>직관</b>이사를 하루 만에 끝내면 그날은 아무것도 못 합니다. 매일 상자 몇 개씩 옮기면 이사 기간은 길어도 생활은 계속됩니다. 서버에게 "생활" 은 다른 요청에 답하는 일입니다.</div>
+          <h3>원리</h3>
+          <p>서버 성능에서 중요한 것은 평균보다 <b>꼬리 지연(tail latency)</b> — 가장 느린 요청입니다. 100만 키를 한 번에 옮기는 SET 하나가 수백 ms 걸리면 그동안 들어온 모든 요청이 그만큼 늦습니다. 점진적 리해시는 총 작업량은 같게 두고 그 비용을 <b>수많은 연산에 고르게 나눠</b> 최악의 한 번을 짧게 만듭니다(분할 상환).</p>
+          <div class="lab">
+            <div class="lab-head"><span class="tag">실험 3</span> 키 20만 개를 넣으며 "가장 무거운 연산 한 번" 비교</div>
+            <button type="button" id="rehash-run" class="primary">재기</button>
+            <div id="rehash-out"></div>
+          </div>
+          <details class="think"><summary>생각 실험: 점진적 리해시 중에 키가 계속 들어와서 영원히 안 끝나면?</summary><div class="a">새 키는 새 테이블에만 들어가고 옛 테이블은 줄어들기만 하므로, 연산마다 버킷을 하나 이상 옮기면 언젠가 반드시 끝납니다. 다만 다음 확장이 필요해질 때까지 끝나지 않으면 안 되므로 새 테이블을 2배(충분히 크게) 만듭니다. Redis 는 서버가 한가할 때(1ms 씩) 추가로 옮겨 더 빨리 끝냅니다.</div></details>
+          <div class="connect"><b>내 코드에서</b> <code>#rehashStep()</code> 이 버킷 1개(빈 버킷은 최대 10개까지 건너뜀)씩. 실험의 "한 번에" 는 확장 시작 직후 <code>finishRehash()</code> 를 부르는 버전.</div>
+          <label class="got"><input type="checkbox" class="got-it" data-id="rehash" /> 평균이 아니라 최악의 한 번이 중요한 이유를 설명할 수 있어요</label>
+        </section>
+
+        <section class="card deep" id="single">
+          <div class="sec-head"><span class="num">4</span><h2>단일 스레드의 대가: 긴 명령 하나가 모두를 막는다</h2></div>
+          <div class="question"><b>핵심 질문</b>단일 스레드라서 락 없이도 안전하다는 건 알겠는데, 그럼 약점은 무엇일까?</div>
+          <div class="intuition"><b>직관</b>창구가 하나인 은행에서 한 손님이 "지난 10년치 거래 내역 다 뽑아 주세요" 하면 뒤의 모든 손님이 기다립니다.</div>
+          <h3>원리</h3>
+          <p>명령을 하나씩 끝까지 실행하는 구조는 <b>명령 하나가 짧을 때만</b> 빠릅니다. 키 전체를 훑는 <code>KEYS *</code>, 큰 값 지우기, 큰 집합 연산은 O(n) 이라 그동안 다른 요청이 전부 멈춥니다. 그래서 Redis 는 SCAN(커서로 조금씩), UNLINK(백그라운드 스레드에서 해제) 같은 "쪼갠" 명령을 따로 둡니다.</p>
+          <div class="lab">
+            <div class="lab-head"><span class="tag">실험 4</span> 키 10만 개에서 KEYS * 한 번의 값</div>
+            <button type="button" id="block-run" class="primary">재기</button>
+            <div id="block-out"></div>
+          </div>
+          <details class="think"><summary>더 깊이: 그럼 미니 DBMS 는 왜 스레드 풀을 썼을까?</summary><div class="a">DBMS 의 질의는 디스크를 읽고 레코드 수만 개를 훑는 등 한 번이 길 수 있습니다. 단일 스레드면 긴 SELECT 하나가 모두를 막으니, 여러 워커가 동시에 처리하고 대신 공유 데이터를 락으로 지킵니다. 레디스는 "명령이 짧다" 는 전제로 단순함을, DBMS 는 "질의가 길 수 있다" 는 전제로 병렬성을 고른 것입니다.</div></details>
+          <div class="connect"><b>내 코드에서</b> <code>cmd_KEYS()</code> 는 <code>this.data.entries()</code> 를 처음부터 끝까지 돕니다. <code>DELPATTERN</code> 도 마찬가지 — 실제 서비스라면 SCAN 방식으로 바꿔야 합니다.</div>
+          <label class="got"><input type="checkbox" class="got-it" data-id="single" /> 단일 스레드 구조의 장점과 약점을 함께 말할 수 있어요</label>
+        </section>
+
+        <section class="card deep" id="sample">
+          <div class="sec-head"><span class="num">5</span><h2>만료 키 표본 20개로 충분할까</h2></div>
+          <div class="question"><b>핵심 질문</b>100만 개 중 20개만 뽑아 보고 "25% 넘으면 한 번 더" 라는 규칙이 왜 통할까?</div>
+          <div class="intuition"><b>직관</b>여론 조사가 전 국민에게 묻지 않고 1,000명만 묻는 것과 같습니다. 무작위로 뽑으면 작은 표본으로도 전체 비율을 꽤 정확히 알 수 있습니다.</div>
+          <h3>원리</h3>
+          <p>무작위로 뽑은 20개 중 25% 넘게 만료돼 있으면 "전체에도 만료 키가 많다" 고 추정하고 계속 치웁니다. 비율이 낮아지면 멈춥니다. 결과적으로 메모리 속 만료 키 비율을 대략 25% 아래로 유지하면서, 한 번의 청소 시간은 짧게 묶어 둡니다. 정확하게 다 지우는 것보다 <b>"충분히 적게, 아주 싸게"</b> 를 고른 설계입니다.</p>
+          <div class="lab">
+            <div class="lab-head"><span class="tag">실험 5</span> 키 2,000개 중 절반이 만료됐을 때 청소 15번</div>
+            <button type="button" id="sample-run" class="primary">표본 5 / 20 / 100 비교</button>
+            <div id="sample-out"></div>
+          </div>
+          <details class="think"><summary>생각 실험: 만료 시각 순서로 정렬해 두면 무작위 표본보다 낫지 않을까?</summary><div class="a">만료 시각 순 우선순위 큐(힙)를 두면 가장 먼저 만료될 키를 O(1) 에 알 수 있어 정확히 지울 수 있습니다. 대신 TTL 을 바꿀 때마다 O(log n) 의 정렬 비용과 메모리가 듭니다. 대부분의 키가 읽힐 때 지연 삭제로 처리된다는 점을 생각하면, Redis 는 그 비용이 아깝다고 판단한 것입니다.</div></details>
+          <div class="connect"><b>내 코드에서</b> <code>activeExpireCycle()</code> 의 <code>this.sample</code>(기본 20), <code>expired / n &lt;= 0.25</code>, 최대 16회.</div>
+          <label class="got"><input type="checkbox" class="got-it" data-id="sample" /> 표본 추출로 만료 키를 치우는 이유를 설명할 수 있어요</label>
+        </section>
+
+        <section class="card deep" id="stampede">
+          <div class="sec-head"><span class="num">6</span><h2>캐시가 만료되는 순간 (스탬피드)</h2></div>
+          <div class="question"><b>핵심 질문</b>캐시를 두면 DB 부하가 줄어든다는데, 캐시 때문에 DB 가 쓰러질 수도 있을까?</div>
+          <div class="intuition"><b>직관</b>한정판 매장 문이 열리는 순간 줄 선 사람이 한꺼번에 몰려드는 것. 캐시가 막아 주던 사람들이 만료 순간 한꺼번에 DB 로 갑니다.</div>
+          <h3>원리</h3>
+          <p>인기 키가 TTL 로 사라지는 그 순간 들어온 요청은 모두 MISS → 모두 DB 조회 → 모두 같은 값을 캐시에 씀. 평소 DB 조회 0 이던 것이 갑자기 동시 수백 개가 됩니다. 해결은 "한 명만 채우기": SET NX 로 채우는 사람을 하나로 정하고 나머지는 잠깐 기다렸다 캐시를 다시 봅니다.</p>
+          <div class="lab">
+            <div class="lab-head"><span class="tag">실험 6</span> 빈 캐시에 동시에 100명</div>
+            <button type="button" id="stamp-run" class="primary">보호 없음 vs SET NX 락</button>
+            <div id="stamp-out"></div>
+          </div>
+          <details class="think"><summary>더 깊이: 락을 잡은 한 명이 죽으면?</summary><div class="a">락에 TTL(PX 2000)을 줬으므로 2초 뒤 다른 사람이 다시 잡습니다(예제 3번 분산 락과 같은 원리). 기다리는 쪽도 무한히 기다리지 않게 횟수 제한을 둡니다. 더 나아가면 "만료 직전에 백그라운드에서 미리 갱신" 하거나, 옛 값을 잠깐 더 보여 주며 갱신하는(stale-while-revalidate) 방법이 있습니다.</div></details>
+          <div class="connect"><b>내 코드에서</b> <code>week2/redis/demo-api.js</code> 는 아직 보호가 없습니다. <code>labs.js</code> 의 <code>stampede()</code> 처럼 SET NX 를 넣으면 됩니다 — 개선 지점.</div>
+          <label class="got"><input type="checkbox" class="got-it" data-id="stampede" /> 캐시 스탬피드와 막는 방법을 설명할 수 있어요</label>
+        </section>
+
+        <section class="card deep" id="aofsize">
+          <div class="sec-head"><span class="num">7</span><h2>AOF 는 왜 계속 커지고, 언제 줄일까</h2></div>
+          <div class="question"><b>핵심 질문</b>키가 50개뿐인데 AOF 파일은 왜 수천 줄일까? 다시 켤 때 무엇이 느려질까?</div>
+          <div class="intuition"><b>직관</b>통장 잔고를 알려면 지금 잔액 한 줄이면 되는데, 거래 내역을 처음부터 다 더해서 구하는 것과 같습니다.</div>
+          <h3>원리</h3>
+          <p>AOF 는 "일어난 일의 기록" 이라 같은 키를 1만 번 바꾸면 1만 줄입니다. 파일은 디스크를 차지하고, 재시작 때는 그 모든 줄을 다시 실행하느라 느립니다. 재작성은 "지금 상태" 만 남깁니다. 반대로 RDB 스냅샷은 처음부터 "지금 상태" 만 저장하지만 스냅샷 사이의 변경은 잃습니다. Redis 는 4.0 부터 둘을 섞어(AOF 파일 앞부분은 RDB 스냅샷, 그 뒤는 AOF) 재작성할 수 있습니다.</p>
+          <div class="lab">
+            <div class="lab-head"><span class="tag">실험 7</span> 키 50개에 쓰기 5,000번</div>
+            <button type="button" id="aof-run" class="primary">재기</button>
+            <div id="aof-out"></div>
+          </div>
+          <details class="think"><summary>더 깊이: 재작성하는 동안 들어온 쓰기는?</summary><div class="a">미니 레디스는 재작성을 동기로 해서 그동안 다른 명령이 없습니다. 실제 Redis 는 fork 한 자식 프로세스가 재작성하는 동안 부모가 계속 명령을 받고, 그 사이의 쓰기를 별도 버퍼에 모았다가 새 파일 끝에 붙인 뒤 교체합니다.</div></details>
+          <div class="connect"><b>내 코드에서</b> <code>rewriteAof()</code> 와 <code>AofFile.rewrite()</code>(임시 파일 → fsync → rename). 서버가 켜질 때 한 번 재작성합니다.</div>
+          <label class="got"><input type="checkbox" class="got-it" data-id="aofsize" /> AOF 재작성이 필요한 이유와 RDB 와의 차이를 말할 수 있어요</label>
+        </section>
+
+        <section class="card deep" id="limits">
+          <div class="sec-head"><span class="num">8</span><h2>미니 레디스의 한계 찾기</h2></div>
+          <div class="question"><b>핵심 질문</b>내 구현이 실제 Redis 와 다른 곳은 어디이고, 어떤 상황에서 드러날까?</div>
+          <p>먼저 "무슨 일이 생길까?" 를 답해 보고 펼쳐 보세요. 발표의 "한계와 개선 방향" 질문 대비입니다.</p>
+          <details class="think"><summary>상황 1. 메모리가 가득 찰 때까지 SET 을 계속하면?</summary><div class="a">미니 레디스에는 maxmemory 와 내보내기(eviction) 정책이 없어서 Node 프로세스가 메모리 부족으로 죽습니다. 실제 Redis 는 근사 LRU/LFU 로 오래 안 쓴 키를 지우거나 쓰기를 거절합니다.</div></details>
+          <details class="think"><summary>상황 2. 레디스 서버 한 대가 통째로 고장 나면?</summary><div class="a">AOF 는 같은 디스크에 있으니 디스크가 망가지면 같이 잃습니다. 실제로는 복제(replica)로 다른 서버에 실시간으로 복사하고, Sentinel/Cluster 가 장애를 감지해 복제본을 주 서버로 올립니다.</div></details>
+          <details class="think"><summary>상황 3. 누군가 같은 버킷으로 가는 키를 수만 개 보내면?</summary><div class="a">FNV-1a 에 무작위 씨앗이 없어서 공격자가 충돌하는 키를 미리 계산할 수 있습니다(HashDoS). 체인이 길어져 조회가 O(n) 이 되고 서버가 멈춥니다. 실제 Redis 는 프로세스마다 다른 씨앗을 섞은 SipHash 를 씁니다.</div></details>
+          <details class="think"><summary>상황 4. 키가 1,000만 개인데 KEYS 나 DELPATTERN 을 부르면?</summary><div class="a">한 스레드가 전부 훑는 동안 다른 모든 요청이 멈춥니다(4번 주제). 실제 Redis 는 커서로 조금씩 훑는 SCAN 과, 큰 값의 메모리를 백그라운드 스레드에서 푸는 UNLINK 를 씁니다.</div></details>
+          <details class="think"><summary>상황 5. 반대로 이 구현이 잘한 점은?</summary><div class="a">점진적 리해시, 지연 + 주기 만료, 태그 무효화, 원자적 AOF 재작성을 실제 Redis 와 같은 원리로 구현했고, 그 모든 것을 브라우저에서 눈으로 보고 테스트로 증명했습니다(가짜 시계로 만료, 강제 종료 후 복원).</div></details>
+          <label class="got"><input type="checkbox" class="got-it" data-id="limits" /> 미니 레디스의 한계와 개선 방향을 상황으로 설명할 수 있어요</label>
+        </section>
+
+        <div class="next card">
+          <b>다음으로</b>
+          <div class="next-links">
+            <a href="../walkthrough/index.html">코드 해설에서 함수 하나씩 읽기 →</a>
+            <a href="../sandbox/index.html">샌드박스에서 실험을 직접 바꿔 보기 →</a>
+            <a href="../theory/index.html#qa">이론 페이지의 예상 질문으로 점검 →</a>
+          </div>
+        </div>
+      </article>
+    </div>
+  </main>
+
+  <script>
+    (function () {
+      var s = document.createElement("script");
+      if (location.protocol === "file:") {
+        s.src = "./bundle.js";
+      } else {
+        s.type = "module";
+        s.src = "./main.js";
+      }
+      document.body.appendChild(s);
+    })();
+  </script>
+  <!-- chat:js --><script src="../../../tools/chat.js"></script>
+</body>
+</html>

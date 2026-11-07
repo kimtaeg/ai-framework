@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>미니 레디스 샌드박스</title>
+  <link rel="stylesheet" href="../../../styles/base.css" />
+  <link rel="stylesheet" href="../../../sandbox/sandbox.css" />
+  <link rel="stylesheet" href="../../week2.css" />
+  <!-- chat:css --><link rel="stylesheet" href="../../../tools/chat.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../../../index.html#redis">mini<span>Redis</span></a>
+    <nav>
+      <a href="../../../index.html#redis">홈</a>
+      <a href="../../../week2/redis/guide/index.html">학습 가이드</a>
+      <a href="../../../week2/redis/index.html">미니 레디스</a>
+      <a href="../../../week2/redis/examples/index.html">예제</a>
+      <a href="./index.html" aria-current="page">샌드박스</a>
+      <a href="../../../week2/redis/walkthrough/index.html">코드 해설</a>
+      <a href="../../../week2/redis/theory/index.html">레디스 이론</a>
+      <a href="../../../week2/redis/deepdive/index.html">개념 더 파고들기</a>
+      <a href="../../../week2/redis/cheatsheet/index.html">한 장 요약</a>
+      <a href="../../../week2/redis/docs/index.html">설명서</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>미니 레디스 샌드박스</h1>
+    <p class="lead">직접 만든 미니 레디스 로 원하는 기능을 바로 만들어 보는 곳입니다. <b>틀</b>을 고르고, <b>조각</b>을 끼워 넣고, 직접 타이핑해서 고친 뒤 <b>실행</b>하세요. 코드는 이 브라우저에 자동 저장됩니다.</p>
+
+    <div class="sb-bar card">
+      <span class="sb-label">틀</span>
+      <div class="tpl-list" id="tpl-list"></div>
+    </div>
+
+    <div class="sb-grid">
+      <section class="card sb-edit">
+        <div class="card-head">
+          코드
+          <span class="sub" id="saved">자동 저장됨</span>
+          <span class="spacer"></span>
+          <label class="toggle"><input type="checkbox" id="auto" /> 타이핑 멈추면 자동 실행</label>
+          <button id="reset" class="ghost small" title="지금 틀의 처음 코드로">되돌리기</button>
+          <button id="run" class="primary small" title="Ctrl+Enter">▶ 실행</button>
+        </div>
+        <div class="snip-list" id="snip-list"></div>
+        <div class="editor-wrap">
+          <div class="gutter mono" id="gutter" aria-hidden="true"></div>
+          <textarea id="code" class="mono" spellcheck="false" aria-label="코드 편집기"></textarea>
+        </div>
+        <div class="sb-foot muted">
+          <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 실행 · <kbd>Tab</kbd> 들여쓰기 · 조각 버튼은 <b>커서 위치</b>에 들어갑니다
+        </div>
+      </section>
+
+      <section class="sb-side">
+        <div class="card sb-out">
+          <div class="card-head">콘솔 <span class="sub"><span id="console-count">0</span>줄 · print() 결과와 에러</span><span class="spacer"></span><button id="clear-console" class="ghost small">지우기</button></div>
+          <div class="error" id="error" hidden></div>
+          <ol class="console mono" id="console"><li class="sys">실행하면 print() 결과가 여기에 나옵니다.</li></ol>
+        </div>
+        <div class="card sb-tip">
+          <div class="card-head">지금 틀 <span class="sub" id="tpl-desc"></span></div>
+          <div class="card-body"><b>해볼 것</b><ul id="tpl-try"></ul></div>
+        </div>
+      </section>
+
+      <aside class="card sb-insp sb-state">
+        <div class="card-head">레디스 키 <span class="sub">실행 후 상태</span></div><div class="table-wrap"><table class="data"><thead><tr><th>키</th><th>값</th><th>TTL</th></tr></thead><tbody id="sb-keys"></tbody></table></div>
+        <div class="card-body sb-state-foot">
+          <label class="toggle"><input type="checkbox" id="fresh" checked /> 실행할 때마다 새로 시작</label>
+          <button id="wipe" class="ghost small">지금 비우기</button>
+        </div>
+      </aside>
+    </div>
+
+    <details class="card sb-help">
+      <summary>쓸 수 있는 것과 사용법</summary>
+      <div class="help-grid">
+        <div>
+          <b>예시</b>
+          <pre><code>redis.exec('SET user:1 김정글 EX 60');\nredis.exec('GET user:1');      // "김정글"\nredis.exec('TTL user:1');      // 60\nredis.command(['INCR', 'visits']); // 1</code></pre>
+        </div>
+        <div>
+          <b>코드 안에서 쓸 수 있는 것</b>
+          <ul>
+            <li><code>redis.exec('SET a 1 EX 10')</code> · <code>redis.command(['GET', 'a'])</code> — 명령 실행</li><li><code>new HashTable()</code> — 직접 만든 해시 테이블 (<code>set / get / delete / snapshot()</code>)</li><li><code>new MiniRedis({ onWrite })</code> — 새 저장소 (AOF 실험용)</li>
+            <li><code>print(…)</code> · <code>await sleep(ms)</code> · <code>time('이름', () =&gt; { … })</code></li>
+            <li>15초 안에 끝나지 않으면 멈춥니다.</li>
+          </ul>
+        </div>
+      </div>
+    </details>
+  </main>
+
+  <script>
+    (function () {
+      var s = document.createElement("script");
+      if (location.protocol === "file:") {
+        s.src = "./bundle.js";
+      } else {
+        s.type = "module";
+        s.src = "./main.js";
+      }
+      document.body.appendChild(s);
+    })();
+  </script>
+  <!-- chat:js --><script src="../../../tools/chat.js"></script>
+</body>
+</html>
