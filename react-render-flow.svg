@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="630" viewBox="0 0 680 630" role="img" font-family="'Pretendard','Malgun Gothic','Apple SD Gothic Neo',sans-serif">
+  <title>React 렌더링 전체 흐름</title>
+  <desc>setState 호출부터 state, 컴포넌트 함수 실행, diff, patch, DOM 반영까지의 흐름. 가운데 세 단계는 React 관리자가 순서대로 실행하고, 직전 VDOM 을 보관해 다음 비교에 씁니다.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M2 1L8 5L2 9" fill="none" stroke="#5F5E5A" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      .t { font-size: 14px; font-weight: 600; }
+      .s { font-size: 12px; }
+      .gray rect { fill: #F1EFE8; stroke: #5F5E5A; }
+      .gray .t { fill: #2C2C2A; } .gray .s { fill: #5F5E5A; }
+      .teal rect { fill: #E1F5EE; stroke: #0F6E56; }
+      .teal .t { fill: #085041; } .teal .s { fill: #0F6E56; }
+      .purple rect { fill: #EEEDFE; stroke: #534AB7; }
+      .purple .t { fill: #3C3489; } .purple .s { fill: #534AB7; }
+      .arr { stroke: #5F5E5A; stroke-width: 1.5; fill: none; }
+      .note { font-size: 12px; fill: #5F5E5A; }
+    </style>
+  </defs>
+
+  <rect width="680" height="630" fill="#FFFFFF"/>
+
+  <g class="gray">
+    <rect x="190" y="30" width="300" height="56" rx="8" stroke-width="0.8"/>
+    <text class="t" x="340" y="50" text-anchor="middle" dominant-baseline="central">사용자 클릭 → setCount(1)</text>
+    <text class="s" x="340" y="69" text-anchor="middle" dominant-baseline="central">"다시 그려" 신호만 보냄</text>
+  </g>
+  <line x1="340" y1="88" x2="340" y2="118" class="arr" marker-end="url(#arrow)"/>
+
+  <g class="teal">
+    <rect x="190" y="120" width="300" height="56" rx="8" stroke-width="0.8"/>
+    <text class="t" x="340" y="140" text-anchor="middle" dominant-baseline="central">state (훅 서랍)</text>
+    <text class="s" x="340" y="159" text-anchor="middle" dominant-baseline="central">값만 보관: count = 1</text>
+  </g>
+
+  <rect x="160" y="200" width="490" height="292" rx="16" fill="none" stroke="#888780" stroke-width="1" stroke-dasharray="5 4"/>
+  <text class="t" x="176" y="220" fill="#444441" dominant-baseline="central">React 관리자</text>
+  <line x1="340" y1="178" x2="340" y2="234" class="arr" marker-end="url(#arrow)"/>
+
+  <g class="purple">
+    <rect x="190" y="236" width="300" height="56" rx="8" stroke-width="0.8"/>
+    <text class="t" x="340" y="256" text-anchor="middle" dominant-baseline="central">컴포넌트 함수 실행</text>
+    <text class="s" x="340" y="275" text-anchor="middle" dominant-baseline="central">state 꺼내서 새 VDOM 만듦</text>
+  </g>
+  <line x1="340" y1="294" x2="340" y2="324" class="arr" marker-end="url(#arrow)"/>
+
+  <g class="purple">
+    <rect x="190" y="326" width="300" height="56" rx="8" stroke-width="0.8"/>
+    <text class="t" x="340" y="346" text-anchor="middle" dominant-baseline="central">diff</text>
+    <text class="s" x="340" y="365" text-anchor="middle" dominant-baseline="central">옛 VDOM vs 새 VDOM → 고칠 목록</text>
+  </g>
+  <line x1="340" y1="384" x2="340" y2="414" class="arr" marker-end="url(#arrow)"/>
+
+  <g class="purple">
+    <rect x="190" y="416" width="300" height="56" rx="8" stroke-width="0.8"/>
+    <text class="t" x="340" y="436" text-anchor="middle" dominant-baseline="central">patch</text>
+    <text class="s" x="340" y="455" text-anchor="middle" dominant-baseline="central">목록에 있는 곳만 DOM 수정</text>
+  </g>
+
+  <g class="gray">
+    <rect x="520" y="326" width="114" height="56" rx="8" stroke-width="0.8"/>
+    <text class="t" x="577" y="346" text-anchor="middle" dominant-baseline="central">옛 VDOM</text>
+    <text class="s" x="577" y="365" text-anchor="middle" dominant-baseline="central">직전 설계도</text>
+  </g>
+  <line x1="518" y1="354" x2="494" y2="354" class="arr" marker-end="url(#arrow)"/>
+  <path d="M492 444 L577 444 L577 386" class="arr" stroke-dasharray="4 3" marker-end="url(#arrow)"/>
+  <text class="note" x="586" y="420" dominant-baseline="central">보관</text>
+
+  <line x1="340" y1="474" x2="340" y2="518" class="arr" marker-end="url(#arrow)"/>
+
+  <g class="teal">
+    <rect x="190" y="520" width="300" height="56" rx="8" stroke-width="0.8"/>
+    <text class="t" x="340" y="540" text-anchor="middle" dominant-baseline="central">DOM (실제 화면)</text>
+    <text class="s" x="340" y="559" text-anchor="middle" dominant-baseline="central">고쳐진 결과를 보여줌: 1</text>
+  </g>
+
+  <text class="note" x="340" y="606" text-anchor="middle" dominant-baseline="central">↻ 화면을 보고 다시 클릭하면 맨 위부터 반복</text>
+</svg>
