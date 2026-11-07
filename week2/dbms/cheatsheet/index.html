@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>미니 DBMS 한 장 요약</title>
+  <link rel="stylesheet" href="../../../styles/base.css" />
+  <style>
+    main { max-width: 1200px; }
+    .cs-top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+    .cs-top h1 { margin: 0; }
+    .cs-top p { margin: 4px 0 0; color: var(--muted); }
+    .cs { columns: 3 300px; column-gap: 14px; }
+    .cs > div { break-inside: avoid; margin-bottom: 14px; border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--surface); font-size: 13px; line-height: 1.6; }
+    .cs h2 { font-size: 14px; margin: 0 0 6px; color: var(--accent); }
+    .cs ul, .cs ol { margin: 0; padding-left: 18px; }
+    .cs li + li { margin-top: 2px; }
+    .cs code { font-family: var(--mono); font-size: 11.5px; background: var(--surface-2); padding: 0 4px; border-radius: 4px; }
+    .cs table { border-collapse: collapse; width: 100%; font-size: 12px; }
+    .cs th, .cs td { border: 1px solid var(--border); padding: 3px 6px; text-align: left; vertical-align: top; }
+    .cs th { background: var(--surface-2); }
+    .cs .flow { font: 12px/1.7 var(--mono); background: var(--surface-2); border-radius: 6px; padding: 6px 8px; }
+    .cs .qa dt { font-weight: 700; margin-top: 6px; }
+    .cs .qa dt:first-child { margin-top: 0; }
+    .cs .qa dd { margin: 0 0 0 10px; color: var(--muted); }
+    .cs .bad { color: var(--danger); }
+    .cs .good { color: var(--ok); }
+    @media print {
+      @page { size: A4; margin: 10mm; }
+      .topbar, .no-print { display: none !important; }
+      body { background: #fff; color: #000; font-size: 11px; }
+      main { padding: 0; max-width: none; }
+      .cs { columns: 3; column-gap: 8px; }
+      .cs > div { padding: 6px 8px; margin-bottom: 6px; border-color: #bbb; font-size: 10px; line-height: 1.45; box-shadow: none; }
+      .cs h2 { font-size: 11px; margin-bottom: 3px; color: #000; }
+      .cs code, .cs .flow, .cs th { background: #f2f2f2; }
+      .cs table { font-size: 9.5px; }
+      .cs .qa dd { color: #333; }
+      .cs-top h1 { font-size: 16px; }
+      .cs-top p { display: none; }
+    }
+  </style>
+
+  <!-- chat:css --><link rel="stylesheet" href="../../../tools/chat.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../../../index.html#dbms">mini<span>DBMS</span></a>
+    <nav>
+      <a href="../../../index.html#dbms">홈</a>
+      <a href="../../../week2/dbms/guide/index.html">학습 가이드</a>
+      <a href="../../../week2/dbms/phase1/index.html">Phase 1 · SQL</a>
+      <a href="../../../week2/dbms/phase2/index.html">Phase 2 · B+ 트리</a>
+      <a href="../../../week2/dbms/phase3/index.html">Phase 3 · API 서버</a>
+      <a href="../../../week2/dbms/examples/index.html">예제</a>
+      <a href="../../../week2/dbms/sandbox/index.html">샌드박스</a>
+      <a href="../../../week2/dbms/walkthrough/index.html">코드 해설</a>
+      <a href="../../../week2/dbms/theory/index.html">DBMS 이론</a>
+      <a href="../../../week2/dbms/deepdive/index.html">개념 더 파고들기</a>
+      <a href="./index.html" aria-current="page">한 장 요약</a>
+      <a href="../../../week2/dbms/docs/index.html">설명서</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="cs-top">
+      <div>
+        <h1>미니 DBMS 한 장 요약</h1>
+        <p>발표 직전에 훑어보는 핵심 정리. 인쇄하면 A4 한 장에 맞춰집니다.</p>
+      </div>
+      <button class="primary no-print" onclick="window.print()">🖨 인쇄 / PDF 저장</button>
+    </div>
+
+    <div class="cs">
+      <div>
+        <h2>① SQL 처리 흐름</h2>
+        <div class="flow">SQL 문자열<br>→ tokenize: 키워드·이름·숫자·'문자열'<br>→ parse (재귀 하강): AST<br>→ plan: id=? / id 범위 / 전체<br>→ execute: 파일 읽기·쓰기<br>→ 결과 + 실행 계획</div>
+      </div>
+
+      <div>
+        <h2>② 토크나이저 · 파서</h2>
+        <ul><li>토큰마다 <b>행·열 위치</b> → 에러에 표시</li><li><code>''</code> = 따옴표 하나, <code>--</code> 주석</li><li>규칙 하나 = 함수 하나 (insert, select, condition)</li><li>BETWEEN → <code>&gt;=</code>, <code>&lt;=</code> 두 조건</li><li>입력을 이어 붙이면 <span class="bad">SQL 인젝션</span></li></ul>
+      </div>
+
+      <div>
+        <h2>③ 파일 저장</h2>
+        <ul><li>테이블 = 파일 <code>users.tbl</code>, 한 줄 = 레코드</li><li>쉼표·따옴표 → <code>"…"</code>, NULL → <code>\N</code>, 줄바꿈 → <code>\n</code></li><li>위치 = 쓸 때의 <b>파일 크기(바이트)</b></li><li>1MB 씩 모아 쓰기 (100만 건 2초)</li><li>여러 행 INSERT 는 검사 먼저 → 원자적</li></ul>
+      </div>
+
+      <div>
+        <h2>④ B+ 트리</h2>
+        <ul><li>id → 파일 위치. 데이터는 <b>리프에만</b>, 리프끼리 연결</li><li>넘치면 분할: 리프는 키 <b>복사</b>, 내부는 <b>이동</b> → 루트가 쪼개지면 높이 +1</li><li>높이 ≈ log<sub>m</sub>(n). 차수 64, 100만 건 → <b>높이 4</b></li><li>범위 = 첫 리프 찾고 옆으로</li></ul>
+      </div>
+
+      <div>
+        <h2>⑤ 실행 계획</h2>
+        <table><tr><td><code>id = 3</code></td><td class="good">index-lookup · 1줄</td></tr><tr><td><code>id BETWEEN …</code></td><td class="good">index-range</td></tr><tr><td><code>email = …</code></td><td class="bad">full-scan · 전부</td></tr><tr><td><code>name=… AND id=3</code></td><td class="good">id 로 좁힘</td></tr></table>
+      </div>
+
+      <div>
+        <h2>⑥ 100만 건 결과</h2>
+        <table><tr><th>작업</th><th>시간</th></tr><tr><td>INSERT 100만</td><td>2.09초 (41.7MB)</td></tr><tr><td><code>id = ?</code></td><td class="good">0.038ms</td></tr><tr><td><code>email = ?</code></td><td class="bad">1,032ms</td></tr><tr><td>차이</td><td><b>약 27,000배</b></td></tr><tr><td>재시작 재구성</td><td>0.47초</td></tr></table>
+      </div>
+
+      <div>
+        <h2>⑦ 스레드 풀 서버</h2>
+        <div class="flow">POST /api/sql<br>→ 메인: 파싱 (에러면 400)<br>→ 테이블별 읽기/쓰기 락 (이름순)<br>→ 쉬는 워커에 전달 (큐, 돌아가며)<br>→ INSERT 면 다른 워커에 인덱스 알림<br>→ 락 해제 → 응답</div>
+      </div>
+
+      <div>
+        <h2>⑧ 동시성 이슈 → 해결</h2>
+        <table><tr><td>같은 id / 줄 섞임</td><td>쓰기 락</td></tr><tr><td>반쯤 쓴 것 읽기</td><td>쓰는 중엔 읽기도 대기</td></tr><tr><td>워커마다 다른 인덱스</td><td>알림 후 락 해제</td></tr><tr><td>교착 상태</td><td>이름 순서로 잠금</td></tr><tr><td>쓰기 기아</td><td>대기열 순서</td></tr></table>
+      </div>
+
+      <div>
+        <h2>⑨ CLI</h2>
+        <ul><li><code>cli.js run query.sql</code></li><li><code>cli.js exec "SELECT …"</code></li><li><code>cli.js seed users 1000000</code></li><li><code>cli.js info</code></li><li><code>npm run bench:dbms</code> · <code>npm run dbms</code></li></ul>
+      </div>
+
+      <div>
+        <h2>⑩ 예상 질문 한 줄 답</h2>
+        <dl class="qa"><dt>SQL 처리?</dt><dd>토큰 → AST → 계획 → 실행</dd><dt>왜 B+ 트리?</dt><dd>= 와 범위 둘 다, 낮은 높이 = 디스크 읽기 적음</dd><dt>동시성?</dt><dd>읽기/쓰기 락 + 인덱스 알림</dd><dt>한계?</dt><dd>트랜잭션 · WAL · 디스크 인덱스 · 보조 인덱스 없음</dd><dt>테스트?</dt><dd>B+ 트리 구조 검증, 형식 퍼즈, 동시 INSERT 60개</dd></dl>
+      </div>
+    </div>
+  </main>
+  <!-- chat:js --><script src="../../../tools/chat.js"></script>
+</body>
+</html>

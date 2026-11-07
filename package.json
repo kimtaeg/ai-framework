@@ -1,0 +1,20 @@
+{
+  "name": "mini-react",
+  "version": "1.0.0",
+  "description": "정글 과제: 미니 리액트(Virtual DOM·Hooks), 미니 레디스(해시 테이블 키-값 저장소), 미니 DBMS(SQL·B+ 트리·스레드 풀)",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "node build.js",
+    "prestart": "node build.js",
+    "start": "node server.js",
+    "pretest": "node build.js",
+    "test": "node --test --test-timeout=20000 \"tests/**/*.test.js\"",
+    "redis": "node week2/redis/server.js",
+    "dbms": "node week2/dbms/server.js",
+    "bench:dbms": "node week2/dbms/bench.js --rows 1000000"
+  },
+  "devDependencies": {
+    "jsdom": "^31.0.0"
+  }
+}

@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>레디스 이론 총정리</title>
+  <link rel="stylesheet" href="../../../styles/base.css" />
+  <link rel="stylesheet" href="../../../theory/theory.css" />
+  <link rel="stylesheet" href="../../week2.css" />
+  <!-- chat:css --><link rel="stylesheet" href="../../../tools/chat.css" />
+</head>
+<body>
+  <div class="progress-line" id="progress"></div>
+  <header class="topbar">
+    <a class="brand" href="../../../index.html#redis">mini<span>Redis</span></a>
+    <nav>
+      <a href="../../../index.html#redis">홈</a>
+      <a href="../../../week2/redis/guide/index.html">학습 가이드</a>
+      <a href="../../../week2/redis/index.html">미니 레디스</a>
+      <a href="../../../week2/redis/examples/index.html">예제</a>
+      <a href="../../../week2/redis/sandbox/index.html">샌드박스</a>
+      <a href="../../../week2/redis/walkthrough/index.html">코드 해설</a>
+      <a href="./index.html" aria-current="page">레디스 이론</a>
+      <a href="../../../week2/redis/deepdive/index.html">개념 더 파고들기</a>
+      <a href="../../../week2/redis/cheatsheet/index.html">한 장 요약</a>
+      <a href="../../../week2/redis/docs/index.html">설명서</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>레디스 이론 총정리</h1>
+    <p class="lead">처음 보는 사람도 따라올 수 있도록, 큰 그림 → 해시 테이블 → 만료와 캐시 → 동시성과 영속성 → 과제 정리 순서로 정리했습니다. 직접 눌러볼 수 있는 예제도 들어 있어요.</p>
+
+    <div class="guide card">
+      <div class="guide-col">
+        <b>난이도 표시</b>
+        <div><span class="lv basic">기초</span> 먼저 알아야 할 개념</div>
+        <div><span class="lv core">과제 핵심</span> 이번 과제 발표에 꼭 필요</div>
+        <div><span class="lv deep">심화</span> 실제 Redis 를 더 깊이</div>
+      </div>
+      <div class="guide-col">
+        <b>상자 종류</b>
+        <div><span class="dot d-easy"></span> 쉽게 말하면 (비유)</div>
+        <div><span class="dot d-mini"></span> 미니 레디스에서는 (내 코드와 연결)</div>
+        <div><span class="dot d-warn"></span> 주의 / 흔한 오해</div>
+        <div><span class="dot d-sum"></span> 핵심 정리</div>
+      </div>
+      <div class="guide-col">
+        <b>보기 설정</b>
+        <div class="seg-group" role="group" aria-label="보기 설정">
+          <button class="seg on" data-filter="all">전체 보기</button>
+          <button class="seg" data-filter="core">과제 핵심만</button>
+        </div>
+        <p class="muted small">"과제 핵심만"을 누르면 기초와 과제 핵심 주제만 남습니다.</p>
+      </div>
+    </div>
+
+    <div class="layout">
+      <aside class="toc card" id="toc">
+        <input type="search" class="search" id="search" placeholder="키워드 검색 (예: TTL, 리해시)" aria-label="이론 검색" />
+        <div class="group">1 · 큰 그림</div>
+        <a href="#redis">Redis 는 무엇인가</a>
+        <a href="#compare">Redis vs DBMS</a>
+        <div class="group">2 · 해시 테이블</div>
+        <a href="#hash">해시 테이블</a>
+        <a href="#collision">충돌 처리</a>
+        <a href="#resize">부하율과 리해시</a>
+        <div class="group">3 · 만료와 캐시</div>
+        <a href="#ttl">만료 (TTL)</a>
+        <a href="#cache">캐시 전략</a>
+        <a href="#invalidate">캐시 무효화</a>
+        <a href="#eviction">메모리가 꽉 차면</a>
+        <div class="group">4 · 동시성과 영속성</div>
+        <a href="#concurrency">단일 스레드 동시성</a>
+        <a href="#persistence">영속성 (AOF · RDB)</a>
+        <div class="group">5 · 과제 정리</div>
+        <a href="#api">API 설계</a>
+        <a href="#qa">예상 질문</a>
+      </aside>
+
+      <article id="content">
+        <div class="empty-search" id="empty-search">검색 결과가 없습니다.</div>
+
+        <!-- ============================================================ 1 -->
+        <div class="part"><span>1</span> 큰 그림</div>
+
+        <section class="card" id="redis" data-level="basic">
+          <div class="sec-head"><h2>Redis 는 무엇인가</h2><span class="lv basic">기초</span></div>
+          <p class="one">메모리에 데이터를 두는 아주 빠른 키-값 저장소. 한 번 조회가 수십~수백 µs 입니다(디스크 DB 는 보통 ms 단위).</p>
+          <div class="easy"><b>쉽게 말하면</b>"메모리에 있는 아주 빠른 사전". 단어(키)를 알면 뜻(값)을 바로 찾습니다. 사전 전체를 뒤지지 않아요.</div>
+          <h3>주로 쓰는 곳</h3>
+          <ul>
+            <li><b>캐시</b>: 느린 DB · 외부 API 결과를 잠깐 저장</li>
+            <li><b>로그인 세션</b>: 요청마다 확인해야 해서 빨라야 함</li>
+            <li><b>카운터 · 순위표</b>: 조회수, 좋아요, 실시간 랭킹</li>
+            <li><b>요청 횟수 제한 · 분산 락</b>: 여러 서버가 함께 보는 공용 메모</li>
+          </ul>
+          <h3>특징</h3>
+          <div class="grid2">
+            <div class="box"><h4>단일 스레드 명령 처리</h4><p>명령을 한 번에 하나씩 끝까지 실행합니다. 락 없이도 명령 하나는 원자적.</p></div>
+            <div class="box"><h4>메모리 + 선택적 디스크 백업</h4><p>기본은 메모리. 꺼져도 살리려면 AOF(명령 기록)나 RDB(스냅샷)를 켭니다.</p></div>
+          </div>
+          <div class="mini"><b>미니 레디스에서는</b>값은 문자열만 지원하고, 실제 Redis 의 TCP · RESP 프로토콜 대신 과제 조건("API 형태")에 맞춰 HTTP + JSON 으로 외부에 엽니다.</div>
+        </section>
+
+        <section class="card" id="compare" data-level="basic">
+          <div class="sec-head"><h2>Redis vs DBMS — 언제 무엇을</h2><span class="lv basic">기초</span></div>
+          <p class="one">DBMS 가 원본, Redis 는 빠른 복사본. 실제 서비스는 둘을 함께 씁니다.</p>
+          <div class="table-wrap"><table>
+            <tr><th></th><th>Redis</th><th>DBMS</th></tr>
+            <tr><td>저장 위치</td><td>메모리</td><td>디스크</td></tr>
+            <tr><td>자료 구조</td><td>해시 테이블: 키로 O(1)</td><td>B+ 트리: 키로 O(log n), 범위 가능</td></tr>
+            <tr><td>질의</td><td>키로만 찾기</td><td>SQL: 아무 열 조건, 범위, 조인</td></tr>
+            <tr><td>동시성</td><td>단일 스레드, 명령 단위 원자성</td><td>스레드 풀 + 락, 트랜잭션</td></tr>
+            <tr><td>쓰임</td><td>캐시, 세션, 카운터</td><td>회원, 주문, 결제 같은 원본</td></tr>
+          </table></div>
+          <div class="sum"><b>핵심 정리</b>1주차 React 가 화면 쪽에서 "다시 하지 않기"(diff, useMemo)를 했다면, Redis 는 서버 쪽에서 같은 일을 합니다.</div>
+        </section>
+
+        <!-- ============================================================ 2 -->
+        <div class="part"><span>2</span> 해시 테이블</div>
+
+        <section class="card" id="hash" data-level="core">
+          <div class="sec-head"><h2>해시 테이블</h2><span class="lv core">과제 핵심</span></div>
+          <p class="one">키를 정해진 계산식(해시 함수)에 넣어 나온 번호의 칸(버킷)에 저장합니다. 찾을 때도 같은 계산을 하면 바로 그 칸으로 가니 평균 O(1).</p>
+          <div class="easy"><b>쉽게 말하면</b>사물함 번호 정하기 규칙입니다. 이름을 계산식에 넣으면 사물함 번호가 나오고, 찾을 때도 같은 계산을 하면 바로 그 칸으로 갑니다.</div>
+          <h3>구성 요소</h3>
+          <ul>
+            <li><b>해시 함수</b>: 문자열 → 정수. 같은 입력이면 항상 같은 값, 조금만 달라도 값이 크게 달라야 고르게 퍼집니다.</li>
+            <li><b>버킷 배열</b>: 크기 m. <code>index = hash % m</code>. m 을 2의 거듭제곱으로 두면 <code>hash &amp; (m-1)</code> 로 더 빠름.</li>
+            <li><b>충돌 처리</b>: 서로 다른 키가 같은 버킷에 오는 경우(피할 수 없음 — 비둘기집 원리).</li>
+          </ul>
+<pre><code>// FNV-1a: 글자마다 XOR 하고 큰 소수를 곱해서 비트를 섞는다
+let h = 0x811c9dc5;
+for (const ch of key) { h ^= ch.charCodeAt(0); h = Math.imul(h, 0x01000193); }
+return h &gt;&gt;&gt; 0;   // 0 ~ 2³²-1</code></pre>
+          <div class="demo" id="demo-hash">
+            <div class="demo-title">직접 해보기: 키는 어느 버킷으로 갈까? (버킷 8개)</div>
+            <div class="demo-row">
+              <input id="hd-key" value="user:1" aria-label="키" />
+              <button type="button" id="hd-add" class="primary small">넣기</button>
+              <button type="button" id="hd-many" class="small">user:0~9 한꺼번에</button>
+              <button type="button" id="hd-clear" class="ghost small">비우기</button>
+            </div>
+            <p class="demo-msg" id="hd-msg">키를 넣으면 FNV-1a 해시 값과 버킷 번호가 나옵니다.</p>
+            <div class="buckets" id="hd-buckets"></div>
+          </div>
+          <div class="mini"><b>미니 레디스에서는</b><code>week2/redis/hashtable.js</code> — JS 의 Map/Object 를 저장소로 쓰지 않고 버킷 배열 + 연결 리스트로 직접 구현. <a href="../index.html#hashtable">Playground 2</a> 에서 실제 저장소의 버킷을 봅니다.</div>
+        </section>
+
+        <section class="card" id="collision" data-level="core">
+          <div class="sec-head"><h2>충돌 처리: 체이닝 vs 개방 주소법</h2><span class="lv core">과제 핵심</span></div>
+          <p class="one">같은 버킷에 온 키들을 어떻게 함께 둘지에 대한 두 가지 방법.</p>
+          <div class="grid2">
+            <div class="box"><h4>체이닝 (채택)</h4><p>같은 버킷의 원소를 연결 리스트로 잇는다. 구현이 쉽고 삭제가 간단하며, 부하율이 1 을 넘어도 동작한다. <b>Redis 의 dict 가 이 방식.</b></p></div>
+            <div class="box"><h4>개방 주소법</h4><p>충돌하면 배열의 다른 빈칸을 찾아 넣는다. 메모리가 연속이라 빠르지만, 부하율이 높으면 급격히 느려지고 삭제에 "지워짐 표시"가 필요하다.</p></div>
+          </div>
+          <div class="warn"><b>주의</b>최악의 경우(모든 키가 한 버킷)는 O(n) 입니다. 일부러 충돌을 만드는 공격(HashDoS)을 막으려고 실제 Redis 는 무작위 씨앗을 섞은 SipHash 를 씁니다. 미니 레디스의 FNV-1a 에는 씨앗이 없습니다.</div>
+          <div class="mini"><b>미니 레디스에서는</b>테스트가 해시 함수를 <code>() =&gt; 0</code> 으로 바꿔도(모든 키가 한 버킷) 체이닝으로 정확히 동작하는지 검증합니다.</div>
+        </section>
+
+        <section class="card" id="resize" data-level="core">
+          <div class="sec-head"><h2>부하율과 점진적 리해시</h2><span class="lv core">과제 핵심</span></div>
+          <p class="one">부하율(원소 수 / 버킷 수)이 1 을 넘으면 버킷을 2배로 늘리고 원소를 새 위치로 옮깁니다. 한 번에가 아니라 조금씩.</p>
+          <div class="easy"><b>쉽게 말하면</b>이사를 하루 만에 끝내면 그날은 아무것도 못 합니다. 매일 상자 몇 개씩 옮기면 생활은 계속됩니다. 서버에게 "생활" 은 다른 요청에 답하는 일입니다.</div>
+          <h3>두 테이블로 나눠 옮기기</h3>
+          <ul>
+            <li>조회·삭제: 두 테이블 모두 확인 → 옮기는 도중에도 키를 놓치지 않음</li>
+            <li>추가: 새 테이블에만 (옛 테이블은 비워지는 중)</li>
+            <li>연산이 올 때마다 옛 버킷 하나씩 이동, 다 옮기면 새 테이블이 지금 테이블</li>
+          </ul>
+          <p>2배씩 키우면 원소 하나당 평균 옮김 횟수가 상수라서, 추가는 <b>분할 상환(amortized) O(1)</b> 입니다.</p>
+          <div class="sum"><b>핵심 정리</b>한 번에 옮기면 100만 개일 때 그 연산 하나가 수십만 개를 옮기는 동안 모든 요청이 멈춥니다. 나눠 옮기면 평균은 같고 최악의 한 번이 짧아집니다.</div>
+        </section>
+
+        <!-- ============================================================ 3 -->
+        <div class="part"><span>3</span> 만료와 캐시</div>
+
+        <section class="card" id="ttl" data-level="core">
+          <div class="sec-head"><h2>만료 (TTL): 만료된 값을 요청받으면?</h2><span class="lv core">과제 핵심</span></div>
+          <p class="one">키마다 "언제 사라질지"(만료 시각)를 저장하고, 읽을 때와 주기적으로 두 번 확인합니다.</p>
+          <div class="grid2">
+            <div class="box"><h4>지연 삭제 (lazy)</h4><p>읽을 때 만료 시각이 지났으면 그 자리에서 지우고 "없음"(nil). <b>만료된 값이 절대 나가지 않게</b> 하는 핵심. 하지만 아무도 안 읽는 키는 남는다.</p></div>
+            <div class="box"><h4>주기 삭제 (active)</h4><p>100ms 마다 TTL 있는 키 20개를 무작위로 뽑아 만료된 것을 지우고, 25% 넘게 만료면 반복. 전부 훑지 않아 빠르다.</p></div>
+          </div>
+          <div class="demo" id="demo-ttl">
+            <div class="demo-title">직접 해보기: 만료된 키는 언제 사라질까?</div>
+            <div class="demo-row">
+              <button type="button" id="td-set" class="primary small">SET otp 1234 PX 2000</button>
+              <button type="button" id="td-get" class="small">GET otp</button>
+              <label class="small"><input type="checkbox" id="td-active" /> 주기 삭제 켜기</label>
+            </div>
+            <p class="demo-msg" id="td-msg">SET 을 누르고 2초가 지난 뒤 DBSIZE 와 GET 결과를 비교해 보세요.</p>
+            <div class="stats" id="td-stats"></div>
+          </div>
+          <div class="mini"><b>미니 레디스에서는</b><code>#lookup()</code>(지연 삭제)와 <code>activeExpireCycle()</code>(주기 삭제). TTL 은 절대 시각으로 저장해서 비교 한 번이면 됩니다. 테스트는 가짜 시계로 "9.999초엔 있고 10초엔 없음"을 확인합니다.</div>
+        </section>
+
+        <section class="card" id="cache" data-level="core">
+          <div class="sec-head"><h2>캐시 전략</h2><span class="lv core">과제 핵심</span></div>
+          <p class="one">느린 원본 앞에 빠른 복사본을 두는 방법. 가장 흔한 것은 cache-aside.</p>
+          <div class="table-wrap"><table>
+            <tr><th>전략</th><th>읽기</th><th>쓰기</th><th>특징</th></tr>
+            <tr><td><b>cache-aside</b> (채택)</td><td>캐시 → 없으면 DB → 캐시에 저장</td><td>DB 수정 → 캐시 삭제</td><td>가장 흔함. 캐시가 죽어도 DB 로 동작</td></tr>
+            <tr><td>read-through</td><td>캐시가 알아서 DB 에서 가져옴</td><td>—</td><td>앱 코드가 단순</td></tr>
+            <tr><td>write-through</td><td>캐시</td><td>캐시와 DB 에 동시에</td><td>항상 최신, 쓰기가 느림</td></tr>
+            <tr><td>write-back</td><td>캐시</td><td>캐시에만 → 나중에 DB</td><td>쓰기가 빠름, 손실 위험</td></tr>
+          </table></div>
+          <div class="warn"><b>주의</b><b>캐시 스탬피드</b>: 인기 키가 만료되는 순간 수천 요청이 동시에 DB 로 몰립니다 → 한 명만 채우기(SET NX), 만료 시간에 무작위 값. <b>캐시 관통</b>: 없는 키를 계속 요청 → "없음"도 짧게 캐시.</div>
+          <div class="mini"><b>미니 레디스에서는</b><code>week2/redis/demo-api.js</code> — 100ms 걸리는 가짜 DB 앞에 미니 레디스를 둔 상품 API. 없는 상품도 5초 캐시(negative caching).</div>
+        </section>
+
+        <section class="card" id="invalidate" data-level="core">
+          <div class="sec-head"><h2>캐시 무효화</h2><span class="lv core">과제 핵심</span></div>
+          <p class="one">저장된 데이터를 "더 이상 쓰지 않게" 하는 방법. 원본이 바뀌었을 때 옛 값을 내보내지 않으려면 필요합니다.</p>
+          <ol>
+            <li><b>TTL 로 자연 만료</b>: "최대 N초까지는 옛 값이어도 괜찮다"는 합의.</li>
+            <li><b>직접 삭제 (DEL)</b>: 원본을 바꾼 직후 그 키를 지움. 덮어쓰기보다 삭제가 안전(동시 업데이트 순서가 꼬여도 다음 조회가 새로 채움).</li>
+            <li><b>태그 (TAG / INVALIDATE)</b>: 관련 키에 이름표를 붙여 두고 한꺼번에. 상품 가격이 바뀌면 상세·목록·검색 캐시 전부.</li>
+            <li><b>패턴 (DELPATTERN)</b>: <code>product:*</code> 처럼. 키가 많으면 전체를 훑어야 해서 느림.</li>
+            <li><b>버전 키</b>: 키 이름에 버전을 넣고(<code>v3:product:1</code>), 무효화는 버전만 올림.</li>
+          </ol>
+          <div class="sum"><b>핵심 정리</b>캐시를 넣는 순간 "언제 지울지"를 함께 설계해야 합니다. 미니 레디스는 TTL · DEL · 태그 · 패턴 네 가지를 모두 지원합니다.</div>
+        </section>
+
+        <section class="card" id="eviction" data-level="deep">
+          <div class="sec-head"><h2>메모리가 꽉 차면 (eviction)</h2><span class="lv deep">심화</span></div>
+          <p class="one">Redis 는 maxmemory 를 넘으면 정책에 따라 키를 내보냅니다. 미니 레디스에는 없습니다.</p>
+          <ul>
+            <li><b>LRU</b>: 가장 오래 안 쓴 것 / <b>LFU</b>: 가장 적게 쓴 것 / TTL 있는 것 중에서만 / 에러</li>
+            <li>정확한 LRU 는 모든 키를 순서대로 관리해야 해서 비싸므로, Redis 는 몇 개를 표본으로 뽑아 그중 가장 오래된 것을 지우는 <b>근사 LRU</b> 를 씁니다(주기 삭제와 같은 아이디어).</li>
+          </ul>
+        </section>
+
+        <!-- ============================================================ 4 -->
+        <div class="part"><span>4</span> 동시성과 영속성</div>
+
+        <section class="card" id="concurrency" data-level="core">
+          <div class="sec-head"><h2>동시성: 단일 스레드인데 왜 빠르고 안전한가</h2><span class="lv core">과제 핵심</span></div>
+          <p class="one">명령을 한 스레드에서 하나씩 끝까지 실행합니다. 그래서 명령 하나는 원자적이지만, 명령 여러 개의 조합은 아닙니다.</p>
+          <div class="easy"><b>쉽게 말하면</b>창구가 하나인 은행. 손님이 아무리 많아도 한 명씩 처리하니 장부가 꼬이지 않습니다. 한 명당 처리가 마이크로초 단위라 줄이 금방 줄어요.</div>
+          <ul>
+            <li>메모리 연산이라 명령 하나가 아주 짧고, 락·문맥 전환 비용이 없음 → 단일 스레드로 초당 수만~수십만 명령</li>
+            <li><code>GET</code> 후 <code>SET</code> 사이에 다른 클라이언트가 끼어들면 증가분을 잃음(lost update)</li>
+            <li>해결: 한 명령으로 합치기(<code>INCR</code>, <code>SET NX</code>), 파이프라인/트랜잭션, Lua 스크립트</li>
+          </ul>
+          <div class="warn"><b>주의</b>오래 걸리는 명령(<code>KEYS *</code> on 수백만 키) 하나가 모든 요청을 막습니다. 실제 Redis 는 운영 중 KEYS 대신 SCAN 을 권장합니다.</div>
+          <div class="mini"><b>미니 레디스에서는</b><code>command()</code> 는 동기 함수, HTTP 핸들러는 그것을 한 번 호출 → 끼어들 틈이 없음. 테스트: 동시 INCR 200개 → 정확히 200, GET+SET 50개 → 50 이하.</div>
+        </section>
+
+        <section class="card" id="persistence" data-level="core">
+          <div class="sec-head"><h2>영속성: 서버가 다운돼도 데이터를 지키려면</h2><span class="lv core">과제 핵심</span></div>
+          <p class="one">쓰기 명령을 파일에 기록해 두었다가(AOF) 다시 켤 때 재생하거나, 메모리 전체를 주기적으로 저장(RDB)합니다.</p>
+          <div class="grid2">
+            <div class="box"><h4>AOF (채택)</h4><p>쓰기 명령을 로그로 계속 덧붙이고, 재시작 시 다시 실행. 손실이 적다(fsync 정책에 따라 0~1초). 파일이 커지므로 주기적으로 재작성.</p></div>
+            <div class="box"><h4>RDB (스냅샷)</h4><p>몇 분마다 메모리 전체를 파일로. 파일이 작고 복원이 빠르지만 마지막 스냅샷 이후 변경은 잃는다.</p></div>
+          </div>
+          <h3>fsync 정책 = 안전 vs 속도</h3>
+          <ul>
+            <li><b>always</b>: 명령마다 디스크 확정. 가장 안전, 가장 느림.</li>
+            <li><b>everysec</b>: 1초마다. 최대 1초 손실. Redis 기본값.</li>
+            <li><b>no</b>: 운영체제에 맡김. 가장 빠름.</li>
+          </ul>
+          <div class="mini"><b>미니 레디스에서는</b>TTL 은 절대 시각(PXAT)으로, INCR 은 결과 값을 SET 으로 기록(멱등). 마지막 줄이 쓰다 만 상태면 그 줄만 버리고, 재작성은 임시 파일 → fsync → rename 으로 원자적으로 교체합니다.</div>
+        </section>
+
+        <!-- ============================================================ 5 -->
+        <div class="part"><span>5</span> 과제 정리</div>
+
+        <section class="card" id="api" data-level="core">
+          <div class="sec-head"><h2>API 설계 — 외부에서 쉽게 쓰려면</h2><span class="lv core">과제 핵심</span></div>
+          <p class="one">자원 중심 주소 + 메서드 + 상태 코드. 메서드만 봐도 무슨 일인지 알 수 있게.</p>
+          <ul>
+            <li><code>/keys/:key</code> 에 GET(조회) · PUT(저장) · DELETE(삭제)</li>
+            <li>200 성공, 201 새로 만듦, 400 잘못된 요청, 404 없음(만료 포함), 409 NX/XX 실패, 413 너무 큼. 에러 본문은 <code>{ error, message }</code></li>
+            <li>입력 검증: 값은 문자열, ttl 은 1 이상 정수, 키 길이·본문 크기 제한</li>
+            <li>PUT · DELETE 는 여러 번 보내도 결과가 같음(멱등) → 안전하게 재시도</li>
+            <li>HTTP 세부를 숨긴 <code>client.js</code> (<code>get/set/del/getOrLoad</code>)</li>
+          </ul>
+        </section>
+
+        <section class="card" id="qa" data-level="core">
+          <div class="sec-head"><h2>면접 · 발표 예상 질문</h2><span class="lv core">과제 핵심</span></div>
+          <div class="qa-tools">
+            <button class="small" id="qa-open">모두 펼치기</button>
+            <button class="small" id="qa-close">모두 접기</button>
+          </div>
+          <details class="qa"><summary>해시 테이블의 시간 복잡도는? 최악은 언제?</summary><div class="a">평균 O(1), 최악 O(n). 최악은 많은 키가 한 버킷에 몰릴 때(나쁜 해시 함수, 의도적 공격). 부하율을 1 이하로 유지하고 리해시해서 평균을 지킵니다.</div></details>
+          <details class="qa"><summary>리해시를 왜 한 번에 하지 않았나요?</summary><div class="a">원소가 많을 때 한 번에 옮기면 그동안 모든 요청이 멈춥니다. 테이블 두 개를 두고 명령마다 버킷을 조금씩 옮기면 지연이 고르게 퍼집니다. 그동안 조회는 두 테이블을 모두 보고, 추가는 새 테이블에만 합니다.</div></details>
+          <details class="qa"><summary>만료된 키를 요청받으면 어떻게 하나요?</summary><div class="a">읽는 순간 만료 시각을 확인해 지났으면 지우고 nil 을 돌려줍니다(지연 삭제) → 만료 값은 절대 나가지 않습니다. 안 읽히는 키는 100ms 마다 표본을 뽑아 지우는 주기 삭제가 치웁니다.</div></details>
+          <details class="qa"><summary>동시성 문제는 어떻게 막았나요?</summary><div class="a">명령 실행을 한 스레드에서 동기 함수로 처리해서 명령 하나는 끼어들기 없이 원자적으로 실행됩니다. 여러 단계가 필요한 작업은 INCR 처럼 한 명령으로 만들거나 파이프라인으로 묶습니다.</div></details>
+          <details class="qa"><summary>저장된 데이터는 어떻게 무효화하나요?</summary><div class="a">TTL 로 자연 만료, 원본 수정 직후 DEL, 태그(TAG/INVALIDATE)로 관련 키 한꺼번에, 패턴(DELPATTERN)으로 지웁니다. 덮어쓰기보다 삭제가 동시 업데이트에 안전합니다.</div></details>
+          <details class="qa"><summary>서버가 죽으면 데이터는?</summary><div class="a">쓰기마다 AOF 에 기록하고 재시작 시 다시 실행합니다. fsync 정책으로 안전(always)과 속도(everysec, no)를 고를 수 있고, 잘린 마지막 줄은 버리며, 재작성은 임시 파일 → rename 으로 원자적으로 합니다.</div></details>
+          <details class="qa"><summary>레디스를 쓰면 얼마나 빨라지나요?</summary><div class="a">같은 요청 20번 기준으로, 100ms 걸리는 DB 앞에 캐시를 두면 첫 요청만 DB 에 가고 나머지는 캐시에서 답해 2배 이상(실습 화면 기준 4~7배) 빨라졌습니다. 테스트로 확인합니다.</div></details>
+          <details class="qa"><summary>다른 팀과의 차별점은?</summary><div class="a">점진적 리해시, 지연+주기 만료, 태그 무효화, AOF fsync 3정책과 원자적 재작성, 클라이언트 라이브러리와 캐시 데모 API, 그리고 이 모든 것을 눈으로 보는 실습 페이지.</div></details>
+        </section>
+      </article>
+    </div>
+    <button class="to-top" id="to-top" aria-label="맨 위로">↑</button>
+  </main>
+
+  <script>
+    (function () {
+      var s = document.createElement("script");
+      if (location.protocol === "file:") {
+        s.src = "./bundle.js";
+      } else {
+        s.type = "module";
+        s.src = "./main.js";
+      }
+      document.body.appendChild(s);
+    })();
+  </script>
+  <!-- chat:js --><script src="../../../tools/chat.js"></script>
+</body>
+</html>

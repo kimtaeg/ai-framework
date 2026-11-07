@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>미니 레디스 설명서</title>
+  <link rel="stylesheet" href="../../../styles/base.css" />
+  <style>
+    .doc { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 32px; align-items: start; }
+    .toc { position: sticky; top: 76px; font-size: 14px; }
+    .toc a { display: block; padding: 4px 8px; border-radius: 6px; color: var(--muted); text-decoration: none; }
+    .toc a:hover { background: var(--surface-2); color: var(--text); }
+    article { max-width: 820px; }
+    article section { padding: 24px; margin-bottom: 20px; }
+    article h2 { margin: 0 0 12px; font-size: 20px; }
+    article h3 { font-size: 16px; margin: 20px 0 8px; }
+    article code { font-family: var(--mono); font-size: 13px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+    article pre { background: var(--surface-2); border-radius: 8px; padding: 14px; overflow: auto; font: 13px/1.6 var(--mono); }
+    article pre code { background: none; padding: 0; }
+    table { border-collapse: collapse; width: 100%; font-size: 14px; }
+    th, td { border: 1px solid var(--border); padding: 8px 10px; text-align: left; vertical-align: top; }
+    th { background: var(--surface-2); }
+    .flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 14px; }
+    .flow span { padding: 6px 10px; background: var(--accent-weak); color: var(--accent); border-radius: 8px; font-weight: 600; }
+    .flow i { color: var(--muted); font-style: normal; }
+    @media (max-width: 860px) { .doc { grid-template-columns: minmax(0, 1fr); } .toc { position: static; } }
+    @media (max-width: 860px) { .doc article table { display: block; overflow-x: auto; } .doc article pre { overflow-x: auto; max-width: 100%; } }
+  </style>
+
+  <!-- chat:css --><link rel="stylesheet" href="../../../tools/chat.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../../../index.html#redis">mini<span>Redis</span></a>
+    <nav>
+      <a href="../../../index.html#redis">홈</a>
+      <a href="../../../week2/redis/guide/index.html">학습 가이드</a>
+      <a href="../../../week2/redis/index.html">미니 레디스</a>
+      <a href="../../../week2/redis/examples/index.html">예제</a>
+      <a href="../../../week2/redis/sandbox/index.html">샌드박스</a>
+      <a href="../../../week2/redis/walkthrough/index.html">코드 해설</a>
+      <a href="../../../week2/redis/theory/index.html">레디스 이론</a>
+      <a href="../../../week2/redis/deepdive/index.html">개념 더 파고들기</a>
+      <a href="../../../week2/redis/cheatsheet/index.html">한 장 요약</a>
+      <a href="./index.html" aria-current="page">설명서</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>미니 레디스 설명서</h1>
+    <p class="lead">구현의 핵심 원리와 과제의 중점 포인트를 정리한 문서입니다.</p>
+    <div class="doc">
+      <nav class="toc card card-body">
+        <a href="#arch">1. 구조</a>
+        <a href="#hash">2. 해시 테이블</a>
+        <a href="#concurrency">3. 동시성 문제가 생기지 않는 구조</a>
+        <a href="#ttl">4. 만료된 값을 요청받으면</a>
+        <a href="#api">5. 외부에서 쉽게 쓰는 API</a>
+        <a href="#invalidate">6. 데이터 무효화</a>
+        <a href="#persistence">7. 서버가 다운돼도 데이터 유지 (선택)</a>
+        <a href="#quality">8. 테스트</a>
+        <a href="#limits">9. 한계와 개선</a>
+      </nav>
+      <article>
+        <section class="card" id="arch">
+          <h2>1. 구조</h2>
+          <div class="flow"><span>외부 프로그램</span><i>→</i><span>api.js (HTTP)</span><i>→</i><span>miniredis.js (명령)</span><i>→</i><span>hashtable.js</span><i>→</i><span>persistence.js (AOF)</span></div>
+          <ul>
+            <li><b>api.js</b> — 주소/메서드 → 명령, 입력 검사, 상태 코드. <code>client.js</code> 로 감싸서 쓰기 쉽게</li>
+            <li><b>miniredis.js</b> — 명령 26가지, TTL(지연 + 주기 삭제), 태그 무효화. Node 모듈을 안 써서 브라우저에서도 그대로 실행</li>
+            <li><b>hashtable.js</b> — FNV-1a, 체이닝, 점진적 리해시</li>
+            <li><b>persistence.js</b> — AOF 한 줄씩, fsync 정책, 재시작 재생, 원자적 재작성</li>
+          </ul>
+        </section>
+
+        <section class="card" id="hash">
+          <h2>2. 해시 테이블</h2>
+          <p>키를 FNV-1a 로 32비트 정수로 바꾸고 <code>hash &amp; (버킷 수 - 1)</code> 로 버킷을 고릅니다. 같은 버킷은 연결 리스트로 잇고(체이닝), 부하율이 1 을 넘으면 2배 테이블을 만들어 <b>연산마다 버킷 하나씩</b> 옮깁니다(점진적 리해시). 옮기는 동안 조회는 두 테이블을 모두 봅니다.</p>
+          <p>Map/Object 를 저장소로 쓰지 않고 직접 구현했습니다. 테스트는 해시 함수를 <code>() =&gt; 0</code> 으로 바꾼 최악의 경우와 무작위 5,000번 연산을 Map 과 비교하는 퍼즈로 검증합니다.</p>
+        </section>
+
+        <section class="card" id="concurrency">
+          <h2>3. 동시성 문제가 생기지 않는 구조</h2>
+          <p>명령 처리를 한 스레드에서 하고, 명령 실행 함수(<code>command()</code>)를 <b>동기 함수</b>로 만들었습니다. 한 요청의 명령이 실행되는 동안에는 다른 요청이 끼어들 틈이 없어서, 락이 없어도 명령 하나는 항상 원자적입니다. 여러 단계가 필요한 작업은 INCR · SET NX 처럼 한 명령으로 만들거나 <code>/pipeline</code> 으로 묶습니다.</p>
+          <p>테스트: 동시 INCR 200개 → 정확히 200 / GET+SET 으로 나누면 50개 중 일부를 잃음.</p>
+        </section>
+
+        <section class="card" id="ttl">
+          <h2>4. 만료된 값을 요청받으면</h2>
+          <p>키마다 만료 시각(절대 시각)을 저장하고, 키를 읽는 모든 명령이 지나는 <code>#lookup()</code> 에서 확인해 지났으면 <b>그 자리에서 지우고 "없음"</b> 을 돌려줍니다(지연 삭제). 아무도 안 읽는 만료 키는 100ms 마다 TTL 키 20개를 무작위로 뽑아 지우는 주기 삭제가 치웁니다(25% 넘게 만료면 반복).</p>
+          <div class="flow"><span>GET k</span><i>→</i><span>expireAt ≤ now?</span><i>→</i><span>삭제 + nil</span><i>→</i><span>아니면 값</span></div>
+        </section>
+
+        <section class="card" id="api">
+          <h2>5. 외부에서 쉽게 쓰는 API</h2>
+          <table>
+            <tr><th>메서드</th><th>주소</th><th>본문</th><th>응답</th></tr>
+            <tr><td>GET</td><td><code>/keys/:key</code></td><td>—</td><td>200 { key, value, ttl } · 404</td></tr>
+            <tr><td>PUT</td><td><code>/keys/:key</code></td><td>{ value, ttl?, px?, nx?, xx?, tags? }</td><td>201 · 200 · 409 · 400</td></tr>
+            <tr><td>DELETE</td><td><code>/keys/:key</code></td><td>—</td><td>{ deleted }</td></tr>
+            <tr><td>POST</td><td><code>/keys/:key/expire</code> · <code>/incr</code></td><td>{ ttl } · { by }</td><td>{ updated } · { value }</td></tr>
+            <tr><td>GET</td><td><code>/keys?pattern=</code></td><td>—</td><td>{ keys }</td></tr>
+            <tr><td>POST</td><td><code>/invalidate</code></td><td>{ tags?, pattern? }</td><td>{ deleted }</td></tr>
+            <tr><td>POST</td><td><code>/command</code> · <code>/pipeline</code></td><td>{ args } · { commands }</td><td>{ result } · { results }</td></tr>
+            <tr><td>GET</td><td><code>/info</code></td><td>—</td><td>통계</td></tr>
+          </table>
+          <p>단독 서버 <code>npm run redis</code>(포트 6380)는 위 주소 그대로, <code>npm start</code> 서버는 앞에 <code>/api/redis</code> 를 붙입니다.</p>
+        </section>
+
+        <section class="card" id="invalidate">
+          <h2>6. 데이터 무효화</h2>
+          <ul>
+            <li><b>TTL</b> — 자연 만료</li>
+            <li><b>DEL</b> — 원본 수정 직후 삭제 (덮어쓰기보다 안전)</li>
+            <li><b>TAG / INVALIDATE</b> — 이름표를 붙여 관련 키를 한꺼번에 (tag → 키 집합 색인 유지)</li>
+            <li><b>DELPATTERN</b> — <code>product:*</code> 처럼 패턴으로</li>
+          </ul>
+        </section>
+
+        <section class="card" id="persistence">
+          <h2>7. 서버가 다운돼도 데이터 유지 (선택)</h2>
+          <p>쓰기가 성공할 때마다 <b>결과를 다시 만들 수 있는 명령</b>을 파일 끝에 한 줄씩 씁니다(AOF). TTL 은 절대 시각(PXAT), INCR 은 결과 값을 SET 으로 기록해 재생이 멱등입니다.</p>
+          <table>
+            <tr><th>fsync</th><th>손실</th><th>속도</th></tr>
+            <tr><td>always</td><td>0</td><td>가장 느림</td></tr>
+            <tr><td>everysec (기본)</td><td>최대 1초</td><td>보통</td></tr>
+            <tr><td>no</td><td>버퍼 크기만큼</td><td>가장 빠름</td></tr>
+          </table>
+          <p>재시작 때 쓰다 만 마지막 줄은 버리고, 현재 상태만 담아 임시 파일 → fsync → rename 으로 원자적으로 재작성합니다.</p>
+        </section>
+
+        <section class="card" id="quality">
+          <h2>8. 테스트</h2>
+          <ul>
+            <li><code>week2-redis.test.js</code> — 저장·조회·삭제, 해시 테이블(충돌·확장·축소·리해시·퍼즈), 옵션, 만료(가짜 시계), 무효화, AOF(기록·재생·잘린 줄·재작성·강제 종료)</li>
+            <li><code>week2-redis-api.test.js</code> — HTTP·클라이언트, 엣지 케이스(특수 문자 키, 400/404/405/409/413), 동시성, API 응답 캐시, 레디스 유무 성능 비교</li>
+          </ul>
+        </section>
+
+        <section class="card" id="limits">
+          <h2>9. 한계와 개선</h2>
+          <table>
+            <tr><th>없는 것</th><th>생기는 문제</th><th>개선 방향</th></tr>
+            <tr><td>eviction (maxmemory)</td><td>메모리가 차면 프로세스가 죽음</td><td>근사 LRU/LFU</td></tr>
+            <tr><td>복제 · RDB</td><td>디스크째 잃으면 끝</td><td>replica + 장애 조치</td></tr>
+            <tr><td>해시 씨앗 · SCAN</td><td>HashDoS, KEYS 가 서버를 막음</td><td>SipHash + 씨앗, 커서 기반 SCAN</td></tr>
+            <tr><td>스탬피드 보호 (데모 API)</td><td>인기 키 만료 순간 DB 폭주</td><td>SET NX 로 한 명만 채우기</td></tr>
+          </table>
+        </section>
+      </article>
+    </div>
+  </main>
+  <!-- chat:js --><script src="../../../tools/chat.js"></script>
+</body>
+</html>

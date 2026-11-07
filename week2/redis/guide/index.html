@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>미니 레디스 학습 가이드</title>
+  <link rel="stylesheet" href="../../../styles/base.css" />
+  <link rel="stylesheet" href="../../../guide/guide.css" />
+  <!-- chat:css --><link rel="stylesheet" href="../../../tools/chat.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../../../index.html#redis">mini<span>Redis</span></a>
+    <nav>
+      <a href="../../../index.html#redis">홈</a>
+      <a href="./index.html" aria-current="page">학습 가이드</a>
+      <a href="../../../week2/redis/index.html">미니 레디스</a>
+      <a href="../../../week2/redis/examples/index.html">예제</a>
+      <a href="../../../week2/redis/sandbox/index.html">샌드박스</a>
+      <a href="../../../week2/redis/walkthrough/index.html">코드 해설</a>
+      <a href="../../../week2/redis/theory/index.html">레디스 이론</a>
+      <a href="../../../week2/redis/deepdive/index.html">개념 더 파고들기</a>
+      <a href="../../../week2/redis/cheatsheet/index.html">한 장 요약</a>
+      <a href="../../../week2/redis/docs/index.html">설명서</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>미니 레디스 학습 가이드</h1>
+    <p class="lead">실습을 "그냥 눌러보기"로 끝내지 않고 개념으로 남기는 방법과, 이론 · Playground · 예제를 어떤 순서로 보면 좋은지 정리했습니다.</p>
+
+    <div class="tldr card">
+      <div><span class="k">언제</span>이론 한 묶음을 읽은 <b>직후</b>에 짝이 되는 실습을 본다</div>
+      <div><span class="k">어떻게</span>누르기 전에 <b>예측</b>하고, 화면의 <b>숫자로 확인</b>하고, 틀린 부분을 이론으로 <b>설명</b>한다</div>
+      <div><span class="k">질문</span>막히면 오른쪽 아래 <b>🤖 학습 도우미</b>에게 물어보세요. 지금 보는 페이지를 알고 답합니다.</div>
+      <div><span class="k">마무리</span>발표 전, 예상 질문마다 <b>"말로 답하기 + 화면으로 보여주기"</b>를 짝지어 연습한다</div>
+    </div>
+
+    <!-- ============================================================ 1 -->
+    <section class="card" id="method">
+      <h2><span class="num">1</span> 보는 방법: 예측 → 실행 → 확인 → 설명</h2>
+      <p>실습 하나를 볼 때 이 4단계를 거치세요. 그냥 눌러보기만 하면 "잘 되네"로 끝나서 개념이 남지 않습니다.</p>
+      <div class="cycle">
+        <div class="cy"><b>① 예측</b><span>누르기 전에 결과를 먼저 말해본다</span></div>
+        <i>→</i>
+        <div class="cy"><b>② 실행</b><span>버튼을 누른다</span></div>
+        <i>→</i>
+        <div class="cy"><b>③ 확인</b><span>통계 칸의 숫자와 키 목록을 본다</span></div>
+        <i>→</i>
+        <div class="cy"><b>④ 설명</b><span>예측과 다른 부분을 이론으로 설명한다</span></div>
+      </div>
+      <h3>예시: ⏳ 만료 실험에서 "주기 삭제 끄고 3초 기다리기"</h3>
+      <div class="table-wrap"><table>
+        <tr><th>단계</th><th>내용</th></tr>
+        <tr><td>① 예측</td><td>"TTL 이 지났으니 키 50개가 다 지워져서 DBSIZE 가 10 이 될 것 같다."</td></tr>
+        <tr><td>② 실행</td><td>키를 만들고 3초 기다림</td></tr>
+        <tr><td>③ 확인</td><td>"보이는 키는 10개인데 <b>메모리에 있는 키는 60개</b>네? 만료됐지만 남은 키 50."</td></tr>
+        <tr><td>④ 설명</td><td>"만료 확인은 <b>읽을 때</b>(지연 삭제)와 <b>주기적으로</b>(주기 삭제) 일어나는구나. 둘 다 안 일어나면 메모리에 남는다. 그래도 GET 하면 그 자리에서 지워지니 만료된 값이 나가지는 않는다."</td></tr>
+      </table></div>
+      <div class="tip"><b>예측이 틀린 지점이 가장 많이 배우는 지점입니다.</b> 틀리면 이론 페이지의 해당 섹션으로 돌아가 다시 읽으세요.</div>
+    </section>
+
+    <!-- ============================================================ 2 -->
+    <section class="card" id="roadmap">
+      <h2><span class="num">2</span> 보는 순서: 이론 → 화면을 짝지어서</h2>
+      <p>한 번에 다 보지 말고, 이론 한 묶음을 읽을 때마다 짝이 되는 화면을 바로 보세요. 다 본 단계는 체크해 두면 이 브라우저에 저장됩니다.</p>
+      <div class="progress-wrap"><div class="pbar"><div class="pfill" id="pfill"></div></div><span id="ptext" class="muted">0 / 8 완료</span><button class="small ghost" id="preset">체크 초기화</button></div>
+      <ol class="road" id="road">
+        <li data-step="1">
+          <label class="chk"><input type="checkbox" /><span class="st">1. 큰 그림: 키-값 저장소</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#redis">Redis 는 무엇인가</a>, <a href="../theory/index.html#compare">Redis vs DBMS</a></div>
+            <div><span class="lbl">보기</span><a href="../index.html#console">Playground 1</a> 에서 SET · GET · DEL 직접 쳐 보기</div>
+          </div>
+          <p class="q">왜 레디스는 디스크가 아니라 메모리에 둘까?</p>
+        </li>
+        <li data-step="2">
+          <label class="chk"><input type="checkbox" /><span class="st">2. 해시 테이블</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#hash">해시 테이블</a>, <a href="../theory/index.html#collision">충돌 처리</a></div>
+            <div><span class="lbl">보기</span><a href="../index.html#hashtable">Playground 2</a> 에서 키 검색 → 해시 값과 버킷 번호</div>
+          </div>
+          <p class="q">같은 버킷에 키가 둘이면 어떻게 찾을까?</p>
+        </li>
+        <li data-step="3">
+          <label class="chk"><input type="checkbox" /><span class="st">3. 부하율과 점진적 리해시</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#resize">부하율과 리해시</a></div>
+            <div><span class="lbl">보기</span><a href="../index.html#hashtable">Playground 2</a> 에서 키를 4개 → 5개로, "리해시 한 걸음"</div>
+          </div>
+          <p class="q">옮기는 도중에 GET 이 키를 놓치지 않는 이유는?</p>
+        </li>
+        <li data-step="4">
+          <label class="chk"><input type="checkbox" /><span class="st">4. 만료 (TTL)</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#ttl">만료 처리</a></div>
+            <div><span class="lbl">보기</span><a href="../index.html#ttl">Playground 3</a> 에서 주기 삭제를 끄고 켜기 · <a href="../examples/index.html#ex-session">세션 예제</a></div>
+          </div>
+          <p class="q">만료된 값을 요청받으면 정확히 무슨 일이 일어날까?</p>
+        </li>
+        <li data-step="5">
+          <label class="chk"><input type="checkbox" /><span class="st">5. 캐시와 무효화</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#cache">캐시 전략</a>, <a href="../theory/index.html#invalidate">무효화</a></div>
+            <div><span class="lbl">보기</span><a href="../index.html#cache">Playground 4</a> 성능 비교 + "무효화 안 함" 버튼</div>
+          </div>
+          <p class="q">원본을 바꾼 뒤 캐시를 덮어쓰지 않고 지우는 이유는?</p>
+        </li>
+        <li data-step="6">
+          <label class="chk"><input type="checkbox" /><span class="st">6. 동시성</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#concurrency">단일 스레드 동시성</a></div>
+            <div><span class="lbl">보기</span><a href="../index.html#race">Playground 5</a> · <a href="../examples/index.html#ex-likes">좋아요 예제</a> · <a href="../examples/index.html#ex-lock">분산 락</a></div>
+          </div>
+          <p class="q">명령 하나는 원자적인데, 왜 GET 후 SET 은 값을 잃을까?</p>
+        </li>
+        <li data-step="7">
+          <label class="chk"><input type="checkbox" /><span class="st">7. 영속성 (AOF)</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#persistence">AOF · RDB</a></div>
+            <div><span class="lbl">보기</span><a href="../index.html#aof">Playground 6</a> 에서 everysec 로 1초 안에 강제 종료</div>
+          </div>
+          <p class="q">TTL 을 "10초 뒤" 가 아니라 "언제" 로 기록하는 이유는?</p>
+        </li>
+        <li data-step="8">
+          <label class="chk"><input type="checkbox" /><span class="st">8. 외부 API 와 발표 준비</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#api">API 설계</a>, <a href="../walkthrough/index.html">코드 해설</a> 설명 연습</div>
+            <div><span class="lbl">보기</span><code>npm start</code> → <a href="../index.html#api">Playground 7</a> · <a href="../cheatsheet/index.html">한 장 요약</a></div>
+          </div>
+          <p class="q">외부 프로그램은 미니 레디스를 어떻게 쓰나?</p>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ============================================================ 3 -->
+    <section class="card" id="questions">
+      <h2><span class="num">3</span> 예제별로 꼭 답해볼 질문</h2>
+      <p>답을 먼저 말해본 뒤 "힌트"를 열어 확인하세요.</p>
+      <div class="qgrid">
+        <div class="qcard">
+          <h3>🔐 로그인 세션</h3>
+          <details><summary>세션을 DB 가 아니라 레디스에 두는 이유는?</summary><p>요청마다 확인하니 아주 빨라야 하고, 잠깐만 있으면 되는(TTL) 데이터라서입니다. 잃어도 다시 로그인하면 되는 데이터라 메모리에 두기 좋습니다.</p></details>
+          <details><summary>"페이지 이동" 이 EXPIRE 를 부르는 이유는?</summary><p>쓰는 동안은 끊기지 않게 만료 시간을 다시 채우는 슬라이딩 만료입니다. 가만히 두면 TTL 이 끝나 자동으로 로그아웃됩니다.</p></details>
+        </div>
+        <div class="qcard">
+          <h3>🚦 요청 횟수 제한</h3>
+          <details><summary>동시에 요청이 몰려도 정확히 세는 이유는?</summary><p>INCR 이 읽고 더하고 쓰기를 서버 안에서 한 번에 하는 원자적 명령이라서입니다. 중간에 다른 요청이 끼어들 수 없습니다.</p></details>
+          <details><summary>EXPIRE 를 첫 요청에만 붙이는 이유는?</summary><p>매번 붙이면 요청이 계속 오는 한 창이 끝나지 않습니다. 첫 요청에 한 번만 붙여야 "10초 창" 이 됩니다.</p></details>
+        </div>
+        <div class="qcard">
+          <h3>🔒 분산 락</h3>
+          <details><summary>락에 TTL 이 꼭 필요한 이유는?</summary><p>락을 잡은 서버가 해제 전에 죽으면 아무도 지우지 않아 영원히 잠깁니다. TTL 이 있으면 저절로 풀립니다.</p></details>
+          <details><summary>해제할 때 토큰을 확인하는 이유는?</summary><p>작업이 TTL 보다 길어 락이 다른 워커에게 넘어간 뒤, 원래 주인이 끝나서 DEL 하면 남의 락을 지우게 됩니다.</p></details>
+        </div>
+        <div class="qcard">
+          <h3>⏳ 만료 · 🗂 해시 테이블</h3>
+          <details><summary>지연 삭제만 있으면 무엇이 문제인가?</summary><p>아무도 안 읽는 만료 키가 메모리에 계속 남습니다. 그래서 주기 삭제로 표본을 뽑아 치웁니다.</p></details>
+          <details><summary>리해시를 나눠서 하는 이유는?</summary><p>한 번에 옮기면 원소 수만큼 걸리는 동안 모든 요청이 멈춥니다. 연산마다 버킷 하나씩 옮기면 최악의 한 번이 짧아집니다.</p></details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ 4 -->
+    <section class="card" id="break">
+      <h2><span class="num">4</span> 한 단계 더: 일부러 망가뜨려 보기</h2>
+      <p>개념을 확실히 잡으려면 일부러 잘못된 코드를 넣어보고 결과가 어떻게 달라지는지 보는 게 가장 좋습니다.</p>
+      <div class="labbox">
+        <div>
+          <b>🧪 버튼 하나로 해보기 (추천)</b>
+          <p><a href="../examples/index.html">예제 페이지</a>의 각 예제 위에 <b>망가뜨리기</b> 버튼이 있습니다. 누르면 그 예제만 잘못된 코드로 바뀌고, 한 번 더 누르면 복구됩니다.</p>
+        </div>
+        <a class="labbtn" href="../examples/index.html">실험실 열기 →</a>
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th>예제</th><th>망가뜨리기 버튼</th><th>배우는 개념</th></tr>
+        <tr><td><a href="../examples/index.html#ex-session">🔐 로그인 세션</a></td><td>세션에 TTL 안 붙이기</td><td>TTL 과 만료</td></tr>
+        <tr><td><a href="../examples/index.html#ex-rate">🚦 요청 횟수 제한</a></td><td>EXPIRE 빼먹기</td><td>INCR · EXPIRE 의 짝</td></tr>
+        <tr><td><a href="../examples/index.html#ex-lock">🔒 분산 락</a></td><td>락에 TTL 안 붙이기</td><td>쥔 채로 죽는 문제 (교착)</td></tr>
+        <tr><td><a href="../examples/index.html#ex-lock">🔒 분산 락</a></td><td>토큰 확인 없이 해제</td><td>락의 소유권</td></tr>
+        <tr><td><a href="../examples/index.html#ex-likes">❤️ 좋아요</a></td><td>GET → +1 → SET 으로 나누기</td><td>원자성 · lost update</td></tr>
+      </table></div>
+    </section>
+
+    <!-- ============================================================ 5 -->
+    <section class="card" id="tools">
+      <h2><span class="num">5</span> 함께 쓰면 좋은 도구</h2>
+      <div class="tools">
+        <div class="tool">
+          <h3>터미널 (npm)</h3>
+          <ul>
+            <li><code>npm start</code> — 모든 페이지 + <code>/api/redis</code></li>
+            <li><code>npm run redis</code> — 단독 서버 (포트 6380, AOF: week2/data/redis.aof)</li>
+            <li><code>npm test</code> — 레디스 단위·기능 테스트 포함</li>
+          </ul>
+        </div>
+        <div class="tool">
+          <h3>curl / Playground 7</h3>
+          <p>서버로 열면 <a href="../index.html#api">Playground 7</a> 에서 요청을 보내고 상태 코드(200/201/404/409/400)를 확인할 수 있습니다.</p>
+          <p><code>curl localhost:6380/keys/user:1</code></p>
+        </div>
+        <div class="tool">
+          <h3>샌드박스</h3>
+          <p><a href="../sandbox/index.html">샌드박스</a>에서 <code>redis.exec('…')</code> 로 원하는 명령 조합을 직접 짜서 실행하고, 오른쪽에서 키와 TTL 을 바로 확인합니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ 6 -->
+    <section class="card" id="demo-map">
+      <h2><span class="num">6</span> 발표용: 질문 → 시연 화면 짝짓기</h2>
+      <p>예상 질문에 말로 답한 뒤 바로 화면으로 보여줄 수 있게 미리 짝을 지어 두세요.</p>
+      <div class="table-wrap"><table>
+        <tr><th>예상 질문</th><th>보여줄 화면</th><th>보여줄 것</th></tr>
+        <tr><td>해시 테이블은 어떻게 동작하나요?</td><td><a href="../index.html#hashtable">Playground 2</a></td><td>키 검색 → 해시 값, 버킷 번호, 체인</td></tr>
+        <tr><td>크기가 커지면?</td><td><a href="../index.html#hashtable">Playground 2</a></td><td>키 10개 추가 → 두 테이블과 점진적 이동</td></tr>
+        <tr><td>만료된 값은?</td><td><a href="../index.html#console">Playground 1</a> → <a href="../index.html#ttl">3</a></td><td><code>SET otp … EX 5</code> → 5초 뒤 GET (nil), 메모리 vs 보이는 키</td></tr>
+        <tr><td>동시성 문제는?</td><td><a href="../index.html#race">Playground 5</a></td><td>두 버튼 비교 → "명령은 원자적, 조합은 아님"</td></tr>
+        <tr><td>무효화는?</td><td><a href="../index.html#cache">Playground 4</a></td><td>"무효화 안 함" → 옛 가격, "무효화" → 새 가격</td></tr>
+        <tr><td>서버가 죽으면?</td><td><a href="../index.html#aof">Playground 6</a></td><td>강제 종료 → 다시 켜기, fsync 정책 바꿔 비교</td></tr>
+        <tr><td>레디스 쓰면 얼마나 빨라지나요?</td><td><a href="../index.html#cache">Playground 4</a> "서버에서 비교"</td><td>실제 HTTP 로 캐시 유무 비교</td></tr>
+        <tr><td>테스트는 어떻게 했나요?</td><td>터미널 <code>npm test</code></td><td>해시 테이블 퍼즈, 가짜 시계 만료, 강제 종료 후 복원</td></tr>
+      </table></div>
+    </section>
+
+    <!-- ============================================================ 7 -->
+    <section class="card" id="req">
+      <h2><span class="num">7</span> 과제 요구사항 → 구현 → 테스트</h2>
+      <div class="table-wrap"><table>
+        <tr><th>요구사항</th><th>구현</th><th>테스트</th></tr>
+        <tr><td>해시 테이블로 키-값 저장소</td><td><code>redis/hashtable.js</code> (FNV-1a, 체이닝, 점진적 리해시)</td><td>해시 테이블 8개 (퍼즈 포함)</td></tr>
+        <tr><td>외부에서 사용 (API)</td><td><code>api.js</code>, <code>client.js</code>, <code>server.js</code></td><td>HTTP API + 클라이언트</td></tr>
+        <tr><td>저장 · 조회 · 삭제 단위 테스트</td><td><code>miniredis.js</code></td><td>명령 11개</td></tr>
+        <tr><td>동시성 문제가 없는 구조</td><td>단일 스레드 + 동기 명령, pipeline</td><td>동시 INCR 200개 = 200</td></tr>
+        <tr><td>만료된 값 요청 처리</td><td>지연 삭제 + 주기 삭제</td><td>만료 6개 (가짜 시계)</td></tr>
+        <tr><td>무효화 방식</td><td>DEL, TTL, TAG · INVALIDATE, DELPATTERN</td><td>무효화 3개 + 캐시 무효화</td></tr>
+        <tr><td>서버 다운에도 유지 (선택)</td><td><code>persistence.js</code> (AOF, fsync 3정책, 원자적 재작성)</td><td>AOF 8개 (강제 종료 후 복원)</td></tr>
+        <tr><td>API 응답을 저장해 활용 · 성능 비교</td><td><code>demo-api.js</code> (cache-aside)</td><td>cache-aside 5개, 20번 요청 비교</td></tr>
+      </table></div>
+    </section>
+  </main>
+
+  <script>
+    // 진행 체크: 이 브라우저에만 저장 (저장이 막힌 환경에서도 페이지는 정상 동작)
+    (function () {
+      var KEY = 'mini-redis-guide:v1';
+      var boxes = Array.prototype.slice.call(document.querySelectorAll('#road input[type=checkbox]'));
+      var saved = {};
+      try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { saved = {}; }
+      function update() {
+        var done = 0;
+        boxes.forEach(function (b) {
+          b.closest('li').classList.toggle('done', b.checked);
+          if (b.checked) done++;
+        });
+        document.getElementById('pfill').style.width = (done / boxes.length) * 100 + '%';
+        document.getElementById('ptext').textContent = done + ' / ' + boxes.length + ' 완료';
+      }
+      function save() {
+        var data = {};
+        boxes.forEach(function (b) { data[b.closest('li').dataset.step] = b.checked; });
+        try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) { /* 저장 불가 환경 */ }
+      }
+      boxes.forEach(function (b) {
+        b.checked = !!saved[b.closest('li').dataset.step];
+        b.addEventListener('change', function () { update(); save(); });
+      });
+      document.getElementById('preset').addEventListener('click', function () {
+        boxes.forEach(function (b) { b.checked = false; });
+        update(); save();
+      });
+      update();
+    })();
+  </script>
+  <!-- chat:js --><script src="../../../tools/chat.js"></script>
+</body>
+</html>

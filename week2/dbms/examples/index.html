@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>미니 DBMS 예제</title>
+  <link rel="stylesheet" href="../../../styles/base.css" />
+  <link rel="stylesheet" href="../../../examples/examples.css" />
+  <link rel="stylesheet" href="../../week2.css" />
+  <!-- chat:css --><link rel="stylesheet" href="../../../tools/chat.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../../../index.html#dbms">mini<span>DBMS</span></a>
+    <nav>
+      <a href="../../../index.html#dbms">홈</a>
+      <a href="../../../week2/dbms/guide/index.html">학습 가이드</a>
+      <a href="../../../week2/dbms/phase1/index.html">Phase 1 · SQL</a>
+      <a href="../../../week2/dbms/phase2/index.html">Phase 2 · B+ 트리</a>
+      <a href="../../../week2/dbms/phase3/index.html">Phase 3 · API 서버</a>
+      <a href="./index.html" aria-current="page">예제</a>
+      <a href="../../../week2/dbms/sandbox/index.html">샌드박스</a>
+      <a href="../../../week2/dbms/walkthrough/index.html">코드 해설</a>
+      <a href="../../../week2/dbms/theory/index.html">DBMS 이론</a>
+      <a href="../../../week2/dbms/deepdive/index.html">개념 더 파고들기</a>
+      <a href="../../../week2/dbms/cheatsheet/index.html">한 장 요약</a>
+      <a href="../../../week2/dbms/docs/index.html">설명서</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>미니 DBMS 예제 모음</h1>
+    <p class="lead">직접 만든 SQL 처리기와 B+ 트리 인덱스로 실제 서비스 기능 4가지를 만들었습니다. 코드는 <code>week2/dbms/examples/apps.js</code>, 실행은 브라우저 안에서 진짜 엔진으로 합니다(저장소만 파일 대신 메모리). 아래 막대에 <b>결과 · 읽은 레코드 수 · 마지막 동작</b>이 표시됩니다.</p>
+
+    <nav class="jump">
+      <a href="#ex-signup">📝 회원 가입</a>
+      <a href="#ex-board">📋 게시판 목록 캐시</a>
+      <a href="#ex-paging">📄 페이지 넘기기</a>
+      <a href="#ex-email">✉️ 이메일로 찾기</a>
+    </nav>
+
+    <div class="lab-intro card">
+      <div>
+        <b>🧪 실험실</b>
+        <p>각 예제 위의 <b>망가뜨리기</b> 버튼을 누르면 그 예제만 "잘못 짠 코드"로 바뀝니다. 같은 버튼을 한 번 더 누르면 복구돼요. 코드를 직접 고칠 필요가 없습니다.</p>
+        <p class="muted">추천 순서: 정상 상태에서 한 번 해보기 → 망가뜨리기 → 같은 동작을 다시 해보고 아래 막대 비교 → "왜 그럴까?" 열어보기 → 복구</p>
+      </div>
+      <div class="lab-intro-side">
+        <span id="lab-count" class="lab-count">모두 정상</span>
+        <button type="button" id="lab-reset-all">↩ 모두 복구</button>
+      </div>
+    </div>
+
+    <section class="ex card" id="ex-signup">
+      <div class="ex-head">
+        <h2>📝 회원 가입</h2>
+        <div class="tags"><span>INSERT</span><span>따옴표 이스케이프</span><span>SQL 오류 위치</span><span>SQL 인젝션</span></div>
+      </div>
+      <div class="lab" id="lab-signup"></div>
+      <div class="ex-body">
+        <div class="ex-app">
+          <form class="signup" id="signup-form">
+            <label class="field"><span class="field-label">이름</span><input id="su-name" value="이리액트" autocomplete="off" /></label>
+            <label class="field"><span class="field-label">나이 (비우면 NULL)</span><input id="su-age" value="31" autocomplete="off" /></label>
+            <label class="field"><span class="field-label">이메일</span><input id="su-email" value="react@ex.com" autocomplete="off" /></label>
+            <div class="row"><button type="submit" class="primary">가입</button><button type="button" id="su-quote" class="small">예시: O'Brien</button><button type="button" id="su-hack" class="small">예시: 해커 입력</button></div>
+          </form>
+          <p class="small muted">만들어지는 SQL</p>
+          <pre class="sqlbox" id="signup-sql"></pre>
+          <div class="table-wrap"><table class="data"><thead><tr><th>id</th><th>name</th><th>age</th><th>email</th></tr></thead><tbody id="signup-rows"></tbody></table></div>
+        </div>
+        <aside class="ex-guide">
+          <b>이 예제에서 볼 것</b>
+          <ul>
+            <li>입력값으로 <code>INSERT</code> 문을 만들 때 <code>'</code> 를 <code>''</code> 로 바꿉니다. 그래야 값 안의 따옴표가 문자열을 닫지 않습니다.</li>
+            <li>나이에 글자를 넣으면 실행기가 "정수(INT)입니다" 오류를 <b>행·열 위치</b>와 함께 돌려줍니다. 아무것도 저장되지 않습니다.</li>
+            <li>SQL 은 토크나이저가 글자를 토큰으로 자르는 것부터 시작합니다 — 그래서 따옴표 하나가 문법을 바꿉니다.</li>
+          </ul>
+          <b>해보기</b>
+          <ul><li>"O'Brien" 가입 → 정상 저장 → 나이에 abc → 오류 위치 확인</li></ul>
+        </aside>
+      </div>
+      <div class="ex-stat" id="stat-signup"></div>
+    </section>
+
+    <section class="ex card" id="ex-board">
+      <div class="ex-head">
+        <h2>📋 게시판 목록 캐시</h2>
+        <div class="tags"><span>SELECT 범위</span><span>cache-aside</span><span>TAG · INVALIDATE</span><span>레디스 + DBMS</span></div>
+      </div>
+      <div class="lab" id="lab-board"></div>
+      <div class="ex-body">
+        <div class="ex-app">
+          <div class="row">
+            <button type="button" id="board-view" class="primary">목록 보기</button>
+            <input id="board-title" class="grow" placeholder="새 글 제목" aria-label="새 글 제목" />
+            <button type="button" id="board-write">글쓰기</button>
+          </div>
+          <ol class="board-list" id="board-list"></ol>
+        </div>
+        <aside class="ex-guide">
+          <b>이 예제에서 볼 것</b>
+          <ul>
+            <li>최신 글 목록은 모두가 보지만 잘 안 바뀝니다. <code>SELECT … WHERE id &gt; ?</code> 결과(120ms)를 <code>board:latest</code> 에 60초 캐시.</li>
+            <li>글을 쓰면 <code>INVALIDATE posts</code> 로 목록 캐시를 지워 다음 조회가 새 목록을 다시 캐시합니다.</li>
+            <li>원본은 DBMS, 빠른 복사본은 레디스 — 실제 서비스의 기본 구조.</li>
+          </ul>
+          <b>해보기</b>
+          <ul><li>목록 보기 두 번(MISS → HIT) → 글쓰기 → 새 글이 맨 위에</li></ul>
+        </aside>
+      </div>
+      <div class="ex-stat" id="stat-board"></div>
+    </section>
+
+    <section class="ex card" id="ex-paging">
+      <div class="ex-head">
+        <h2>📄 페이지 넘기기</h2>
+        <div class="tags"><span>B+ 트리 범위</span><span>LIMIT</span><span>keyset vs offset</span><span>무한 스크롤</span></div>
+      </div>
+      <div class="ex-body">
+        <div class="ex-app">
+          <div class="row">
+            <label class="small">쪽 번호 <input type="number" id="page-n" value="1000" min="1" max="2000" /></label>
+            <button type="button" id="page-go" class="primary">두 방식 비교</button>
+            <button type="button" id="page-next">무한 스크롤 다음 쪽</button>
+          </div>
+          <div class="cmp-out" id="page-out"></div>
+          <p class="small" id="page-feed"></p>
+        </div>
+        <aside class="ex-guide">
+          <b>이 예제에서 볼 것</b>
+          <ul>
+            <li>게시글 2만 개. "1,000쪽" 을 보여 주려고 앞의 9,990개를 읽고 버리는 방식(OFFSET)은 뒤로 갈수록 느려집니다.</li>
+            <li>"이전 쪽 마지막 id 보다 큰 것 10개"(<code>WHERE id &gt; ? LIMIT 10</code>)는 B+ 트리 범위 조회라 몇 쪽이든 10개만 읽습니다.</li>
+            <li>인스타그램·트위터의 무한 스크롤이 이 방식입니다.</li>
+          </ul>
+          <b>해보기</b>
+          <ul><li>쪽 번호 1 → 100 → 2000 으로 바꾸며 비교</li></ul>
+        </aside>
+      </div>
+      <div class="ex-stat" id="stat-paging"></div>
+    </section>
+
+    <section class="ex card" id="ex-email">
+      <div class="ex-head">
+        <h2>✉️ 이메일로 찾기</h2>
+        <div class="tags"><span>선형 탐색</span><span>보조 인덱스</span><span>SET NX</span><span>레디스 + DBMS</span></div>
+      </div>
+      <div class="lab" id="lab-email"></div>
+      <div class="ex-body">
+        <div class="ex-app">
+          <p class="small muted" id="email-built"></p>
+          <div class="row">
+            <input id="email-q" class="grow" value="user43210@jungle.test" aria-label="찾을 이메일" />
+            <button type="button" id="email-find" class="primary">찾기 (두 방식)</button>
+          </div>
+          <div class="cmp-out" id="email-out"></div>
+          <div class="row" style="margin-top:12px">
+            <input id="email-new" class="grow" value="user77@jungle.test" aria-label="가입할 이메일" />
+            <button type="button" id="email-signup">이 이메일로 가입</button>
+          </div>
+        </div>
+        <aside class="ex-guide">
+          <b>이 예제에서 볼 것</b>
+          <ul>
+            <li>미니 DBMS 는 id 에만 인덱스가 있어서 email 조건은 5만 명을 처음부터 훑습니다.</li>
+            <li>레디스에 <code>email:주소 → id</code> 를 저장해 두면: 레디스(O(1)) → id → B+ 트리(O(log n)).</li>
+            <li>가입할 때 <code>SET NX</code> 로 "한 이메일 = 한 회원" 도 지킵니다.</li>
+          </ul>
+          <b>해보기</b>
+          <ul><li>찾기 → 이미 있는 이메일로 가입(거절) → 새 이메일로 가입 후 찾기</li></ul>
+        </aside>
+      </div>
+      <div class="ex-stat" id="stat-email"></div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      var s = document.createElement("script");
+      if (location.protocol === "file:") {
+        s.src = "./bundle.js";
+      } else {
+        s.type = "module";
+        s.src = "./main.js";
+      }
+      document.body.appendChild(s);
+    })();
+  </script>
+  <!-- chat:js --><script src="../../../tools/chat.js"></script>
+</body>
+</html>
