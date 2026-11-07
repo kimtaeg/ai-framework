@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>테스트 실험실</title>
+  <link rel="stylesheet" href="../styles/base.css">
+  <style>
+    main { max-width: 1100px; }
+    .top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .top h1 { margin: 0; }
+    .top .spacer { flex: 1; }
+    .jobs { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; margin: 18px 0; }
+    .job { display: flex; flex-direction: column; gap: 8px; padding: 16px; }
+    .job h2 { font-size: 16px; margin: 0; }
+    .job p { margin: 0; color: var(--muted); font-size: 13px; flex: 1; }
+    .job .row { display: flex; gap: 8px; align-items: center; }
+    .job select { max-width: 120px; }
+    .run-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .badge { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+    .badge.running { background: var(--accent-weak); color: var(--accent); }
+    .badge.passed { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+    .badge.failed, .badge.stopped { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+    #out { font-family: var(--mono); font-size: 12px; line-height: 1.5; background: var(--surface-2); border-radius: 8px; padding: 12px; height: 420px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; margin: 0; }
+    #out .ok { color: var(--ok); } #out .bad { color: var(--danger); } #out .cmd { color: var(--accent); }
+    table.t { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.t th, table.t td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+    table.t th { color: var(--muted); }
+    .table-wrap { overflow-x: auto; }
+    .links { display: flex; flex-wrap: wrap; gap: 8px; }
+    .muted { color: var(--muted); }
+    #err { color: var(--danger); font-size: 14px; min-height: 18px; }
+    h2.group { font-size: 15px; margin: 18px 0 0; }
+    h2.group .muted { font-weight: 400; font-size: 13px; }
+    .cmp { border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+    .cmp h3 { margin: 0 0 4px; font-size: 15px; }
+    .cmp .head { font-size: 14px; margin: 0 0 10px; }
+    .bars { display: grid; grid-template-columns: minmax(0, 40%) minmax(60px, 1fr) auto; gap: 6px 10px; align-items: center; margin: 8px 0 12px; font-size: 13px; }
+    .bars > span:first-child, .bars > span:nth-child(4) { overflow-wrap: anywhere; }
+    .cmp table.t th, .cmp table.t td, #trend table.t th, #trend table.t td { white-space: nowrap; }
+    .bar { height: 18px; border-radius: 0 4px 4px 0; background: #2a78d6; min-width: 3px; }
+    .bar.b { background: #eb6834; }
+    .bar.c { background: #9aa0b4; }
+    .star { color: var(--warn); font-weight: 700; }
+    .alt-ours td:first-child { font-weight: 700; }
+    .note { font-size: 12px; color: var(--muted); margin: 6px 0 0; }
+    .num { font-family: var(--mono); text-align: right; white-space: nowrap; }
+    .good { color: var(--ok); font-weight: 600; } .worse { color: var(--danger); font-weight: 600; } .same { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/index.html">mini<span>Lab</span></a>
+    <nav>
+      <a href="/index.html">사이트 홈</a>
+      <a href="/testlab/" aria-current="page">테스트 실험실</a>
+      <a href="/bench/index.html">브라우저 벤치마크</a>
+      <a href="/testlab/#compare">비교 결과</a>
+      <a href="/testlab/#alternatives">대안 비교</a>
+      <a href="/testlab/#reports">k6 리포트</a>
+      <a href="/testlab/#log">기록</a>
+    </nav>
+  </header>
+  <main>
+    <div class="top">
+      <h1>테스트 실험실</h1>
+      <span class="muted">나만 들어오는 페이지 · 한 번에 작업 하나</span>
+      <span class="spacer"></span>
+      <button id="logout" class="ghost">로그아웃</button>
+    </div>
+
+    <h2 class="group">실행</h2>
+    <div class="jobs" id="jobs"></div>
+    <h2 class="group">비교 실험 <span class="muted">같은 부하를 기술 있음 / 없음으로 한 번씩 · 매번 새 서버에서 같은 조건</span></h2>
+    <div class="jobs" id="cmp-jobs"></div>
+    <h2 class="group">대안 비교 <span class="muted">우리가 고른 기술 vs 비슷한 다른 기술 · 왜 이걸 골랐나</span></h2>
+    <div class="jobs" id="alt-jobs"></div>
+    <div id="err" role="alert"></div>
+
+    <section class="card" style="margin-bottom:16px" id="alternatives">
+      <div class="card-head">대안 비교 결과 <span class="sub">지표마다 가장 좋은 쪽에 ★ · 첫 줄이 우리 기술</span></div>
+      <div class="card-body" id="alt-results"><span class="muted">아직 없음 — 위의 대안 비교를 돌리면 여기에 쌓입니다.</span></div>
+    </section>
+
+    <section class="card" style="margin-bottom:16px" id="compare">
+      <div class="card-head">비교 결과 <span class="sub">기술 있음 vs 없음 · 지난번과 달라진 점 (±10% 안은 측정 오차로 봄)</span></div>
+      <div class="card-body" id="cmp-results"><span class="muted">아직 없음 — 위의 비교 실험을 돌리면 여기에 쌓입니다.</span></div>
+    </section>
+
+    <section class="card" style="margin-bottom:16px" id="trend">
+      <div class="card-head">지난번과 비교 <span class="sub">같은 작업(같은 옵션)의 이번 결과 vs 바로 전 결과</span></div>
+      <div class="card-body table-wrap" id="trend-results"><span class="muted">아직 없음 — 같은 작업을 두 번 이상 돌리면 보입니다.</span></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head run-head">
+        <span id="run-title">지금 도는 작업 없음</span>
+        <span class="badge" id="run-status">대기</span>
+        <span class="sub" id="run-time"></span>
+        <span class="spacer"></span>
+        <label class="sub"><input type="checkbox" id="follow" checked> 끝까지 따라가기</label>
+        <button id="stop" class="ghost" disabled>멈추기</button>
+      </div>
+      <div class="card-body"><pre id="out" aria-live="polite"></pre></div>
+    </section>
+
+    <section class="card" style="margin-top:16px">
+      <div class="card-head">브라우저 벤치마크 <span class="sub">미니 리액트를 이 브라우저에서 직접 잼 (서버가 아니라 이 창이 일함)</span></div>
+      <div class="card-body">
+        <p class="muted" style="margin-top:0">창을 앞에 둔 채로 돌려야 숫자가 정확합니다. 다른 프로그램(게임 등)을 끄고 재세요.</p>
+        <div class="links"><a class="btn primary" href="/bench/index.html">벤치마크 열기</a><a class="btn" href="/bench/index.html?auto=1">열자마자 전체 실행</a><a class="btn ghost" href="/bench/results.json" target="_blank" rel="noopener">발표에 쓴 결과 (results.json)</a></div>
+      </div>
+    </section>
+
+    <section class="card" style="margin-top:16px" id="reports">
+      <div class="card-head">k6 리포트 <span class="sub">부하 테스트가 끝날 때마다 하나씩 남음</span></div>
+      <div class="card-body"><div id="reports" class="links"><span class="muted">아직 없음</span></div></div>
+    </section>
+
+    <section class="card" style="margin-top:16px" id="log">
+      <div class="card-head">기록 <span class="sub">서버를 다시 켜면 지워짐</span></div>
+      <div class="card-body table-wrap"><table class="t"><thead><tr><th>시작</th><th>작업</th><th>결과</th><th>걸린 시간</th><th>요약</th></tr></thead><tbody id="history"><tr><td colspan="5" class="muted">아직 없음</td></tr></tbody></table></div>
+    </section>
+  </main>
+  <script>
+    // 파일로 바로 열면(file://) 서버가 없어 로그인·실행·링크가 모두 동작하지 않는다
+    if (location.protocol === 'file:') document.querySelector('main').insertAdjacentHTML('afterbegin', '<div class="card" style="padding:16px;margin-bottom:16px;border-color:var(--danger)"><b>서버로 열어야 합니다.</b> 터미널에서 <code>npm start</code> 후 <a href="http://localhost:5200/testlab/">http://localhost:5200/testlab/</a> 로 들어오세요.</div>');
+  </script>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
