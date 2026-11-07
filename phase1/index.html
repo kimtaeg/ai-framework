@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Phase 1 · Diff Playground</title>
+  <link rel="stylesheet" href="../styles/base.css" />
+  <link rel="stylesheet" href="./phase1.css" />
+  <!-- chat:css --><link rel="stylesheet" href="../tools/chat.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">mini<span>React</span></a>
+    <nav>
+      <a href="../index.html">홈</a>
+      <a href="../guide/index.html">학습 가이드</a>
+      <a href="./index.html" aria-current="page">Phase 1 · Diff</a>
+      <a href="../phase2/index.html">Phase 2 · Hooks</a>
+      <a href="../examples/index.html">예제</a>
+      <a href="../sandbox/index.html">샌드박스</a>
+      <a href="../walkthrough/index.html">코드 해설</a>
+      <a href="../theory/index.html">React 이론</a>
+      <a href="../deepdive/index.html">개념 더 파고들기</a>
+      <a href="../cheatsheet/index.html">한 장 요약</a>
+      <a href="../docs/index.html">설명서</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>Virtual DOM Diff Playground</h1>
+    <p class="lead">
+      테스트 영역의 HTML 을 수정하고 <b>Patch</b> 를 누르면, 두 Virtual DOM 을 비교해
+      <b>바뀐 부분만</b> 실제 영역에 반영합니다. 변경된 노드는 하이라이트로 표시됩니다.
+    </p>
+
+    <div class="toolbar card">
+      <button id="btn-back" title="뒤로가기 (Alt+←)">◀ 뒤로가기</button>
+      <button id="btn-patch" class="primary" title="Patch (Ctrl+Enter)">Patch</button>
+      <button id="btn-step" title="패치를 하나씩 적용해 보기">단계별 Patch</button>
+      <button id="btn-forward" title="앞으로가기 (Alt+→)">앞으로가기 ▶</button>
+      <span id="history-pos" class="history-pos mono">1 / 1</span>
+      <span class="spacer"></span>
+      <label class="toggle"><input type="checkbox" id="opt-highlight" checked /> 변경 하이라이트</label>
+      <button id="btn-reset" class="ghost">초기 상태로</button>
+      <span class="hint muted"><kbd>Ctrl</kbd>+<kbd>Enter</kbd> Patch · <kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd> 이동</span>
+    </div>
+
+    <div class="presets card">
+      <div class="presets-head">
+        <b>예시 케이스</b>
+        <span class="muted">누르면 테스트 영역을 그 케이스대로 고칩니다. 여러 번 눌러도 됩니다.</span>
+        <span class="spacer"></span>
+        <span class="muted small">실행 방식</span>
+        <div class="seg-group" role="group" aria-label="예시 케이스 실행 방식">
+          <button class="seg on" data-run="now">바로 적용</button>
+          <button class="seg" data-run="step">단계별</button>
+          <button class="seg" data-run="quiz">예측 퀴즈</button>
+        </div>
+        <span id="quiz-score" class="quiz-score" hidden></span>
+      </div>
+      <div class="preset-list" id="preset-list"></div>
+      <p class="preset-desc" id="preset-desc">버튼에 마우스를 올리면 어떤 변경인지 설명이 나옵니다.</p>
+    </div>
+
+    <!-- 단계별 Patch 패널 -->
+    <div class="stepper card" id="stepper" hidden>
+      <div class="stepper-head">
+        <b>단계별 Patch</b>
+        <span id="step-pos" class="mono history-pos">0 / 0</span>
+        <span class="spacer"></span>
+        <button id="step-next" class="primary" title="다음 패치 (N 또는 →)">다음 ▶</button>
+        <button id="step-all">남은 것 모두 적용</button>
+        <button id="step-cancel" class="ghost">취소</button>
+      </div>
+      <p class="step-now" id="step-now"></p>
+      <ol class="step-list" id="step-list"></ol>
+      <p class="muted small step-rule">순서 규칙: 한 부모 안에서는 ① 삭제(뒤에서부터) → ② 이동·추가로 자리 확정 → ③ 각 자식 안으로 들어가 비교. 그래야 앞의 패치 때문에 뒤 패치의 주소(path)가 어긋나지 않습니다.</p>
+    </div>
+
+    <!-- 예측 퀴즈 패널 -->
+    <div class="quiz card" id="quiz" hidden>
+      <div class="quiz-head"><b>예측 퀴즈</b> <span id="quiz-title" class="muted"></span></div>
+      <p class="quiz-q">이 변경을 적용하면 어떤 종류의 패치가 생길까요? <span class="muted">(해당하는 것을 모두 고르세요)</span></p>
+      <div class="quiz-opts" id="quiz-opts"></div>
+      <div class="quiz-actions">
+        <button id="quiz-submit" class="primary">정답 확인 + 적용</button>
+        <button id="quiz-skip" class="ghost">그만두기</button>
+      </div>
+      <div class="quiz-result" id="quiz-result" hidden></div>
+    </div>
+
+    <section class="areas">
+      <div class="card area">
+        <div class="card-head">
+          실제 영역 <span class="sub">Real DOM — patch 로만 변경됨</span>
+          <span class="spacer"></span>
+          <span id="dom-stats" class="sub mono"></span>
+        </div>
+        <div class="area-body" id="actual-wrap">
+          <!-- 페이지 로드 시 이 HTML 이 Virtual DOM 으로 변환된다 -->
+          <div id="actual" class="sample">
+            <article class="profile" data-theme="light">
+              <h2>김정글 <small>Frontend Engineer</small></h2>
+              <p class="bio">Virtual DOM 과 <b>Diff 알고리즘</b>을 직접 구현하고 있습니다.</p>
+              <ul class="skills">
+                <li key="js">JavaScript</li>
+                <li key="dom">DOM API</li>
+                <li key="vdom">Virtual DOM</li>
+                <li key="hooks">Hooks</li>
+              </ul>
+            </article>
+            <table class="score">
+              <thead><tr><th>과목</th><th>점수</th></tr></thead>
+              <tbody>
+                <tr key="algo"><td>알고리즘</td><td>92</td></tr>
+                <tr key="os"><td>운영체제</td><td>85</td></tr>
+              </tbody>
+            </table>
+            <form class="contact">
+              <label>이메일 <input type="text" value="jungle@example.com" /></label>
+              <label><input type="checkbox" checked /> 뉴스레터 구독</label>
+            </form>
+            <svg width="120" height="40" viewBox="0 0 120 40" aria-label="progress">
+              <rect x="0" y="12" width="120" height="16" rx="8" fill="#e1e4ec"></rect>
+              <rect x="0" y="12" width="72" height="16" rx="8" fill="#4f5bd5"></rect>
+            </svg>
+          </div>
+          <div id="overlay" class="overlay" aria-hidden="true"></div>
+        </div>
+      </div>
+
+      <div class="card area">
+        <div class="card-head">
+          테스트 영역 <span class="sub">자유롭게 수정하세요</span>
+          <span class="spacer"></span>
+          <div class="tabs" role="tablist">
+            <button role="tab" class="tab small" data-mode="code" aria-selected="true">HTML 코드</button>
+            <button role="tab" class="tab small" data-mode="visual" aria-selected="false">시각 편집</button>
+          </div>
+        </div>
+        <div class="area-body">
+          <textarea id="editor" class="editor mono" spellcheck="false" aria-label="테스트 영역 HTML"></textarea>
+          <div id="visual" class="sample visual" contenteditable="true" hidden aria-label="테스트 영역 시각 편집"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panels">
+      <div class="card">
+        <div class="card-head">
+          Patch 로그 <span class="sub">diff 결과 = 실제 DOM 에 적용된 명령</span>
+        </div>
+        <div class="card-body">
+          <div id="summary" class="summary"></div>
+          <ol id="patch-log" class="patch-log"></ol>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">State History <span class="sub">클릭해서 이동</span></div>
+        <div class="card-body">
+          <ol id="history" class="history"></ol>
+        </div>
+      </div>
+
+      <div class="card vtree-card">
+        <div class="card-head">
+          Virtual DOM 트리
+          <span class="spacer"></span>
+          <div class="tabs" role="tablist">
+            <button role="tab" class="vt-tab small" data-view="compare" aria-selected="true">이전 ↔ 새</button>
+            <button role="tab" class="vt-tab small" data-view="text" aria-selected="false">객체로 보기</button>
+          </div>
+        </div>
+        <div class="card-body">
+          <div id="vt-compare">
+            <p class="muted small" id="vt-hint">Patch 하면 이전 트리와 새 트리를 나란히 보여주고, 바뀐 노드에 색을 칠합니다.</p>
+            <div class="vt-legend">
+              <span class="vt-INSERT">추가</span><span class="vt-REMOVE">삭제</span><span class="vt-REPLACE">교체</span><span class="vt-TEXT">텍스트</span><span class="vt-PROPS">속성</span><span class="vt-MOVE">이동</span>
+            </div>
+            <div class="vt-grid">
+              <div><div class="vt-title">이전</div><div id="vt-old"></div></div>
+              <div><div class="vt-title">새</div><div id="vt-new"></div></div>
+            </div>
+          </div>
+          <pre id="vtree" class="vtree mono" hidden></pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!--
+    서버(npm start, http://)로 열면 ES Module 원본(main.js)을,
+    파일을 더블클릭해서(file://) 열면 모듈 import 가 브라우저 보안 정책으로 막히므로
+    하나로 합친 bundle.js(node build.js 로 생성)를 불러온다. 둘 중 하나만 실행된다.
+  -->
+  <script>
+    (function () {
+      var s = document.createElement("script");
+      if (location.protocol === "file:") {
+        s.src = "./bundle.js";
+      } else {
+        s.type = "module";
+        s.src = "./main.js";
+      }
+      document.body.appendChild(s);
+    })();
+  </script>
+  <!-- chat:js --><script src="../tools/chat.js"></script>
+</body>
+</html>
