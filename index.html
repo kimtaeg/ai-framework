@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>miniReact</title>
+  <link rel="stylesheet" href="./styles/base.css" />
+  <style>
+    .home { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 28px; align-items: start; }
+    .weeks { position: sticky; top: 76px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+    .weeks .title { font: 700 11px var(--mono); color: var(--muted); letter-spacing: .06em; margin: 8px 6px 2px; }
+    .weeks .title:first-child { margin-top: 2px; }
+    .week-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid transparent; background: transparent; }
+    .week-btn b { font-size: 14.5px; }
+    .week-btn span { font-size: 12px; color: var(--muted); }
+    .week-btn small { font: 700 10.5px var(--mono); color: var(--accent); letter-spacing: .05em; }
+    .week-btn:hover:not(:disabled) { background: var(--surface-2); }
+    .week-btn.on { background: var(--accent-weak); border-color: var(--accent); }
+    .lab-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 10px 12px; border-radius: 10px; border: 1px dashed var(--border); color: inherit; text-decoration: none; }
+    .lab-btn b { font-size: 14.5px; }
+    .lab-btn span { font-size: 12px; color: var(--muted); }
+    .lab-btn small { font: 700 10.5px var(--mono); color: var(--muted); letter-spacing: .05em; }
+    .lab-btn:hover { background: var(--surface-2); }
+    .panel[hidden] { display: none; }
+    .hero { padding: 16px 0 20px; }
+    .hero h1 { font-size: 38px; }
+    .hero h1 span { color: var(--accent); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+    .tile { padding: 20px; text-decoration: none; color: inherit; display: block; transition: transform .15s, border-color .15s; }
+    .tile:hover { transform: translateY(-2px); border-color: var(--accent); }
+    .tile h2 { margin: 6px 0; font-size: 18px; }
+    .tile p { margin: 0; color: var(--muted); font-size: 14px; }
+    .tile .tag { font: 700 11px var(--mono); color: var(--accent); letter-spacing: .06em; }
+    .tile.start { border-color: var(--accent); background: var(--accent-weak); }
+    .flow { margin-top: 28px; padding: 20px; }
+    .flow ol { margin: 8px 0 0; padding-left: 20px; }
+    .flow code { font-family: var(--mono); font-size: 13px; background: var(--surface-2); padding: 1px 6px; border-radius: 4px; }
+    .topbar nav[hidden] { display: none; } /* base.css 의 display:flex 보다 우선 */
+    @media (max-width: 860px) {
+      .home { grid-template-columns: 1fr; }
+      .weeks { position: static; flex-direction: row; flex-wrap: wrap; }
+      .weeks .title { width: 100%; }
+      .week-btn { width: auto; flex: 1; min-width: 150px; }
+    }
+  </style>
+  <!-- chat:css --><link rel="stylesheet" href="./tools/chat.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./index.html" id="brand">mini<span>React</span></a>
+    <nav>
+      <a href="./index.html" aria-current="page">홈</a>
+      <a href="./guide/index.html">학습 가이드</a>
+      <a href="./phase1/index.html">Phase 1 · Diff</a>
+      <a href="./phase2/index.html">Phase 2 · Hooks</a>
+      <a href="./examples/index.html">예제</a>
+      <a href="./sandbox/index.html">샌드박스</a>
+      <a href="./walkthrough/index.html">코드 해설</a>
+      <a href="./theory/index.html">React 이론</a>
+      <a href="./deepdive/index.html">개념 더 파고들기</a>
+      <a href="./cheatsheet/index.html">한 장 요약</a>
+      <a href="./docs/index.html">설명서</a>
+    </nav>
+    <nav class="nav-redis" hidden>
+      <a href="./index.html#redis">홈</a>
+      <a href="./week2/redis/guide/index.html">학습 가이드</a>
+      <a href="./week2/redis/index.html">미니 레디스</a>
+      <a href="./week2/redis/examples/index.html">예제</a>
+      <a href="./week2/redis/sandbox/index.html">샌드박스</a>
+      <a href="./week2/redis/walkthrough/index.html">코드 해설</a>
+      <a href="./week2/redis/theory/index.html">레디스 이론</a>
+      <a href="./week2/redis/deepdive/index.html">개념 더 파고들기</a>
+      <a href="./week2/redis/cheatsheet/index.html">한 장 요약</a>
+      <a href="./week2/redis/docs/index.html">설명서</a>
+    </nav>
+    <nav class="nav-dbms" hidden>
+      <a href="./index.html#dbms">홈</a>
+      <a href="./week2/dbms/guide/index.html">학습 가이드</a>
+      <a href="./week2/dbms/phase1/index.html">Phase 1 · SQL</a>
+      <a href="./week2/dbms/phase2/index.html">Phase 2 · B+ 트리</a>
+      <a href="./week2/dbms/phase3/index.html">Phase 3 · API 서버</a>
+      <a href="./week2/dbms/examples/index.html">예제</a>
+      <a href="./week2/dbms/sandbox/index.html">샌드박스</a>
+      <a href="./week2/dbms/walkthrough/index.html">코드 해설</a>
+      <a href="./week2/dbms/theory/index.html">DBMS 이론</a>
+      <a href="./week2/dbms/deepdive/index.html">개념 더 파고들기</a>
+      <a href="./week2/dbms/cheatsheet/index.html">한 장 요약</a>
+      <a href="./week2/dbms/docs/index.html">설명서</a>
+    </nav>
+  </header>
+  <main>
+    <div class="home">
+      <aside class="weeks card" aria-label="과제 선택">
+        <div class="title">WEEK 1</div>
+        <button type="button" class="week-btn" data-week="week1"><small>1주차</small><b>미니 리액트</b><span>Virtual DOM · Diff · Hooks</span></button>
+        <div class="title">WEEK 2</div>
+        <button type="button" class="week-btn" data-week="redis"><small>2주차 · 과제 1</small><b>미니 레디스</b><span>해시 테이블 · TTL · AOF</span></button>
+        <button type="button" class="week-btn" data-week="dbms"><small>2주차 · 과제 2</small><b>미니 DBMS</b><span>SQL · B+ 트리 · 스레드 풀</span></button>
+        <div class="title">TEST LAB</div>
+        <a class="lab-btn" href="testlab/"><small>비밀번호 필요</small><b>테스트 실험실</b><span>테스트 · 부하 · 벤치마크</span></a>
+      </aside>
+
+      <div>
+        <!-- ======================================================== 1주차 -->
+        <section class="panel" id="week1" data-brand="React" data-title="miniReact">
+          <section class="hero">
+            <h1>직접 만든 <span>미니 리액트</span></h1>
+            <p class="lead">외부 라이브러리 없이 Vanilla JS 로 구현한 Virtual DOM · Diff · Patch 와 FunctionComponent · Hooks.</p>
+          </section>
+          <div class="grid">
+            <a class="card tile start" href="./guide/index.html">
+              <span class="tag">START HERE</span>
+              <h2>학습 가이드</h2>
+              <p>무엇을 어떤 순서로 볼지, 예제를 개념으로 남기는 방법(예측 → 실행 → 확인 → 설명), 발표용 질문-시연 짝짓기.</p>
+            </a>
+            <a class="card tile" href="./phase1/index.html">
+              <span class="tag">PHASE 1</span>
+              <h2>Virtual DOM Diff Playground</h2>
+              <p>실제 영역 / 테스트 영역, Patch · 뒤로가기 · 앞으로가기. 예시 케이스, 단계별 Patch, 예측 퀴즈, 이전 ↔ 새 트리 비교.</p>
+            </a>
+            <a class="card tile" href="./phase2/index.html">
+              <span class="tag">PHASE 2</span>
+              <h2>스터디 플래너 (Hooks 데모)</h2>
+              <p>useState · useEffect · useMemo 로 만든 할 일 앱. Inspector 에서 렌더 원인(Batching), 단계별 시간, Hook 저장소를 실시간으로 확인합니다.</p>
+            </a>
+            <a class="card tile" href="./examples/index.html">
+              <span class="tag">EXAMPLES</span>
+              <h2>예제 모음</h2>
+              <p>앱 7개 + 버튼 하나로 망가뜨리고 복구하는 실험 7개. Virtual DOM vs 전체 다시 그리기 비교, Effect 타이밍, Context.</p>
+            </a>
+            <a class="card tile" href="./sandbox/index.html">
+              <span class="tag">SANDBOX</span>
+              <h2>샌드박스</h2>
+              <p>틀을 고르고 조각을 끼워 넣어 원하는 기능을 직접 만들어 실행. 콘솔과 Inspector 포함, 자동 저장.</p>
+            </a>
+            <a class="card tile" href="./walkthrough/index.html">
+              <span class="tag">WALKTHROUGH</span>
+              <h2>핵심 코드 해설</h2>
+              <p>diff, patch, Hooks 의 핵심 함수를 조각마다 설명. 함수마다 내 말로 설명해 보는 연습 칸과 모범 답안.</p>
+            </a>
+            <a class="card tile" href="./cheatsheet/index.html">
+              <span class="tag">CHEAT SHEET</span>
+              <h2>한 장 요약</h2>
+              <p>발표 직전에 훑어보는 핵심 정리 15칸. 인쇄하면 A4 한 장.</p>
+            </a>
+            <a class="card tile" href="./docs/index.html">
+              <span class="tag">DOCS</span>
+              <h2>설명서</h2>
+              <p>Reflow/Repaint, Diff 5가지 케이스, Hooks 원리, Batching, 실제 React 와의 차이점.</p>
+            </a>
+            <a class="card tile" href="./theory/index.html">
+              <span class="tag">THEORY</span>
+              <h2>React 이론 총정리</h2>
+              <p>브라우저 렌더링부터 Fiber, Hooks, 동시성, 서버 컴포넌트, React 19 까지. 검색과 면접 예상 질문 포함.</p>
+            </a>
+            <a class="card tile" href="./deepdive/index.html">
+              <span class="tag">DEEP DIVE</span>
+              <h2>개념 더 파고들기</h2>
+              <p>"왜 그렇게 만들었을까"를 12주제로. 클로저 스냅샷, key 정체성, LIS, Hook 순서 설계, 이벤트 루프, 경쟁 상태, Fiber 를 직접 실험.</p>
+            </a>
+          </div>
+          <section class="card flow">
+            <b>렌더링 파이프라인</b>
+            <ol>
+              <li><code>setState()</code> → 값 저장 후 microtask 로 업데이트 예약 (Batching)</li>
+              <li><code>render()</code> → 루트 함수 실행, 자식 컴포넌트 펼치기 → 새 Virtual DOM</li>
+              <li><code>diff(prev, next)</code> → 최소 변경 목록(patches)</li>
+              <li><code>applyPatches()</code> → 바뀐 노드만 실제 DOM 반영</li>
+              <li><code>useLayoutEffect</code> → DOM 반영 직후 (그리기 전)</li>
+              <li><code>useEffect</code> → 화면을 그린 뒤, 이전 cleanup 후 새 effect 실행</li>
+            </ol>
+          </section>
+        </section>
+
+
+        <!-- ======================================================== 2주차 · 미니 레디스 -->
+        <section class="panel" id="redis" data-brand="Redis" data-title="miniRedis" hidden>
+          <section class="hero">
+            <h1>직접 만든 <span>미니 레디스</span></h1>
+            <p class="lead">Map 없이 직접 만든 해시 테이블 위의 키-값 저장소. TTL 만료(지연 + 주기 삭제), 태그 무효화, AOF 영속성, 외부에서 쓰는 HTTP API.</p>
+          </section>
+          <div class="grid">
+            <a class="card tile start" href="./week2/redis/guide/index.html">
+              <span class="tag">START HERE</span>
+              <h2>학습 가이드</h2>
+              <p>무엇을 어떤 순서로 볼지, 예측 → 실행 → 확인 → 설명, 예제별 질문, 발표용 질문-시연 짝짓기, 요구사항 지도.</p>
+            </a>
+            <a class="card tile" href="./week2/redis/index.html">
+              <span class="tag">PLAYGROUND</span>
+              <h2>미니 레디스 Playground</h2>
+              <p>명령 콘솔, 해시 테이블 버킷과 점진적 리해시, 만료 처리, 캐시 성능 · 무효화, 동시성, 서버 다운 후 AOF 복원, HTTP API.</p>
+            </a>
+            <a class="card tile" href="./week2/redis/examples/index.html">
+              <span class="tag">EXAMPLES</span>
+              <h2>예제 모음</h2>
+              <p>로그인 세션, 요청 횟수 제한, 분산 락, 좋아요 카운터 + 버튼 하나로 망가뜨리고 복구하는 실험 5개.</p>
+            </a>
+            <a class="card tile" href="./week2/redis/sandbox/index.html">
+              <span class="tag">SANDBOX</span>
+              <h2>샌드박스</h2>
+              <p>틀을 고르고 조각을 끼워 넣어 redis.exec() 로 직접 실행. 키와 TTL 상태 보기, 자동 저장.</p>
+            </a>
+            <a class="card tile" href="./week2/redis/walkthrough/index.html">
+              <span class="tag">WALKTHROUGH</span>
+              <h2>핵심 코드 해설</h2>
+              <p>해시 · 리해시 · 명령과 지연 삭제 · 주기 삭제 · SET/AOF 기록 · AOF 복원 · API 를 조각마다 설명, 설명 연습.</p>
+            </a>
+            <a class="card tile" href="./week2/redis/cheatsheet/index.html">
+              <span class="tag">CHEAT SHEET</span>
+              <h2>한 장 요약</h2>
+              <p>발표 직전에 훑어보는 핵심 정리 10칸. 인쇄하면 A4 한 장.</p>
+            </a>
+            <a class="card tile" href="./week2/redis/docs/index.html">
+              <span class="tag">DOCS</span>
+              <h2>설명서</h2>
+              <p>구조, 해시 테이블, 동시성, 만료, API, 무효화, 영속성, 테스트, 한계와 개선.</p>
+            </a>
+            <a class="card tile" href="./week2/redis/theory/index.html">
+              <span class="tag">THEORY</span>
+              <h2>레디스 이론 총정리</h2>
+              <p>해시 테이블, 충돌, 리해시, TTL, 캐시 전략과 무효화, 단일 스레드 동시성, AOF/RDB. 검색과 예상 질문 포함.</p>
+            </a>
+            <a class="card tile" href="./week2/redis/deepdive/index.html">
+              <span class="tag">DEEP DIVE</span>
+              <h2>개념 더 파고들기</h2>
+              <p>"왜 그렇게 만들었을까" 를 8주제로. 해시 분포, 부하율, 점진적 리해시, KEYS 차단, 만료 표본, 스탬피드, AOF 크기를 직접 실험.</p>
+            </a>
+          </div>
+          <section class="card flow">
+            <b>요청 하나의 흐름</b>
+            <ol>
+              <li><code>PUT /keys/user:1</code> → 본문 검사 (문자열, ttl)</li>
+              <li><code>command(['SET', …])</code> → 한 스레드에서 끝까지 실행 (원자적)</li>
+              <li><code>fnv1a(key) &amp; (size-1)</code> → 버킷 → 체인에 저장 (필요하면 리해시 한 걸음)</li>
+              <li>AOF 에 <code>["SET","user:1","…","PXAT",…]</code> 기록</li>
+              <li><code>GET</code> 때 만료 시각 확인 → 지났으면 삭제 후 404</li>
+            </ol>
+          </section>
+        </section>
+
+        <!-- ======================================================== 2주차 · 미니 DBMS -->
+        <section class="panel" id="dbms" data-brand="DBMS" data-title="miniDBMS" hidden>
+          <section class="hero">
+            <h1>직접 만든 <span>미니 DBMS</span></h1>
+            <p class="lead">SQL 처리기(CLI + 파일 저장) → B+ 트리 인덱스(100만 건 비교) → 스레드 풀 API 서버. 세 단계가 앞 단계를 그대로 감쌉니다.</p>
+          </section>
+          <div class="grid">
+            <a class="card tile start" href="./week2/dbms/guide/index.html">
+              <span class="tag">START HERE</span>
+              <h2>학습 가이드</h2>
+              <p>무엇을 어떤 순서로 볼지, 예측 → 실행 → 확인 → 설명, 예제별 질문, 발표용 질문-시연 짝짓기, 요구사항 지도.</p>
+            </a>
+            <a class="card tile" href="./week2/dbms/phase1/index.html">
+              <span class="tag">PHASE 1</span>
+              <h2>SQL 처리기 Playground</h2>
+              <p>SQL 이 토큰 → AST → 실행 계획 → 결과로 가는 과정, 이번에 읽은 파일 줄 표시, 예시 SQL 10개, CLI 명령.</p>
+            </a>
+            <a class="card tile" href="./week2/dbms/phase2/index.html">
+              <span class="tag">PHASE 2</span>
+              <h2>B+ 트리 인덱스 Playground</h2>
+              <p>삽입 · 분할 · 검색 경로 · 범위 검색을 눈으로, 인덱스 vs 선형 탐색 비교와 100만 건 결과.</p>
+            </a>
+            <a class="card tile" href="./week2/dbms/phase3/index.html">
+              <span class="tag">PHASE 3</span>
+              <h2>API 서버 Playground</h2>
+              <p>요청 대기열 · 워커 · 읽기/쓰기 락 시뮬레이션(락을 끄면 중복 id), 실제 스레드 풀 서버에 요청 보내기.</p>
+            </a>
+            <a class="card tile" href="./week2/dbms/examples/index.html">
+              <span class="tag">EXAMPLES</span>
+              <h2>예제 모음</h2>
+              <p>회원 가입(SQL 인젝션), 게시판 목록 캐시, 페이지 넘기기, 이메일 보조 인덱스 + 망가뜨리기 실험 3개.</p>
+            </a>
+            <a class="card tile" href="./week2/dbms/sandbox/index.html">
+              <span class="tag">SANDBOX</span>
+              <h2>샌드박스</h2>
+              <p>sql() · tokenize() · parse() · BPlusTree 로 직접 실행. 테이블 상태 보기, 자동 저장.</p>
+            </a>
+            <a class="card tile" href="./week2/dbms/walkthrough/index.html">
+              <span class="tag">WALKTHROUGH</span>
+              <h2>핵심 코드 해설</h2>
+              <p>토크나이저 · 파서 · INSERT · 실행 계획 · 파일 저장 · B+ 트리 분할 · 락 · 스레드 풀 · 서버를 조각마다 설명.</p>
+            </a>
+            <a class="card tile" href="./week2/dbms/cheatsheet/index.html">
+              <span class="tag">CHEAT SHEET</span>
+              <h2>한 장 요약</h2>
+              <p>발표 직전에 훑어보는 핵심 정리 10칸. 인쇄하면 A4 한 장.</p>
+            </a>
+            <a class="card tile" href="./week2/dbms/docs/index.html">
+              <span class="tag">DOCS</span>
+              <h2>설명서</h2>
+              <p>구조, Phase 1·2·3 설계, 파일 저장 방식, CLI · API 목록, 테스트, 한계와 개선.</p>
+            </a>
+            <a class="card tile" href="./week2/dbms/theory/index.html">
+              <span class="tag">THEORY</span>
+              <h2>DBMS 이론 총정리</h2>
+              <p>SQL 처리 흐름, 토크나이저와 파서, 저장 형식, 인덱스, B+ 트리, 실행 계획, 스레드 풀, 락. 검색과 예상 질문 포함.</p>
+            </a>
+            <a class="card tile" href="./week2/dbms/deepdive/index.html">
+              <span class="tag">DEEP DIVE</span>
+              <h2>개념 더 파고들기</h2>
+              <p>"왜 그렇게 만들었을까" 를 8주제로. 차수와 높이, 채움률, 인덱스 비용, 선택도, 계획기, 교착 상태, 스레드 수를 직접 실험.</p>
+            </a>
+          </div>
+          <section class="card flow">
+            <b>SQL 하나의 흐름</b>
+            <ol>
+              <li><code>POST /api/sql</code> → 메인 스레드가 파싱 (문법 에러는 바로 400)</li>
+              <li>테이블 읽기/쓰기 락 → 쉬는 워커에게 전달 (스레드 풀)</li>
+              <li>워커: 실행 계획 — <code>id = ?</code> 면 B+ 트리, 아니면 선형 탐색</li>
+              <li>파일의 그 위치(offset)에서 한 줄 읽기 / 파일 끝에 추가</li>
+              <li>INSERT 면 다른 워커에 인덱스 갱신 알림 → 락 해제 → 응답</li>
+            </ol>
+          </section>
+        </section>
+      </div>
+    </div>
+  </main>
+  <script>
+    (function () {
+      var KEY = 'mini-home-week:v2';
+      var NAMES = ['week1', 'redis', 'dbms'];
+      var panels = {}, navs = {};
+      NAMES.forEach(function (w) {
+        panels[w] = document.getElementById(w);
+        navs[w] = document.querySelector(w === 'week1' ? '.topbar nav:not([class])' : '.topbar .nav-' + w);
+      });
+      var brand = document.querySelector('#brand span');
+      function show(week, push) {
+        if (week === 'week2') week = 'redis'; // 예전 주소 호환
+        if (!panels[week]) week = 'week1';
+        NAMES.forEach(function (w) {
+          panels[w].hidden = w !== week;
+          navs[w].hidden = w !== week;
+        });
+        document.querySelectorAll('.week-btn').forEach(function (b) {
+          var on = b.dataset.week === week;
+          b.classList.toggle('on', on);
+          b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+        brand.textContent = panels[week].dataset.brand;
+        document.title = panels[week].dataset.title;
+        try { localStorage.setItem(KEY, week); } catch (e) { /* 저장 불가 */ }
+        if (push && location.hash !== '#' + week) history.replaceState(null, '', '#' + week);
+      }
+      document.querySelectorAll('.week-btn').forEach(function (b) {
+        b.addEventListener('click', function () { show(b.dataset.week, true); window.scrollTo(0, 0); });
+      });
+      window.addEventListener('hashchange', function () { show(location.hash.slice(1)); });
+      var saved = null;
+      try { saved = localStorage.getItem(KEY); } catch (e) { saved = null; }
+      show(location.hash.slice(1) || saved || 'week1');
+    })();
+  </script>
+  <!-- chat:js --><script src="./tools/chat.js"></script>
+</body>
+</html>
