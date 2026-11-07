@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>미니 DBMS 학습 가이드</title>
+  <link rel="stylesheet" href="../../../styles/base.css" />
+  <link rel="stylesheet" href="../../../guide/guide.css" />
+  <!-- chat:css --><link rel="stylesheet" href="../../../tools/chat.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../../../index.html#dbms">mini<span>DBMS</span></a>
+    <nav>
+      <a href="../../../index.html#dbms">홈</a>
+      <a href="./index.html" aria-current="page">학습 가이드</a>
+      <a href="../../../week2/dbms/phase1/index.html">Phase 1 · SQL</a>
+      <a href="../../../week2/dbms/phase2/index.html">Phase 2 · B+ 트리</a>
+      <a href="../../../week2/dbms/phase3/index.html">Phase 3 · API 서버</a>
+      <a href="../../../week2/dbms/examples/index.html">예제</a>
+      <a href="../../../week2/dbms/sandbox/index.html">샌드박스</a>
+      <a href="../../../week2/dbms/walkthrough/index.html">코드 해설</a>
+      <a href="../../../week2/dbms/theory/index.html">DBMS 이론</a>
+      <a href="../../../week2/dbms/deepdive/index.html">개념 더 파고들기</a>
+      <a href="../../../week2/dbms/cheatsheet/index.html">한 장 요약</a>
+      <a href="../../../week2/dbms/docs/index.html">설명서</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>미니 DBMS 학습 가이드</h1>
+    <p class="lead">세 단계(SQL 처리기 → B+ 트리 인덱스 → 스레드 풀 API 서버)를 "그냥 눌러보기"로 끝내지 않고 개념으로 남기는 방법과, 이론 · Phase 1·2·3 · 예제를 어떤 순서로 보면 좋은지 정리했습니다.</p>
+
+    <div class="tldr card">
+      <div><span class="k">언제</span>이론 한 묶음을 읽은 <b>직후</b>에 짝이 되는 Phase 화면을 본다</div>
+      <div><span class="k">어떻게</span>누르기 전에 <b>예측</b>하고, <b>실행 계획 · 읽은 레코드 수로 확인</b>하고, 틀린 부분을 이론으로 <b>설명</b>한다</div>
+      <div><span class="k">질문</span>막히면 오른쪽 아래 <b>🤖 학습 도우미</b>에게 물어보세요. 지금 보는 페이지를 알고 답합니다.</div>
+      <div><span class="k">마무리</span>발표 전, 예상 질문마다 <b>"말로 답하기 + 화면으로 보여주기"</b>를 짝지어 연습한다</div>
+    </div>
+
+    <!-- ============================================================ 1 -->
+    <section class="card" id="method">
+      <h2><span class="num">1</span> 보는 방법: 예측 → 실행 → 확인 → 설명</h2>
+      <p>실습 하나를 볼 때 이 4단계를 거치세요. 그냥 눌러보기만 하면 "잘 되네"로 끝나서 개념이 남지 않습니다.</p>
+      <div class="cycle">
+        <div class="cy"><b>① 예측</b><span>누르기 전에 결과를 먼저 말해본다</span></div>
+        <i>→</i>
+        <div class="cy"><b>② 실행</b><span>SQL 을 실행한다</span></div>
+        <i>→</i>
+        <div class="cy"><b>③ 확인</b><span>실행 계획과 "읽은 레코드" 숫자를 본다</span></div>
+        <i>→</i>
+        <div class="cy"><b>④ 설명</b><span>예측과 다른 부분을 이론으로 설명한다</span></div>
+      </div>
+      <h3>예시: Phase 1 에서 <code>WHERE id = 3</code> 과 <code>WHERE name = '최디비'</code></h3>
+      <div class="table-wrap"><table>
+        <tr><th>단계</th><th>내용</th></tr>
+        <tr><td>① 예측</td><td>"둘 다 한 명만 나오니까 읽는 양도 같을 것 같다."</td></tr>
+        <tr><td>② 실행</td><td>예시 두 개를 차례로 실행</td></tr>
+        <tr><td>③ 확인</td><td>"id 는 <b>읽은 레코드 1/5</b>, name 은 <b>5/5</b>. 파일 줄도 하나 vs 전부 파랗게 표시."</td></tr>
+        <tr><td>④ 설명</td><td>"id 에는 B+ 트리 인덱스가 있어서 위치를 바로 찾아 그 줄만 읽고, name 은 인덱스가 없어서 처음부터 끝까지 비교한다. 결과 수가 아니라 <b>읽는 양</b>이 성능을 정한다."</td></tr>
+      </table></div>
+      <div class="tip"><b>예측이 틀린 지점이 가장 많이 배우는 지점입니다.</b> 틀리면 이론 페이지의 해당 섹션으로 돌아가 다시 읽으세요.</div>
+    </section>
+
+    <!-- ============================================================ 2 -->
+    <section class="card" id="roadmap">
+      <h2><span class="num">2</span> 보는 순서: 이론 → 화면을 짝지어서</h2>
+      <p>한 번에 다 보지 말고, 이론 한 묶음을 읽을 때마다 짝이 되는 화면을 바로 보세요. 다 본 단계는 체크해 두면 이 브라우저에 저장됩니다.</p>
+      <div class="progress-wrap"><div class="pbar"><div class="pfill" id="pfill"></div></div><span id="ptext" class="muted">0 / 8 완료</span><button class="small ghost" id="preset">체크 초기화</button></div>
+      <ol class="road" id="road">
+        <li data-step="1">
+          <label class="chk"><input type="checkbox" /><span class="st">1. 큰 그림: SQL 처리 흐름</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#sqlflow">SQL 처리 흐름</a></div>
+            <div><span class="lbl">보기</span><a href="../phase1/index.html">Phase 1</a> 아래 파이프라인 4칸 (토큰 → AST → 계획 → 결과)</div>
+          </div>
+          <p class="q">SELECT 한 줄이 결과가 되기까지 몇 단계를 거칠까?</p>
+        </li>
+        <li data-step="2">
+          <label class="chk"><input type="checkbox" /><span class="st">2. 토크나이저와 파서</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#parser">토크나이저 · 파서</a></div>
+            <div><span class="lbl">보기</span><a href="../phase1/index.html">Phase 1</a> "에러: 오타" 예시 · <a href="../examples/index.html#ex-signup">회원 가입 예제</a></div>
+          </div>
+          <p class="q">따옴표 하나가 SQL 문법을 바꿀 수 있는 이유는?</p>
+        </li>
+        <li data-step="3">
+          <label class="chk"><input type="checkbox" /><span class="st">3. 파일 저장 형식</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#storage">파일 저장 형식</a></div>
+            <div><span class="lbl">보기</span><a href="../phase1/index.html">Phase 1</a> "따옴표·쉼표가 든 값" 예시의 파일 줄</div>
+          </div>
+          <p class="q">쉼표가 든 값을 저장해도 줄이 깨지지 않는 이유는?</p>
+        </li>
+        <li data-step="4">
+          <label class="chk"><input type="checkbox" /><span class="st">4. 인덱스와 B+ 트리</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#index">인덱스</a>, <a href="../theory/index.html#bptree">B 트리 vs B+ 트리</a></div>
+            <div><span class="lbl">보기</span><a href="../phase2/index.html#bptree">Phase 2 실험 1</a> 차수 3 에서 순서대로 10개</div>
+          </div>
+          <p class="q">노드가 넘치면 무엇이 위로 올라갈까?</p>
+        </li>
+        <li data-step="5">
+          <label class="chk"><input type="checkbox" /><span class="st">5. 대용량과 성능 비교</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#plan">실행 계획</a></div>
+            <div><span class="lbl">보기</span><a href="../phase2/index.html#bench">Phase 2 실험 2</a> 1만 → 30만 · 터미널 <code>npm run bench:dbms</code> (100만)</div>
+          </div>
+          <p class="q">데이터가 10배가 되면 두 방식의 시간은 각각 어떻게 될까?</p>
+        </li>
+        <li data-step="6">
+          <label class="chk"><input type="checkbox" /><span class="st">6. 스레드 풀</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#threadpool">스레드 풀</a></div>
+            <div><span class="lbl">보기</span><a href="../phase3/index.html#pool">Phase 3 실험 1</a> SELECT 8개</div>
+          </div>
+          <p class="q">요청마다 스레드를 새로 만들지 않는 이유는?</p>
+        </li>
+        <li data-step="7">
+          <label class="chk"><input type="checkbox" /><span class="st">7. 락과 동시성 이슈</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#locks">락과 동시성 이슈</a></div>
+            <div><span class="lbl">보기</span><a href="../phase3/index.html#pool">Phase 3 실험 1</a> 락 끄고 INSERT 4개 → 중복 id</div>
+          </div>
+          <p class="q">워커마다 다른 인덱스를 가지면 어떤 문제가 생길까?</p>
+        </li>
+        <li data-step="8">
+          <label class="chk"><input type="checkbox" /><span class="st">8. 실제 API 서버와 발표 준비</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#api">API 서버 구조</a>, <a href="../walkthrough/index.html">코드 해설</a> 설명 연습</div>
+            <div><span class="lbl">보기</span><code>npm start</code> → <a href="../phase3/index.html#server">Phase 3 실험 2</a> · <a href="../cheatsheet/index.html">한 장 요약</a></div>
+          </div>
+          <p class="q">메인 스레드와 워커는 각각 무엇을 할까?</p>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ============================================================ 3 -->
+    <section class="card" id="questions">
+      <h2><span class="num">3</span> 예제별로 꼭 답해볼 질문</h2>
+      <p>답을 먼저 말해본 뒤 "힌트"를 열어 확인하세요.</p>
+      <div class="qgrid">
+        <div class="qcard">
+          <h3>📝 회원 가입</h3>
+          <details><summary>O'Brien 을 그대로 넣으면 왜 오류가 날까?</summary><p>토크나이저가 <code>'O'</code> 에서 문자열을 끝내고, 뒤의 <code>Brien'</code> 을 이름으로 읽어 문법이 깨집니다. <code>'</code> 를 <code>''</code> 로 바꿔야 값 안의 따옴표가 됩니다.</p></details>
+          <details><summary>나이에 글자를 넣으면 몇 명이 저장될까?</summary><p>0명. 실행기가 모든 행을 먼저 검사하고 통과해야 저장하므로, 오류가 나면 아무것도 저장하지 않고 id 도 쓰지 않습니다.</p></details>
+        </div>
+        <div class="qcard">
+          <h3>📋 게시판 목록 캐시</h3>
+          <details><summary>최신 글 목록은 어떤 실행 계획일까?</summary><p><code>WHERE id &gt; 마지막id-5</code> 라서 B+ 트리 범위 조회입니다. 2만 개가 있어도 5개만 읽습니다.</p></details>
+          <details><summary>글을 쓰면 왜 캐시를 지워야 할까?</summary><p>원본(DBMS)만 바뀌고 복사본(캐시)이 그대로면 TTL 이 끝날 때까지 새 글이 안 보입니다.</p></details>
+        </div>
+        <div class="qcard">
+          <h3>📄 페이지 넘기기</h3>
+          <details><summary>1,000쪽에서 OFFSET 방식은 몇 개를 읽을까?</summary><p>앞의 9,990개를 읽고 버린 뒤 10개를 더 읽어 10,000개. id 기준은 10개만 읽습니다.</p></details>
+          <details><summary>id 기준 방식의 단점은?</summary><p>"정확히 500쪽으로 바로 가기" 는 그 앞 쪽의 마지막 id 를 알아야 해서 어렵습니다. 무한 스크롤처럼 다음 쪽으로만 가는 화면에 맞습니다.</p></details>
+        </div>
+        <div class="qcard">
+          <h3>✉️ 이메일로 찾기</h3>
+          <details><summary>왜 email 조건은 느릴까?</summary><p>미니 DBMS 는 id 에만 인덱스가 있어서 email 조건은 선형 탐색입니다. 5만 명이면 평균 2만 5천 명을 읽습니다.</p></details>
+          <details><summary>레디스 보조 인덱스의 위험은?</summary><p>DB 와 레디스가 따로라서 한쪽만 바뀌면 어긋납니다(가입 실패 시 정리 등). 실제 DBMS 가 보조 인덱스를 직접 관리하는 이유입니다.</p></details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ 4 -->
+    <section class="card" id="break">
+      <h2><span class="num">4</span> 한 단계 더: 일부러 망가뜨려 보기</h2>
+      <p>개념을 확실히 잡으려면 일부러 잘못된 코드를 넣어보고 결과가 어떻게 달라지는지 보는 게 가장 좋습니다.</p>
+      <div class="labbox">
+        <div>
+          <b>🧪 버튼 하나로 해보기 (추천)</b>
+          <p><a href="../examples/index.html">예제 페이지</a>의 각 예제 위에 <b>망가뜨리기</b> 버튼이 있고, <a href="../phase3/index.html#pool">Phase 3 실험 1</a> 에는 <b>락 끄기</b> 스위치가 있습니다.</p>
+        </div>
+        <a class="labbtn" href="../examples/index.html">실험실 열기 →</a>
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th>화면</th><th>망가뜨리기</th><th>배우는 개념</th></tr>
+        <tr><td><a href="../examples/index.html#ex-signup">📝 회원 가입</a></td><td>따옴표 이스케이프 안 하기</td><td>토크나이저 · SQL 인젝션</td></tr>
+        <tr><td><a href="../examples/index.html#ex-board">📋 게시판</a></td><td>글쓰기 후 캐시 안 지우기</td><td>캐시 무효화</td></tr>
+        <tr><td><a href="../examples/index.html#ex-email">✉️ 이메일</a></td><td>SET NX 대신 SET</td><td>중복 방지 · 보조 인덱스</td></tr>
+        <tr><td><a href="../phase3/index.html#pool">Phase 3 실험 1</a></td><td>락 끄기</td><td>경쟁 상태 · 쓰기 락</td></tr>
+      </table></div>
+    </section>
+
+    <!-- ============================================================ 5 -->
+    <section class="card" id="tools">
+      <h2><span class="num">5</span> 함께 쓰면 좋은 도구</h2>
+      <div class="tools">
+        <div class="tool">
+          <h3>터미널 (CLI)</h3>
+          <ul>
+            <li><code>node week2/dbms/cli.js run query.sql</code></li>
+            <li><code>node week2/dbms/cli.js exec "SELECT * FROM users WHERE id = 1"</code></li>
+            <li><code>node week2/dbms/cli.js seed users 1000000</code> · <code>info</code></li>
+          </ul>
+        </div>
+        <div class="tool">
+          <h3>성능 · 서버</h3>
+          <ul>
+            <li><code>npm run bench:dbms</code> — 100만 건 비교 (임시 폴더)</li>
+            <li><code>npm run dbms</code> — 스레드 풀 서버 (포트 7000)</li>
+            <li><code>npm start</code> — <code>/api/sql</code> 포함</li>
+          </ul>
+        </div>
+        <div class="tool">
+          <h3>샌드박스</h3>
+          <p><a href="../sandbox/index.html">샌드박스</a>에서 <code>tokenize()</code> · <code>parse()</code> 로 처리기의 중간 결과를 직접 출력하고, <code>sql()</code> 결과 표에서 실행 계획을 확인합니다.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ 6 -->
+    <section class="card" id="demo-map">
+      <h2><span class="num">6</span> 발표용: 질문 → 시연 화면 짝짓기</h2>
+      <p>예상 질문에 말로 답한 뒤 바로 화면으로 보여줄 수 있게 미리 짝을 지어 두세요.</p>
+      <div class="table-wrap"><table>
+        <tr><th>예상 질문</th><th>보여줄 화면</th><th>보여줄 것</th></tr>
+        <tr><td>SQL 은 어떻게 처리되나요?</td><td><a href="../phase1/index.html">Phase 1</a> + 터미널</td><td>파이프라인 4칸, <code>cli.js run query.sql</code></td></tr>
+        <tr><td>데이터는 어떻게 저장되나요?</td><td><a href="../phase1/index.html">Phase 1</a> 파일 칸</td><td>한 줄 = 레코드, 쉼표·따옴표 처리</td></tr>
+        <tr><td>B+ 트리는 어떻게 동작하나요?</td><td><a href="../phase2/index.html#bptree">Phase 2 실험 1</a></td><td>삽입 → 분할, 검색 경로</td></tr>
+        <tr><td>인덱스 효과는?</td><td><a href="../phase2/index.html#bench">Phase 2 실험 2</a></td><td>30만 건 비교 + 100만 건 결과 (약 27,000배)</td></tr>
+        <tr><td>스레드 풀은?</td><td><a href="../phase3/index.html#server">Phase 3 실험 2</a></td><td>느린 조회 8개 동시에 → 워커별 처리 수</td></tr>
+        <tr><td>멀티 스레드 동시성 이슈는?</td><td><a href="../phase3/index.html#pool">Phase 3 실험 1</a></td><td>락 끄기 → 중복 id, 실험 2 "INSERT 20개 동시에"</td></tr>
+        <tr><td>테스트는 어떻게 했나요?</td><td>터미널 <code>npm test</code></td><td>B+ 트리 구조 검증, 형식 퍼즈, 동시 INSERT 60개 id 1~60</td></tr>
+      </table></div>
+    </section>
+
+    <!-- ============================================================ 7 -->
+    <section class="card" id="req">
+      <h2><span class="num">7</span> 과제 요구사항 → 구현 → 테스트</h2>
+      <div class="table-wrap"><table>
+        <tr><th>요구사항</th><th>구현</th><th>테스트</th></tr>
+        <tr><td>P1 · SQL 파일을 CLI 로</td><td><code>dbms/cli.js</code> (run, exec, 표준 입력)</td><td>CLI 2개</td></tr>
+        <tr><td>P1 · 파싱 (INSERT, SELECT)</td><td><code>sql.js</code> (토크나이저 + 재귀 하강 파서)</td><td>파싱 4개 (에러 위치 13가지)</td></tr>
+        <tr><td>P1 · 실행 + 파일 저장</td><td><code>engine.js</code>, <code>storage-file.js</code></td><td>실행기 9개, 파일 2개, 형식 3개</td></tr>
+        <tr><td>P2 · id 자동 부여 + B+ 트리 검색</td><td><code>bptree.js</code>, 실행 계획</td><td>B+ 트리 6개 (구조 검증)</td></tr>
+        <tr><td>P2 · 100만 건 + 비교</td><td><code>seed.js</code>, <code>bench.js</code></td><td>3만 건 비교 (테스트), 100만 건 (bench)</td></tr>
+        <tr><td>P3 · API 서버 + 스레드 풀</td><td><code>service.js</code>, <code>pool.js</code>, <code>worker.js</code></td><td>API 10개, 병렬 조회</td></tr>
+        <tr><td>P3 · 멀티 스레드 동시성</td><td><code>lock.js</code>, 인덱스 알림</td><td>락 4개, 동시 INSERT 60개</td></tr>
+      </table></div>
+    </section>
+  </main>
+
+  <script>
+    // 진행 체크: 이 브라우저에만 저장 (저장이 막힌 환경에서도 페이지는 정상 동작)
+    (function () {
+      var KEY = 'mini-dbms-guide:v1';
+      var boxes = Array.prototype.slice.call(document.querySelectorAll('#road input[type=checkbox]'));
+      var saved = {};
+      try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { saved = {}; }
+      function update() {
+        var done = 0;
+        boxes.forEach(function (b) {
+          b.closest('li').classList.toggle('done', b.checked);
+          if (b.checked) done++;
+        });
+        document.getElementById('pfill').style.width = (done / boxes.length) * 100 + '%';
+        document.getElementById('ptext').textContent = done + ' / ' + boxes.length + ' 완료';
+      }
+      function save() {
+        var data = {};
+        boxes.forEach(function (b) { data[b.closest('li').dataset.step] = b.checked; });
+        try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) { /* 저장 불가 환경 */ }
+      }
+      boxes.forEach(function (b) {
+        b.checked = !!saved[b.closest('li').dataset.step];
+        b.addEventListener('change', function () { update(); save(); });
+      });
+      document.getElementById('preset').addEventListener('click', function () {
+        boxes.forEach(function (b) { b.checked = false; });
+        update(); save();
+      });
+      update();
+    })();
+  </script>
+  <!-- chat:js --><script src="../../../tools/chat.js"></script>
+</body>
+</html>

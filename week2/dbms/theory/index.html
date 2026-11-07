@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DBMS 이론 총정리</title>
+  <link rel="stylesheet" href="../../../styles/base.css" />
+  <link rel="stylesheet" href="../../../theory/theory.css" />
+  <link rel="stylesheet" href="../../week2.css" />
+  <!-- chat:css --><link rel="stylesheet" href="../../../tools/chat.css" />
+</head>
+<body>
+  <div class="progress-line" id="progress"></div>
+  <header class="topbar">
+    <a class="brand" href="../../../index.html#dbms">mini<span>DBMS</span></a>
+    <nav>
+      <a href="../../../index.html#dbms">홈</a>
+      <a href="../../../week2/dbms/guide/index.html">학습 가이드</a>
+      <a href="../../../week2/dbms/phase1/index.html">Phase 1 · SQL</a>
+      <a href="../../../week2/dbms/phase2/index.html">Phase 2 · B+ 트리</a>
+      <a href="../../../week2/dbms/phase3/index.html">Phase 3 · API 서버</a>
+      <a href="../../../week2/dbms/examples/index.html">예제</a>
+      <a href="../../../week2/dbms/sandbox/index.html">샌드박스</a>
+      <a href="../../../week2/dbms/walkthrough/index.html">코드 해설</a>
+      <a href="./index.html" aria-current="page">DBMS 이론</a>
+      <a href="../../../week2/dbms/deepdive/index.html">개념 더 파고들기</a>
+      <a href="../../../week2/dbms/cheatsheet/index.html">한 장 요약</a>
+      <a href="../../../week2/dbms/docs/index.html">설명서</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>DBMS 이론 총정리</h1>
+    <p class="lead">처음 보는 사람도 따라올 수 있도록, 큰 그림 → SQL 처리기(Phase 1) → 인덱스(Phase 2) → API 서버와 동시성(Phase 3) → 과제 정리 순서로 정리했습니다. 직접 눌러볼 수 있는 예제도 들어 있어요.</p>
+
+    <div class="guide card">
+      <div class="guide-col">
+        <b>난이도 표시</b>
+        <div><span class="lv basic">기초</span> 먼저 알아야 할 개념</div>
+        <div><span class="lv core">과제 핵심</span> 이번 과제 발표에 꼭 필요</div>
+        <div><span class="lv deep">심화</span> 실제 DBMS 를 더 깊이</div>
+      </div>
+      <div class="guide-col">
+        <b>상자 종류</b>
+        <div><span class="dot d-easy"></span> 쉽게 말하면 (비유)</div>
+        <div><span class="dot d-mini"></span> 미니 DBMS 에서는 (내 코드와 연결)</div>
+        <div><span class="dot d-warn"></span> 주의 / 흔한 오해</div>
+        <div><span class="dot d-sum"></span> 핵심 정리</div>
+      </div>
+      <div class="guide-col">
+        <b>보기 설정</b>
+        <div class="seg-group" role="group" aria-label="보기 설정">
+          <button class="seg on" data-filter="all">전체 보기</button>
+          <button class="seg" data-filter="core">과제 핵심만</button>
+        </div>
+        <p class="muted small">"과제 핵심만"을 누르면 기초와 과제 핵심 주제만 남습니다.</p>
+      </div>
+    </div>
+
+    <div class="layout">
+      <aside class="toc card" id="toc">
+        <input type="search" class="search" id="search" placeholder="키워드 검색 (예: B+ 트리, 락)" aria-label="이론 검색" />
+        <div class="group">1 · 큰 그림</div>
+        <a href="#dbms">DBMS 는 무엇인가</a>
+        <a href="#sqlflow">SQL 처리 흐름</a>
+        <div class="group">2 · SQL 처리기 (Phase 1)</div>
+        <a href="#parser">토크나이저와 파서</a>
+        <a href="#storage">파일 저장 형식</a>
+        <div class="group">3 · 인덱스 (Phase 2)</div>
+        <a href="#index">인덱스란</a>
+        <a href="#bptree">B 트리 vs B+ 트리</a>
+        <a href="#plan">실행 계획</a>
+        <div class="group">4 · API 서버 (Phase 3)</div>
+        <a href="#threadpool">스레드 풀</a>
+        <a href="#locks">락과 동시성 이슈</a>
+        <a href="#api">API 서버 구조</a>
+        <div class="group">5 · 과제 정리</div>
+        <a href="#real">실제 DBMS 와 차이</a>
+        <a href="#qa">예상 질문</a>
+      </aside>
+
+      <article id="content">
+        <div class="empty-search" id="empty-search">검색 결과가 없습니다.</div>
+
+        <!-- ============================================================ 1 -->
+        <div class="part"><span>1</span> 큰 그림</div>
+
+        <section class="card" id="dbms" data-level="basic">
+          <div class="sec-head"><h2>DBMS 는 무엇인가</h2><span class="lv basic">기초</span></div>
+          <p class="one">데이터를 디스크에 안전하게 오래 저장하고, SQL 로 원하는 데이터를 찾아 주는 프로그램(MySQL, PostgreSQL 등).</p>
+          <div class="easy"><b>쉽게 말하면</b>아주 큰 도서관. 책(레코드)을 서가(파일)에 꽂아 두고, 찾아보기(인덱스)로 원하는 책을 빨리 찾게 해 주며, 여러 사람이 동시에 빌리고 반납해도 장부가 꼬이지 않게 관리합니다.</div>
+          <h3>미니 DBMS 의 세 단계</h3>
+          <div class="grid2">
+            <div class="box"><h4>Phase 1 · SQL 처리기</h4><p>SQL 문자열 → 파싱 → 실행 → 파일에 저장/읽기. CLI 로 SQL 파일을 실행.</p></div>
+            <div class="box"><h4>Phase 2 · B+ 트리 인덱스</h4><p>id 가 자동으로 붙고 B+ 트리에 등록. id 조회가 100만 건에서도 0.04ms.</p></div>
+            <div class="box"><h4>Phase 3 · API 서버</h4><p>Phase 1+2 를 엔진으로 두고 스레드 풀로 요청을 병렬 처리.</p></div>
+            <div class="box"><h4>공통</h4><p>엔진은 저장소를 인터페이스로만 써서 파일 / 메모리를 바꿔 끼울 수 있음.</p></div>
+          </div>
+        </section>
+
+        <section class="card" id="sqlflow" data-level="core">
+          <div class="sec-head"><h2>SQL 처리 흐름</h2><span class="lv core">과제 핵심</span></div>
+          <p class="one">입력(SQL) → 토큰화 → 파싱(AST) → 실행 계획 → 실행 → 저장 / 결과.</p>
+<pre><code>"SELECT name FROM users WHERE id = 3"
+   │ ① 토큰화 (lexer)    → [SELECT] [name] [FROM] [users] [WHERE] [id] [=] [3]
+   │ ② 파싱 (parser)     → { type:'select', columns:['name'], table:'users', where:[{id = 3}] }
+   │ ③ 계획 (planner)    → id 조건이 있음 → B+ 트리 인덱스 조회
+   │ ④ 실행 (executor)   → 인덱스로 위치 찾기 → 그 줄만 읽기 → 조건 검사 → 열 고르기
+   ▼ ⑤ 결과              → [['정트리']]</code></pre>
+          <div class="mini"><b>미니 DBMS 에서는</b><a href="../phase1/index.html">Phase 1</a> 에서 SQL 을 실행하면 이 다섯 단계가 아래 파이프라인 칸에 차례로 나옵니다. 코드는 <code>sql.js</code>(①②)와 <code>engine.js</code>(③④⑤).</div>
+          <div class="sum"><b>핵심 정리</b>SQL 은 "무엇을" 원하는지만 말하고, "어떻게" 찾을지는 DBMS 가 정합니다(선언형). 1주차 React 가 "화면이 어떻게 생겼는지" 만 말하고 바꾸는 방법은 diff 가 정한 것과 같은 생각입니다.</div>
+        </section>
+
+        <!-- ============================================================ 2 -->
+        <div class="part"><span>2</span> SQL 처리기 (Phase 1)</div>
+
+        <section class="card" id="parser" data-level="core">
+          <div class="sec-head"><h2>토크나이저와 파서</h2><span class="lv core">과제 핵심</span></div>
+          <p class="one">글자를 의미 있는 조각(토큰)으로 자르고, 토큰 순서를 문법 규칙에 맞춰 구조(AST)로 바꿉니다.</p>
+          <ul>
+            <li><b>토크나이저</b>: 예약어(SELECT…), 이름(users), 숫자, '문자열', 기호. 문자열 안의 <code>''</code> 는 따옴표 하나. 주석과 공백은 버림. 각 토큰에 <b>행·열 위치</b>를 기록.</li>
+            <li><b>재귀 하강 파서</b>: 문법 규칙 하나 = 함수 하나(<code>insert()</code>, <code>select()</code>, <code>condition()</code>). 기대한 토큰이 아니면 "'FROM' 이(가) 필요한데 'users' 이(가) 있습니다 (1행 10열)".</li>
+            <li><code>BETWEEN a AND b</code> 는 파싱 단계에서 <code>&gt;= a</code> 와 <code>&lt;= b</code> 두 조건으로 풀어 둠 → 실행기는 비교만 알면 됨.</li>
+          </ul>
+          <div class="demo" id="demo-parse">
+            <div class="demo-title">직접 해보기: SQL 이 토큰과 AST 로 바뀌는 모습</div>
+            <div class="demo-row">
+              <input id="pd-sql" class="grow mono" value="SELECT name, age FROM users WHERE age >= 20 AND id BETWEEN 1 AND 9 LIMIT 3" aria-label="SQL" />
+            </div>
+            <div class="demo-row">
+              <button type="button" class="small" data-sql="INSERT INTO users (name, email) VALUES ('O''Brien', 'ob@ex.com')">따옴표 이스케이프</button>
+              <button type="button" class="small" data-sql="SELECT * users">FROM 빠뜨리기</button>
+              <button type="button" class="small" data-sql="SELECT * FROM users WHERE name = 'abc">닫히지 않은 문자열</button>
+            </div>
+            <div id="pd-tokens" class="demo-msg"></div>
+            <pre class="demo-ast" id="pd-ast"></pre>
+          </div>
+          <div class="warn"><b>주의</b>사용자 입력을 SQL 문자열에 그대로 이어 붙이면 입력 안의 <code>'</code> 가 문자열을 닫아 버려 그 뒤가 SQL 로 해석됩니다(SQL 인젝션). 값은 이스케이프하거나 값을 SQL 과 따로 보내는 prepared statement 를 씁니다. <a href="../examples/index.html#ex-signup">예제 1</a> 에서 직접 확인.</div>
+        </section>
+
+        <section class="card" id="storage" data-level="core">
+          <div class="sec-head"><h2>파일 저장 형식</h2><span class="lv core">과제 핵심</span></div>
+          <p class="one">테이블 하나 = 파일 하나, 한 줄 = 레코드 하나. 레코드의 시작 위치(바이트 offset)만 알면 그 줄만 읽을 수 있습니다.</p>
+          <div class="table-wrap"><table>
+            <tr><th>형식</th><th>장점</th><th>단점</th></tr>
+            <tr><td><b>CSV 비슷한 텍스트 (채택)</b></td><td>사람이 읽고 디버깅하기 쉬움, 덧붙이기 쉬움</td><td>숫자도 글자로 저장해 크고 느림, 이스케이프 필요</td></tr>
+            <tr><td>JSON Lines</td><td>이스케이프가 표준</td><td>열 이름이 매 줄 반복되면 큼</td></tr>
+            <tr><td>바이너리 고정 길이</td><td>n 번째 레코드 위치 = n × 크기</td><td>가변 길이 문자열이 어려움</td></tr>
+            <tr><td>페이지(슬롯) — 실제 DBMS</td><td>디스크 블록 단위 읽기·쓰기, 갱신·삭제에 유리</td><td>구현이 복잡</td></tr>
+          </table></div>
+          <div class="mini"><b>미니 DBMS 에서는</b>쉼표·따옴표가 있으면 <code>"…"</code>, NULL 은 <code>\N</code>, 줄바꿈은 <code>\n</code>. 100만 건 INSERT 는 1MB 씩 모아서 씁니다(2초). <code>storage.js</code>, <code>storage-file.js</code>.</div>
+        </section>
+
+        <!-- ============================================================ 3 -->
+        <div class="part"><span>3</span> 인덱스 (Phase 2)</div>
+
+        <section class="card" id="index" data-level="core">
+          <div class="sec-head"><h2>인덱스란</h2><span class="lv core">과제 핵심</span></div>
+          <p class="one">"값 → 레코드 위치" 지도. 처음부터 끝까지 읽지(O(n)) 않고 바로 찾게(O(log n)) 합니다.</p>
+          <div class="easy"><b>쉽게 말하면</b>책 뒤의 "찾아보기". 본문을 처음부터 넘기지 않고, 찾아보기에서 쪽 번호를 보고 바로 펼칩니다.</div>
+          <ul>
+            <li><b>대가</b>: 공간이 더 들고, INSERT 마다 인덱스도 고쳐야 해서 쓰기가 느려집니다.</li>
+            <li><b>해시 인덱스 vs B+ 트리</b>: 해시는 <code>=</code> 만 O(1), 범위·정렬은 못 함. B+ 트리는 둘 다 → 대부분의 DB 기본값.</li>
+            <li><b>못 쓰는 경우</b>: 인덱스 없는 열, <code>!=</code>, 열에 함수를 씌운 조건, 결과가 너무 많을 때(전체 읽기가 더 쌈).</li>
+          </ul>
+          <div class="mini"><b>미니 DBMS 에서는</b>id 에만 인덱스. 100만 건에서 <code>id = ?</code> 0.038ms vs <code>email = ?</code> 1,032ms (약 27,000배). <a href="../phase2/index.html#bench">Phase 2 실험 2</a>.</div>
+        </section>
+
+        <section class="card" id="bptree" data-level="core">
+          <div class="sec-head"><h2>B 트리 vs B+ 트리</h2><span class="lv core">과제 핵심</span></div>
+          <p class="one">B+ 트리는 데이터를 리프에만 두고 리프끼리 연결합니다. 노드가 넓어 트리가 낮고, 범위 검색은 옆으로 읽기만 하면 됩니다.</p>
+          <div class="grid2">
+            <div class="box"><h4>B 트리</h4><p>모든 노드에 키와 데이터. 찾는 키가 위쪽에 있으면 일찍 끝남. 범위 검색은 트리를 오르내려야 함.</p></div>
+            <div class="box"><h4>B+ 트리 (채택)</h4><p>데이터는 리프에만, 내부 노드는 길 안내용 키만 → 노드에 키를 더 많이 넣어 트리가 낮음. 리프끼리 연결 리스트.</p></div>
+          </div>
+          <h3>삽입과 분할</h3>
+          <ol>
+            <li>루트에서 이진 탐색으로 내려가 리프를 찾고 정렬 위치에 넣는다.</li>
+            <li>키가 차수-1 개를 넘으면 반으로 쪼갠다. 리프는 오른쪽 첫 키를 <b>복사</b>해 부모로, 내부 노드는 가운데 키를 <b>이동</b>해 부모로.</li>
+            <li>부모도 넘치면 위로 반복. 루트가 쪼개지면 높이 +1 → 모든 리프가 항상 같은 깊이.</li>
+          </ol>
+          <p>차수 m, 원소 n 이면 높이 ≈ log<sub>m</sub>(n). m = 64, n = 100만 → 높이 4.</p>
+          <div class="mini"><b>미니 DBMS 에서는</b><code>bptree.js</code> 의 <code>check()</code> 가 정렬·키 개수·같은 깊이·리프 연결을 검사하고, 테스트가 차수 3~8 에서 무작위 2,000개로 확인. <a href="../phase2/index.html#bptree">Phase 2 실험 1</a> 에서 분할을 눈으로 봅니다.</div>
+        </section>
+
+        <section class="card" id="plan" data-level="core">
+          <div class="sec-head"><h2>실행 계획</h2><span class="lv core">과제 핵심</span></div>
+          <p class="one">같은 SQL 이라도 "어떤 줄을 어떤 순서로 읽을지" 를 정하는 단계. 성능은 결과 수가 아니라 읽는 양이 정합니다.</p>
+          <div class="table-wrap"><table>
+            <tr><th>조건</th><th>계획</th><th>읽는 양</th></tr>
+            <tr><td><code>WHERE id = 3</code></td><td>index-lookup</td><td>1줄</td></tr>
+            <tr><td><code>WHERE id BETWEEN 10 AND 19</code></td><td>index-range (리프 따라가기)</td><td>10줄</td></tr>
+            <tr><td><code>WHERE email = 'a@x'</code></td><td>full-scan</td><td>전부</td></tr>
+            <tr><td><code>WHERE name = 'x' AND id = 3</code></td><td>index-lookup (id 로 좁히고 name 은 검사)</td><td>1줄</td></tr>
+          </table></div>
+          <div class="demo" id="demo-plan">
+            <div class="demo-title">직접 해보기: 조건을 바꾸면 계획이 어떻게 바뀔까? (1,000건)</div>
+            <div class="demo-row">
+              <span class="mono small">SELECT * FROM users WHERE</span>
+              <input id="pl-where" class="grow mono" value="id = 500" aria-label="WHERE 조건" />
+              <button type="button" id="pl-run" class="primary small">실행</button>
+            </div>
+            <div class="demo-row">
+              <button type="button" class="small" data-where="id > 990">id &gt; 990</button>
+              <button type="button" class="small" data-where="age = 30">age = 30</button>
+              <button type="button" class="small" data-where="id != 1 LIMIT 3">id != 1</button>
+              <button type="button" class="small" data-where="id = 3 AND id = 4">모순 조건</button>
+            </div>
+            <p class="demo-msg" id="pl-msg"></p>
+          </div>
+          <div class="warn"><b>주의</b>미니 DBMS 의 계획기는 규칙 기반이라 id 조건이 있으면 무조건 인덱스를 씁니다. 실제 DBMS 는 통계로 결과 수를 추정해서, 너무 많으면 전체 읽기를 고릅니다(<a href="../deepdive/index.html#selectivity">더 파고들기</a>).</div>
+        </section>
+
+        <!-- ============================================================ 4 -->
+        <div class="part"><span>4</span> API 서버 (Phase 3)</div>
+
+        <section class="card" id="threadpool" data-level="core">
+          <div class="sec-head"><h2>스레드 풀</h2><span class="lv core">과제 핵심</span></div>
+          <p class="one">스레드를 미리 N 개 만들어 두고, 요청이 오면 쉬는 스레드에게 맡깁니다. 모두 바쁘면 대기열에서 기다립니다.</p>
+          <div class="easy"><b>쉽게 말하면</b>콜센터 상담원. 전화가 올 때마다 새로 뽑으면 시간이 걸리고, 전화가 몰리면 상담원이 끝없이 늘어납니다. 미리 N 명을 두고, 다 통화 중이면 대기 음악을 틀어 줍니다.</div>
+          <ul>
+            <li><b>왜</b>: 생성 비용 절약, 동시 실행 수 상한(메모리·CPU 보호), 대기열로 폭주 흡수</li>
+            <li><b>몇 개?</b>: CPU 위주 작업이면 코어 수 근처, I/O 대기가 많으면 더 많이</li>
+            <li><b>Node 에서</b>: <code>worker_threads</code>. 워커끼리 메모리를 공유하지 않고 메시지로 통신</li>
+            <li><b>장애 대비</b>: 워커가 죽으면 새로 만들고, 너무 오래 걸리면(timeout) 끊음</li>
+          </ul>
+        </section>
+
+        <section class="card" id="locks" data-level="core">
+          <div class="sec-head"><h2>락과 멀티 스레드 동시성 이슈</h2><span class="lv core">과제 핵심</span></div>
+          <p class="one">여러 스레드가 같은 데이터를 동시에 바꾸면 결과가 꼬입니다. 읽기/쓰기 락으로 "읽기는 함께, 쓰기는 혼자" 를 지킵니다.</p>
+          <div class="table-wrap"><table>
+            <tr><th>문제</th><th>예</th><th>미니 DBMS 의 해결</th></tr>
+            <tr><td><b>경쟁 상태</b></td><td>두 INSERT 가 동시에 "다음 id = 5" 를 읽고 둘 다 5</td><td>테이블 쓰기 락</td></tr>
+            <tr><td><b>찢어진 쓰기</b></td><td>두 스레드가 같은 파일에 동시에 써서 줄이 섞임</td><td>쓰기 락 + 버퍼째 기록</td></tr>
+            <tr><td><b>더티 리드</b></td><td>쓰는 도중의 반쪽 데이터를 읽음</td><td>쓰기 중에는 읽기도 대기</td></tr>
+            <tr><td><b>캐시 불일치</b></td><td>워커 A 가 넣은 행을 워커 B 의 인덱스가 모름</td><td>쓰기 후 모든 워커에 알림, 그 다음에 락 해제</td></tr>
+            <tr><td><b>교착 상태</b></td><td>A 는 users→products, B 는 반대 순서로 잠금</td><td>항상 이름 순서로 잠금</td></tr>
+            <tr><td><b>기아</b></td><td>읽기가 끝없이 와서 쓰기가 영원히 못 함</td><td>기다리는 쓰기가 있으면 새 읽기는 뒤에</td></tr>
+          </table></div>
+          <div class="mini"><b>미니 DBMS 에서는</b><code>lock.js</code> 의 <code>RWLock</code> 과 <code>LockManager</code>. 테스트: 동시 INSERT 60개 → id 1~60 빈틈없이, 쓰는 중 읽기는 기다렸다가 새 행을 봄. <a href="../phase3/index.html#pool">Phase 3 실험 1</a>.</div>
+          <div class="warn"><b>주의</b>실제 DBMS 는 테이블보다 잘게 <b>행 단위 락</b>을 쓰고, 읽기가 쓰기를 기다리지 않도록 옛 버전을 보여 주는 <b>MVCC</b> 를 씁니다(PostgreSQL, InnoDB).</div>
+        </section>
+
+        <section class="card" id="api" data-level="core">
+          <div class="sec-head"><h2>API 서버 구조</h2><span class="lv core">과제 핵심</span></div>
+          <p class="one">메인 스레드는 요청을 받고 나누는 일만, 실제 SQL 실행은 워커가 합니다.</p>
+<pre><code>클라이언트 ──HTTP──▶ [메인 스레드]  요청 받기 · SQL 미리 파싱(문법 에러는 바로 400) · 락 · 일 나눠주기
+                           │
+            ┌──────────────┼──────────────┐
+         [워커 0]       [워커 1]  …    [워커 N-1]     각자 Database(처리기 + B+ 트리)
+            └──────────────┴──────────────┘
+                           │
+                    data/*.tbl (공유 파일)</code></pre>
+          <ul>
+            <li><code>POST /api/sql { sql }</code> → <code>{ results, workerId, lockMs, waitedMs, execMs }</code>: 어느 워커가, 얼마나 기다렸는지 관찰 가능</li>
+            <li>INSERT 가 끝나면 새 (id → 위치) 를 다른 워커에 알린 뒤 락을 풀기 — 워커는 메시지를 순서대로 처리하므로 이후 조회는 최신 인덱스</li>
+          </ul>
+        </section>
+
+        <!-- ============================================================ 5 -->
+        <div class="part"><span>5</span> 과제 정리</div>
+
+        <section class="card" id="real" data-level="deep">
+          <div class="sec-head"><h2>실제 DBMS 와 차이</h2><span class="lv deep">심화</span></div>
+          <p class="one">미니 DBMS 가 하지 않는 것과, 그 때문에 생기는 문제.</p>
+          <div class="table-wrap"><table>
+            <tr><th>없는 것</th><th>실제 DBMS</th></tr>
+            <tr><td>UPDATE · DELETE · 트랜잭션</td><td>BEGIN/COMMIT, 격리 수준, 행 단위 락 · MVCC</td></tr>
+            <tr><td>WAL</td><td>커밋 전에 로그를 디스크에 확정 → 전원이 꺼져도 커밋된 것은 지킴</td></tr>
+            <tr><td>디스크 B+ 트리</td><td>노드 = 페이지로 저장, 버퍼 풀로 캐시 → 재시작 즉시 사용</td></tr>
+            <tr><td>보조 인덱스 · UNIQUE</td><td>열마다 B+ 트리, 중복 방지 제약</td></tr>
+            <tr><td>비용 기반 최적화기</td><td>통계로 계획 선택, 조인 순서</td></tr>
+          </table></div>
+        </section>
+
+        <section class="card" id="qa" data-level="core">
+          <div class="sec-head"><h2>면접 · 발표 예상 질문</h2><span class="lv core">과제 핵심</span></div>
+          <div class="qa-tools">
+            <button class="small" id="qa-open">모두 펼치기</button>
+            <button class="small" id="qa-close">모두 접기</button>
+          </div>
+          <details class="qa"><summary>SQL 한 줄은 어떻게 처리되나요?</summary><div class="a">토크나이저가 글자를 토큰으로 자르고, 재귀 하강 파서가 AST 를 만들고, 실행 계획기가 id 조건이 있으면 B+ 트리를 쓰기로 정하고, 실행기가 파일의 해당 위치에서 줄을 읽어 조건 검사 후 결과를 돌려줍니다.</div></details>
+          <details class="qa"><summary>데이터는 파일에 어떻게 저장하나요?</summary><div class="a">테이블 하나 = 파일 하나, 한 줄 = 레코드 하나의 CSV 비슷한 형식입니다. 쉼표·따옴표는 따옴표로 감싸고 NULL 은 \N, 줄바꿈은 \n 으로 바꿔 한 줄을 지킵니다. 그래서 바이트 위치로 한 줄만 읽을 수 있습니다.</div></details>
+          <details class="qa"><summary>왜 B+ 트리인가요? 해시 인덱스는 안 되나요?</summary><div class="a">해시 인덱스는 = 조회만 빠르고 범위·정렬을 못 합니다. B+ 트리는 = 와 범위 모두 O(log n) 이고, 리프 연결로 범위를 순서대로 읽으며, 노드가 넓어 높이가 낮아서 디스크 읽기 횟수가 적습니다.</div></details>
+          <details class="qa"><summary>WHERE id = ? 에서 B+ 트리를 어떻게 쓰나요?</summary><div class="a">INSERT 때 id → 파일 위치를 B+ 트리에 등록해 두고, SELECT 의 계획기가 id 의 = 조건을 보면 트리에서 위치를 찾아 그 줄만 읽습니다.</div></details>
+          <details class="qa"><summary>100만 건에서 인덱스와 선형 탐색 차이는?</summary><div class="a">id = ? 는 평균 0.038ms, email = ? 는 1,032ms 로 약 2만 7천 배 차이였습니다. 선형 탐색은 데이터에 비례해 느려지고 인덱스는 높이(4)만큼만 내려갑니다.</div></details>
+          <details class="qa"><summary>스레드 풀에서 어떤 동시성 이슈가 있었고 어떻게 해결했나요?</summary><div class="a">INSERT 끼리 같은 id 를 받거나 파일 쓰기가 섞이는 문제는 테이블 쓰기 락으로, 워커마다 다른 인덱스 문제는 쓰기 후 다른 워커에 알린 뒤 락을 풀어서 해결했습니다. 조회는 읽기 락이라 병렬, 교착은 잠금 순서 고정, 쓰기 기아는 대기열 순서로 막았습니다.</div></details>
+          <details class="qa"><summary>다른 팀과의 차별점은?</summary><div class="a">행·열 위치가 있는 SQL 에러, 결과에 드러나는 실행 계획, 바이트 offset 기반 한 줄 읽기, B+ 트리 구조 검증, 읽기/쓰기 락 + 인덱스 알림을 쓰는 스레드 풀, 그리고 세 단계를 모두 눈으로 보는 Phase 페이지.</div></details>
+        </section>
+      </article>
+    </div>
+    <button class="to-top" id="to-top" aria-label="맨 위로">↑</button>
+  </main>
+
+  <script>
+    (function () {
+      var s = document.createElement("script");
+      if (location.protocol === "file:") {
+        s.src = "./bundle.js";
+      } else {
+        s.type = "module";
+        s.src = "./main.js";
+      }
+      document.body.appendChild(s);
+    })();
+  </script>
+  <!-- chat:js --><script src="../../../tools/chat.js"></script>
+</body>
+</html>

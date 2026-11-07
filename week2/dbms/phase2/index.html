@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>미니 DBMS Phase 2 · B+ 트리 인덱스</title>
+  <link rel="stylesheet" href="../../../styles/base.css" />
+  <link rel="stylesheet" href="../../week2.css" />
+  <!-- chat:css --><link rel="stylesheet" href="../../../tools/chat.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../../../index.html#dbms">mini<span>DBMS</span></a>
+    <nav>
+      <a href="../../../index.html#dbms">홈</a>
+      <a href="../../../week2/dbms/guide/index.html">학습 가이드</a>
+      <a href="../../../week2/dbms/phase1/index.html">Phase 1 · SQL</a>
+      <a href="./index.html" aria-current="page">Phase 2 · B+ 트리</a>
+      <a href="../../../week2/dbms/phase3/index.html">Phase 3 · API 서버</a>
+      <a href="../../../week2/dbms/examples/index.html">예제</a>
+      <a href="../../../week2/dbms/sandbox/index.html">샌드박스</a>
+      <a href="../../../week2/dbms/walkthrough/index.html">코드 해설</a>
+      <a href="../../../week2/dbms/theory/index.html">DBMS 이론</a>
+      <a href="../../../week2/dbms/deepdive/index.html">개념 더 파고들기</a>
+      <a href="../../../week2/dbms/cheatsheet/index.html">한 장 요약</a>
+      <a href="../../../week2/dbms/docs/index.html">설명서</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>B+ 트리 인덱스 Playground</h1>
+    <p class="lead">INSERT 하면 id 가 자동으로 붙고, B+ 트리에 <b>id → 레코드 위치</b>가 등록됩니다. <code>WHERE id = ?</code> 는 이 트리로 바로 찾고, 다른 열 조건은 처음부터 끝까지 읽습니다. 노드가 넘쳐 쪼개지는 모습과 두 방식의 속도 차이를 직접 봅니다(<code>week2/dbms/bptree.js</code>).</p>
+
+    <div class="toolbar card">
+      <span class="tb-label">바로 가기</span>
+      <a class="btn small" href="#bptree">1. B+ 트리 들여다보기</a>
+      <a class="btn small" href="#bench">2. 인덱스 vs 선형 탐색</a>
+      <span class="spacer"></span>
+      <span class="phase-steps"><a href="../phase1/index.html">Phase 1 · SQL</a><a href="../phase2/index.html" class="on">Phase 2 · B+ 트리</a><a href="../phase3/index.html">Phase 3 · API 서버</a></span>
+    </div>
+
+        <section class="card panel" id="bptree">
+          <div class="card-head">B+ 트리 <span class="sub">분할 · 검색 경로</span></div>
+          <div class="card-body">
+          <p class="why">노드에 키가 <b>차수 - 1 개</b>를 넘으면 반으로 쪼개고 가운데 키를 부모로 올립니다. 실제 데이터(행 위치)는 <b>리프(파란 테두리)에만</b> 있고, 리프끼리는 → 로 이어져 있어 범위 검색은 리프를 따라 옆으로 읽습니다. 모든 리프가 같은 깊이라 어떤 키든 <b>높이만큼만</b> 내려가면 됩니다.</p>
+          <div class="row">
+            <label class="small">차수 <select id="bpt-order" aria-label="차수"><option value="3">3</option><option value="4" selected>4</option><option value="5">5</option><option value="6">6</option></select></label>
+            <input type="number" id="bpt-key" value="33" aria-label="키" />
+            <button type="button" id="bpt-insert" class="primary">삽입</button>
+            <button type="button" id="bpt-search">검색 (경로 보기)</button>
+            <button type="button" id="bpt-range">범위 (키 ~ 키+9)</button>
+            <button type="button" id="bpt-seq">순서대로 10개 (자동 증가 id 처럼)</button>
+            <button type="button" id="bpt-rand">무작위 10개</button>
+            <button type="button" id="bpt-reset" class="ghost">비우기</button>
+          </div>
+          <p class="small" id="bpt-msg"></p>
+          <div class="stats" id="bpt-stats"></div>
+          <div class="bpt" id="bpt-view"></div>
+          <div class="note"><b>왜 이진 탐색 트리가 아니라 B+ 트리?</b>디스크는 한 번 읽을 때 큰 덩어리(페이지, 예: 16KB)로 읽습니다. 노드 하나에 키를 수백 개 넣으면 트리가 아주 낮아져서(100만 건도 높이 3~4) <b>디스크를 몇 번만 읽고</b> 찾을 수 있습니다. 이진 트리는 높이가 20 이상이라 20번 읽어야 합니다.</div>
+          </div>
+        </section>
+
+        <section class="card panel" id="bench">
+          <div class="card-head">성능 비교 <span class="sub">인덱스(id) vs 선형 탐색(다른 필드)</span></div>
+          <div class="card-body">
+          <p class="why">같은 데이터에서 <code>WHERE id = ?</code>(B+ 트리) 200번과 <code>WHERE email = ?</code>(처음부터 끝까지) 5번의 평균 시간을 잽니다. 브라우저 메모리에서 하므로 30만 건까지만 고를 수 있어요.</p>
+          <div class="row">
+            <label class="small">레코드 수 <select id="bench-n" aria-label="레코드 수"><option value="10000">1만</option><option value="50000" selected>5만</option><option value="100000">10만</option><option value="300000">30만</option></select></label>
+            <button type="button" id="bench-run" class="primary">만들고 비교하기</button>
+          </div>
+          <div id="bench-out"></div>
+          <div class="note good"><b>100만 건 (과제 요구사항) — 실제 파일로 측정한 결과</b>
+            <code>node week2/dbms/bench.js --rows 1000000</code><br>
+            INSERT 1,000,000건 <b>2.09초</b> (파일 41.7MB, B+ 트리 높이 4) · <code>id = ?</code> 평균 <b>0.038ms</b> · <code>email = ?</code> 평균 <b>1,032ms</b> → <b>약 27,000배</b> · id 1,000건 범위 7.9ms · 재시작 시 인덱스 재구성 0.47초
+            <br><span class="muted">(측정한 PC 기준. 직접 돌리면 숫자는 달라질 수 있어요.)</span></div>
+          </div>
+        </section>
+  </main>
+
+  <script>
+    (function () {
+      var s = document.createElement("script");
+      if (location.protocol === "file:") {
+        s.src = "./bundle.js";
+      } else {
+        s.type = "module";
+        s.src = "./main.js";
+      }
+      document.body.appendChild(s);
+    })();
+  </script>
+  <!-- chat:js --><script src="../../../tools/chat.js"></script>
+</body>
+</html>

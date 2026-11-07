@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>미니 DBMS 샌드박스</title>
+  <link rel="stylesheet" href="../../../styles/base.css" />
+  <link rel="stylesheet" href="../../../sandbox/sandbox.css" />
+  <link rel="stylesheet" href="../../week2.css" />
+  <!-- chat:css --><link rel="stylesheet" href="../../../tools/chat.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../../../index.html#dbms">mini<span>DBMS</span></a>
+    <nav>
+      <a href="../../../index.html#dbms">홈</a>
+      <a href="../../../week2/dbms/guide/index.html">학습 가이드</a>
+      <a href="../../../week2/dbms/phase1/index.html">Phase 1 · SQL</a>
+      <a href="../../../week2/dbms/phase2/index.html">Phase 2 · B+ 트리</a>
+      <a href="../../../week2/dbms/phase3/index.html">Phase 3 · API 서버</a>
+      <a href="../../../week2/dbms/examples/index.html">예제</a>
+      <a href="./index.html" aria-current="page">샌드박스</a>
+      <a href="../../../week2/dbms/walkthrough/index.html">코드 해설</a>
+      <a href="../../../week2/dbms/theory/index.html">DBMS 이론</a>
+      <a href="../../../week2/dbms/deepdive/index.html">개념 더 파고들기</a>
+      <a href="../../../week2/dbms/cheatsheet/index.html">한 장 요약</a>
+      <a href="../../../week2/dbms/docs/index.html">설명서</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>미니 DBMS 샌드박스</h1>
+    <p class="lead">직접 만든 미니 DBMS 로 원하는 기능을 바로 만들어 보는 곳입니다. <b>틀</b>을 고르고, <b>조각</b>을 끼워 넣고, 직접 타이핑해서 고친 뒤 <b>실행</b>하세요. 코드는 이 브라우저에 자동 저장됩니다.</p>
+
+    <div class="sb-bar card">
+      <span class="sb-label">틀</span>
+      <div class="tpl-list" id="tpl-list"></div>
+    </div>
+
+    <div class="sb-grid">
+      <section class="card sb-edit">
+        <div class="card-head">
+          코드
+          <span class="sub" id="saved">자동 저장됨</span>
+          <span class="spacer"></span>
+          <label class="toggle"><input type="checkbox" id="auto" /> 타이핑 멈추면 자동 실행</label>
+          <button id="reset" class="ghost small" title="지금 틀의 처음 코드로">되돌리기</button>
+          <button id="run" class="primary small" title="Ctrl+Enter">▶ 실행</button>
+        </div>
+        <div class="snip-list" id="snip-list"></div>
+        <div class="editor-wrap">
+          <div class="gutter mono" id="gutter" aria-hidden="true"></div>
+          <textarea id="code" class="mono" spellcheck="false" aria-label="코드 편집기"></textarea>
+        </div>
+        <div class="sb-foot muted">
+          <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 실행 · <kbd>Tab</kbd> 들여쓰기 · 조각 버튼은 <b>커서 위치</b>에 들어갑니다
+        </div>
+      </section>
+
+      <section class="sb-side">
+        <div class="card sb-out">
+          <div class="card-head">콘솔 <span class="sub"><span id="console-count">0</span>줄 · print() 결과와 에러</span><span class="spacer"></span><button id="clear-console" class="ghost small">지우기</button></div>
+          <div class="error" id="error" hidden></div>
+          <ol class="console mono" id="console"><li class="sys">실행하면 print() 결과가 여기에 나옵니다.</li></ol>
+        </div>
+        <div class="card sb-tip">
+          <div class="card-head">지금 틀 <span class="sub" id="tpl-desc"></span></div>
+          <div class="card-body"><b>해볼 것</b><ul id="tpl-try"></ul></div>
+        </div>
+      </section>
+
+      <aside class="card sb-insp sb-state">
+        <div class="card-head">테이블 <span class="sub">실행 후 상태</span></div><div class="table-wrap"><table class="data"><thead><tr><th>테이블</th><th>행</th><th>B+ 트리 높이</th></tr></thead><tbody id="sb-tables"></tbody></table></div><div class="card-head">레디스 키 <span class="sub">캐시 실험용</span></div><div class="table-wrap"><table class="data"><thead><tr><th>키</th><th>값</th><th>TTL</th></tr></thead><tbody id="sb-keys"></tbody></table></div>
+        <div class="card-body sb-state-foot">
+          <label class="toggle"><input type="checkbox" id="fresh" checked /> 실행할 때마다 새로 시작</label>
+          <button id="wipe" class="ghost small">지금 비우기</button>
+        </div>
+      </aside>
+    </div>
+
+    <details class="card sb-help">
+      <summary>쓸 수 있는 것과 사용법</summary>
+      <div class="help-grid">
+        <div>
+          <b>예시</b>
+          <pre><code>sql("INSERT INTO users (name, age) VALUES ('정글', 25)");\nsql('SELECT * FROM users WHERE id = 1');\n// → 표 + 실행 계획 (B+ 트리 인덱스 조회)\nconst [r] = db.execute('SELECT name FROM users');\nprint(r.rows);</code></pre>
+        </div>
+        <div>
+          <b>코드 안에서 쓸 수 있는 것</b>
+          <ul>
+            <li><code>sql('SELECT * FROM users WHERE id = 1')</code> — 실행 + 결과 표 출력, 결과 배열 반환</li><li><code>db.execute(sql)</code> — 출력 없이 결과만 · 테이블 <code>users(id, name, age, email)</code>, <code>products(id, name, price, category)</code>, <code>posts(id, title, author)</code></li><li><code>tokenize(sql)</code> · <code>parse(sql)</code> — 처리기의 1·2단계</li><li><code>new BPlusTree(차수)</code> · <code>seedRows(db, 'users', n)</code> · <code>redis</code></li>
+            <li><code>print(…)</code> · <code>await sleep(ms)</code> · <code>time('이름', () =&gt; { … })</code></li>
+            <li>15초 안에 끝나지 않으면 멈춥니다.</li>
+          </ul>
+        </div>
+      </div>
+    </details>
+  </main>
+
+  <script>
+    (function () {
+      var s = document.createElement("script");
+      if (location.protocol === "file:") {
+        s.src = "./bundle.js";
+      } else {
+        s.type = "module";
+        s.src = "./main.js";
+      }
+      document.body.appendChild(s);
+    })();
+  </script>
+  <!-- chat:js --><script src="../../../tools/chat.js"></script>
+</body>
+</html>

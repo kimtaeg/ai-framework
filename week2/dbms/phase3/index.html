@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>미니 DBMS Phase 3 · API 서버</title>
+  <link rel="stylesheet" href="../../../styles/base.css" />
+  <link rel="stylesheet" href="../../week2.css" />
+  <!-- chat:css --><link rel="stylesheet" href="../../../tools/chat.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../../../index.html#dbms">mini<span>DBMS</span></a>
+    <nav>
+      <a href="../../../index.html#dbms">홈</a>
+      <a href="../../../week2/dbms/guide/index.html">학습 가이드</a>
+      <a href="../../../week2/dbms/phase1/index.html">Phase 1 · SQL</a>
+      <a href="../../../week2/dbms/phase2/index.html">Phase 2 · B+ 트리</a>
+      <a href="./index.html" aria-current="page">Phase 3 · API 서버</a>
+      <a href="../../../week2/dbms/examples/index.html">예제</a>
+      <a href="../../../week2/dbms/sandbox/index.html">샌드박스</a>
+      <a href="../../../week2/dbms/walkthrough/index.html">코드 해설</a>
+      <a href="../../../week2/dbms/theory/index.html">DBMS 이론</a>
+      <a href="../../../week2/dbms/deepdive/index.html">개념 더 파고들기</a>
+      <a href="../../../week2/dbms/cheatsheet/index.html">한 장 요약</a>
+      <a href="../../../week2/dbms/docs/index.html">설명서</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>미니 DBMS API 서버 Playground</h1>
+    <p class="lead">Phase 1 처리기 + Phase 2 B+ 트리를 내부 엔진으로 두고, <b>스레드 풀</b>로 요청을 병렬 처리하는 API 서버입니다. 실험 1 은 요청 대기열 · 워커 · 읽기/쓰기 락을 눈으로 보는 시뮬레이션, 실험 2 는 서버(<code>npm start</code>)로 열었을 때 진짜 스레드 풀(<code>worker_threads</code>)에 요청을 보냅니다.</p>
+
+    <div class="toolbar card">
+      <span class="tb-label">바로 가기</span>
+      <a class="btn small" href="#pool">1. 스레드 풀 · 락</a>
+      <a class="btn small" href="#server">2. 실제 API 서버</a>
+      <span class="spacer"></span>
+      <span class="phase-steps"><a href="../phase1/index.html">Phase 1 · SQL</a><a href="../phase2/index.html">Phase 2 · B+ 트리</a><a href="../phase3/index.html" class="on">Phase 3 · API 서버</a></span>
+    </div>
+
+        <section class="card panel" id="pool">
+          <div class="card-head">스레드 풀 · 락 <span class="sub">시뮬레이션</span></div>
+          <div class="card-body">
+          <p class="why">요청은 대기열에 줄을 서고, 쉬는 워커가 하나씩 가져갑니다. <b>읽기(SELECT)는 여러 워커가 함께</b>, <b>쓰기(INSERT)는 혼자</b> 합니다. 쓰기는 "① 다음 id 를 읽고 → (일하고) → ② +1 해서 저장" 하는데, 락을 끄면 두 워커가 같은 id 를 읽습니다.</p>
+          <div class="row">
+            <label class="small">워커 수 <select id="sim-workers" aria-label="워커 수"><option>2</option><option selected>4</option><option>6</option></select></label>
+            <label class="small"><input type="checkbox" id="sim-lockon" checked /> 락 켜기</label>
+            <button type="button" id="sim-reads">SELECT 8개</button>
+            <button type="button" id="sim-writes" class="primary">INSERT 4개</button>
+            <button type="button" id="sim-mix">섞어서 8개</button>
+            <button type="button" id="sim-reset" class="ghost">초기화</button>
+            <span id="sim-lock"></span>
+          </div>
+          <div class="pool">
+            <div class="queue" id="sim-queue"></div>
+            <div class="lanes" id="sim-lanes"></div>
+          </div>
+          <p class="small" id="sim-ids"></p>
+          <div class="note warn"><b>해 보기</b>① 락을 켠 채 "INSERT 4개" → 워커가 4개여도 한 번에 하나씩 처리하고 id 가 1,2,3,4 로 겹치지 않습니다. ② 락을 끄고 다시 → 4개가 동시에 같은 다음 id 를 읽어서 <b class="bad">중복 id</b> 가 생깁니다. ③ "섞어서" → 쓰기가 기다리는 동안 뒤의 읽기도 기다려서 쓰기가 굶지 않습니다(공정성).</div>
+          <div class="note"><b>실제 서버의 설계</b>메인 스레드가 HTTP 요청을 받아 SQL 을 미리 파싱(문법 에러는 워커 없이 바로 400) → 테이블별 읽기/쓰기 락 → 쉬는 워커에 전달. 워커마다 자기 엔진(처리기 + B+ 트리)이 있어서, INSERT 가 끝나면 <b>새 (id → 위치)를 다른 모든 워커에 알린 뒤 락을 풉니다</b>. 워커는 메시지를 받은 순서대로 처리하므로 이후 조회는 항상 최신 인덱스를 씁니다. 여러 테이블을 잠글 때는 이름 순서로 잡아 교착 상태를 막습니다.</div>
+          </div>
+        </section>
+
+        <section class="card panel" id="server">
+          <div class="card-head">API 서버 <span class="sub">실제 서버 · 스레드 풀</span></div>
+          <div class="card-body">
+          <div class="table-wrap"><table class="data">
+            <tr><th>메서드</th><th>주소</th><th>본문</th><th>응답</th></tr>
+            <tr><td>POST</td><td class="mono">/api/sql</td><td class="mono">{ sql, delayMs? }</td><td class="mono">{ results, workerId, lockMs, waitedMs, execMs } · 400 SQL 오류</td></tr>
+            <tr><td>GET</td><td class="mono">/api/sql/status</td><td>—</td><td class="mono">워커별 처리 수, 대기열, 락 상태</td></tr>
+            <tr><td>GET</td><td class="mono">/api/sql/tables</td><td>—</td><td class="mono">테이블별 행 수, B+ 트리 높이</td></tr>
+          </table></div>
+          <div id="srv-file">
+            <div class="note"><b>서버로 열면 여기서 바로 요청을 보낼 수 있어요</b><code>npm start</code> 후 <code>http://localhost:5200/week2/dbms/phase3/</code> 로 열면 <code>/api/sql</code> 을 씁니다(데이터: week2/data/db). 단독 서버는 <code>node week2/dbms/server.js</code> (포트 7000, 경로 <code>/sql</code>).</div>
+          </div>
+          <div id="srv-live" hidden>
+            <textarea id="srv-sql" class="sql" style="min-height:70px" spellcheck="false" aria-label="서버로 보낼 SQL">INSERT INTO users (name, age, email) VALUES ('서버정글', 26, 'server@ex.com');
+SELECT * FROM users WHERE id >= 1 LIMIT 5;</textarea>
+            <div class="row" style="margin-top:8px">
+              <button type="button" id="srv-send" class="primary">서버로 보내기</button>
+              <button type="button" id="srv-burst">느린 조회 8개 동시에 (병렬 확인)</button>
+              <button type="button" id="srv-inserts">INSERT 20개 동시에 (id 중복 확인)</button>
+              <button type="button" id="srv-status">상태 보기</button>
+            </div>
+            <div id="srv-out"></div>
+            <p class="small muted">100만 건으로 해 보려면 서버를 끄고 <code>node week2/dbms/cli.js seed users 1000000</code> 을 실행한 뒤 다시 켜세요.</p>
+          </div>
+          </div>
+        </section>
+  </main>
+
+  <script>
+    (function () {
+      var s = document.createElement("script");
+      if (location.protocol === "file:") {
+        s.src = "./bundle.js";
+      } else {
+        s.type = "module";
+        s.src = "./main.js";
+      }
+      document.body.appendChild(s);
+    })();
+  </script>
+  <!-- chat:js --><script src="../../../tools/chat.js"></script>
+</body>
+</html>
