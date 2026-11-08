@@ -3,7 +3,7 @@
 // 사용자가 쓴 그대로를 기준으로 에러를 알려 준다.
 
 import { toVNode } from './domToVNode.js';
-import { VOID_TAGS } from './htmlTags.js';
+import { VOID_TAGS, SVG_TAG, FOREIGN_OBJECT_TAG } from './htmlTags.js';
 
 // <태그 속성="값 > 포함 가능"> / </태그> / <태그 />
 const TAG_PATTERN =
@@ -109,8 +109,8 @@ function checkTags(source) {
     } else if (selfClose) {
       // HTML에서 <div/>의 '/'는 무시되어 열린 태그가 된다. SVG 안에서만 스스로 닫을 수 있다.
       // 가장 가까운 문맥을 본다: foreignObject 안쪽은 SVG 안이어도 다시 HTML 문맥이다.
-      const context = stack.findLast((tag) => tag.name === 'svg' || tag.name === 'foreignobject');
-      const isInSvg = context?.name === 'svg';
+      const context = stack.findLast((tag) => tag.name === SVG_TAG || tag.name === FOREIGN_OBJECT_TAG.toLowerCase());
+      const isInSvg = context?.name === SVG_TAG;
       if (!isInSvg) throw new HTMLParseError(`<${name}/>처럼 일반 요소는 스스로 닫을 수 없습니다. </${name}>을 쓰세요.`, line);
     } else {
       stack.push({ name, line });

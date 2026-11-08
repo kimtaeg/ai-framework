@@ -1,11 +1,10 @@
 // Phase 2 마무리 점검에서 찾은 엣지 케이스 회귀 테스트
 import { describe, it, expect } from 'vitest';
+import { flush } from './helpers.js';
 import { h } from '../src/vdom.js';
 import { FunctionComponent } from '../src/component.js';
 import { useState, useEffect, useMemo } from '../src/hooks.js';
 import { createApp, sanitizeTodos } from '../phase2/app.js';
-
-const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function mount(fn) {
   const container = document.createElement('div');

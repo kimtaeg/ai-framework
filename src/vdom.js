@@ -3,6 +3,7 @@
 //   텍스트: 'hello' (그냥 문자열)
 
 import { setProp } from './props.js';
+import { SVG_TAG, FOREIGN_OBJECT_TAG } from './htmlTags.js';
 
 export function h(type, props, ...children) {
   return {
@@ -20,7 +21,7 @@ export const SVG_NS = 'http://www.w3.org/2000/svg';
 
 // parent 안에 새로 만들 자식이 SVG 요소여야 하는지 (patch에서 부모 기준으로 판단할 때 사용)
 export function isSvgContext(parent) {
-  return parent?.namespaceURI === SVG_NS && parent.localName !== 'foreignObject';
+  return parent?.namespaceURI === SVG_NS && parent.localName !== FOREIGN_OBJECT_TAG;
 }
 
 // VNode → 실제 DOM 노드
@@ -33,10 +34,10 @@ export function render(vnode, isSvg = false) {
     // createElement(함수)는 이상한 태그를 만들거나 에러가 나므로, 원인을 바로 알 수 있게 막는다
     throw new Error(`컴포넌트(${vnode.type.name || '익명'})는 expand()로 먼저 펼친 뒤 render하세요.`);
   }
-  const isInSvg = isSvg || vnode.type === 'svg';
+  const isInSvg = isSvg || vnode.type === SVG_TAG;
   const el = isInSvg ? document.createElementNS(SVG_NS, vnode.type) : document.createElement(vnode.type);
   for (const child of vnode.children) {
-    el.appendChild(render(child, isInSvg && vnode.type !== 'foreignObject'));
+    el.appendChild(render(child, isInSvg && vnode.type !== FOREIGN_OBJECT_TAG));
   }
   // 자식 다음에 props를 넣는다: <select value>는 <option>이 있어야 반영된다
   for (const [key, value] of Object.entries(vnode.props)) {

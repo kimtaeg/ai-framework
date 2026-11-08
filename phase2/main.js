@@ -141,6 +141,8 @@ function DebugPanel({ latest, recent }) {
 
 // ── 연결 ────────────────────────────────────────────────────────
 
+// 콜백은 비워 두고 onRender에서 takeRecords()로만 꺼낸다 (렌더마다 그 렌더의 변경만 세기 위해).
+// 앱 영역과 수명이 같은 페이지 단위 객체라 disconnect하지 않는다. 초기화(unmount → mount)해도 같은 appRoot를 계속 본다.
 const observer = new MutationObserver(() => {});
 observer.observe(appRoot, OBSERVE_OPTIONS);
 

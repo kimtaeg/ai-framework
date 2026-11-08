@@ -172,6 +172,7 @@ export function createApp({ initialTodos = [], storage } = {}) {
       document.title = counts.active === 0 ? '모두 완료 · Mini React' : `할 일 ${counts.active}개 남음 · Mini React`;
     }, [counts.active]);
 
+    // storage는 deps에 없다: createApp이 만든 클로저에 고정돼 App이 사는 동안 바뀌지 않기 때문이다
     useEffect(() => {
       storage?.save(todos);
     }, [todos]);

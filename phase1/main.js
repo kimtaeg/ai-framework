@@ -36,12 +36,25 @@ const totalInner = $('total-inner');
 
 const PREVIEW_LENGTH = 48;
 const PATCH_LABEL = 'Patch';
+const FLASH_DURATION_MS = 1200; // 바뀐 노드를 강조하는 애니메이션 길이
+
+// 변경 로그의 종류. TAG_CLASS의 키로도 쓰이므로 오타가 나면 태그 색이 조용히 바뀐다 → 한 곳에서 관리
+const LOG_KIND = {
+  LOAD: 'LOAD',
+  PATCH: 'PATCH',
+  SKIP: 'SKIP',
+  ERROR: 'ERROR',
+  DOM: 'DOM',
+  BACK: 'BACK',
+  FORWARD: 'FORWARD',
+};
+
 const history = new History();
 
 // 뒤로/앞으로 버튼마다 다른 것: 화면 라벨, 로그 종류, History 이동 방향
 const MOVES = {
-  back: { label: '뒤로가기', logKind: 'BACK', go: () => history.back() },
-  forward: { label: '앞으로가기', logKind: 'FORWARD', go: () => history.forward() },
+  back: { label: '뒤로가기', logKind: LOG_KIND.BACK, go: () => history.back() },
+  forward: { label: '앞으로가기', logKind: LOG_KIND.FORWARD, go: () => history.forward() },
 };
 
 // 실제 영역을 계속 감시한다. patch 직후에는 takeRecords()로 바로 꺼내 세고,
@@ -60,7 +73,7 @@ function init() {
 
   showSource(vnode);
   syncHistoryControls();
-  addLog('LOAD', '실제 영역을 VNode로 읽어 기록에 저장');
+  addLog(LOG_KIND.LOAD, '실제 영역을 VNode로 읽어 기록에 저장');
 }
 
 function handleSourceInput() {
@@ -78,7 +91,7 @@ function handlePatch() {
     next = parseHTML(source.value);
   } catch (error) {
     showError(error);
-    addLog('ERROR', `Patch 취소 — ${error.message}`);
+    addLog(LOG_KIND.ERROR, `Patch 취소 — ${error.message}`);
     return;
   }
 
@@ -88,14 +101,14 @@ function handlePatch() {
   compareMutations(prev, next, patches, PATCH_LABEL);
 
   if (patches.length === 0) {
-    addLog('SKIP', '변경 없음 — 기록을 추가하지 않음');
+    addLog(LOG_KIND.SKIP, '변경 없음 — 기록을 추가하지 않음');
     return;
   }
 
   history.push(next);
   flashPatched(patches);
   syncHistoryControls();
-  addLog('PATCH', `${patches.length}개 적용 → 기록 ${positionText()}`);
+  addLog(LOG_KIND.PATCH, `${patches.length}개 적용 → 기록 ${getPositionText()}`);
 }
 
 function handleMove(move) {
@@ -110,7 +123,7 @@ function handleMove(move) {
   showSource(next);
   showPatches(patches, prev, next, move.label);
   syncHistoryControls();
-  addLog(move.logKind, `${patches.length}개 적용 → 기록 ${positionText()}`);
+  addLog(move.logKind, `${patches.length}개 적용 → 기록 ${getPositionText()}`);
 }
 
 // ── DOM 변경 측정 ────────────────────────────
@@ -123,14 +136,14 @@ function compareMutations(prev, next, patches, label) {
   } catch (error) {
     // 실제 DOM이 patch 밖에서 바뀌어 VNode와 어긋난 경우: 새 VNode로 통째로 다시 그려 맞춘다
     actualRoot.replaceChildren(render(next));
-    addLog('ERROR', `patch 실패 — ${error.message} 실제 영역을 다시 그려 복구했습니다.`);
+    addLog(LOG_KIND.ERROR, `patch 실패 — ${error.message} 실제 영역을 다시 그려 복구했습니다.`);
   }
   const byPatch = summarizeMutations(actualObserver.takeRecords());
   const byInnerHTML = measureInnerHTML(prev, next);
 
   showComparison(byPatch, byInnerHTML, label);
   addLog(
-    'DOM',
+    LOG_KIND.DOM,
     `MutationObserver: 추가 ${byPatch.added} · 삭제 ${byPatch.removed} · 속성 ${byPatch.attributes} · 텍스트 ${byPatch.text}` +
       ` = ${byPatch.total}개 (innerHTML이면 ${byInnerHTML.total}개)`
   );
@@ -148,7 +161,7 @@ function measureInnerHTML(prev, next) {
 
 function reportOutsideMutations(records) {
   const summary = summarizeMutations(records);
-  if (summary.total > 0) addLog('DOM', `patch 밖에서 생긴 DOM 변경 ${summary.total}개 감지`);
+  if (summary.total > 0) addLog(LOG_KIND.DOM, `patch 밖에서 생긴 DOM 변경 ${summary.total}개 감지`);
 }
 
 const COMPARE_ROWS = [
@@ -171,14 +184,14 @@ function showComparison(byPatch, byInnerHTML, label) {
       const th = document.createElement('th');
       th.scope = 'row';
       th.textContent = name;
-      tr.append(th, cell(byPatch[key]), cell(byInnerHTML[key]));
+      tr.append(th, createCell(byPatch[key]), createCell(byInnerHTML[key]));
       return tr;
     })
   );
   totalPatch.textContent = byPatch.total;
   totalInner.textContent = byInnerHTML.total;
 
-  compareSummary.replaceChildren(...summaryText(byPatch.total, byInnerHTML.total));
+  compareSummary.replaceChildren(...createSummaryText(byPatch.total, byInnerHTML.total));
 }
 
 function setBar(fill, value, count, max, name) {
@@ -187,13 +200,13 @@ function setBar(fill, value, count, max, name) {
   value.textContent = count;
 }
 
-function cell(value) {
+function createCell(value) {
   const td = document.createElement('td');
   td.textContent = value;
   return td;
 }
 
-function summaryText(patchTotal, innerTotal) {
+function createSummaryText(patchTotal, innerTotal) {
   const strong = (text) => {
     const b = document.createElement('b');
     b.textContent = text;
@@ -233,7 +246,7 @@ function hideError() {
   previewRoot.classList.remove('is-stale');
 }
 
-function positionText() {
+function getPositionText() {
   return `${history.index + 1} / ${history.stack.length}`;
 }
 
@@ -256,7 +269,7 @@ function flashPatched(patches) {
     const el = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
     el?.animate?.(
       [{ boxShadow: `0 0 0 3px ${flash}`, backgroundColor: flashBg }, { boxShadow: '0 0 0 3px transparent' }],
-      { duration: 1200, easing: 'ease-out' }
+      { duration: FLASH_DURATION_MS, easing: 'ease-out' }
     );
   }
 }
@@ -274,32 +287,32 @@ function showPatches(patches, prev, next, label) {
 function patchItem(p, tree) {
   const li = document.createElement('li');
   li.title = `path: [${p.path.join(', ')}]`;
-  li.append(tag(p.type), span('patch__path', describePath(tree, p.path)), span('patch__detail', describePatch(p)));
+  li.append(createTag(p.type), createSpan('patch__path', describePath(tree, p.path)), createSpan('patch__detail', describePatch(p)));
   return li;
 }
 
 function describePath(root, path) {
-  const names = [nameOf(root)];
+  const names = [getNodeName(root)];
   let node = root;
   for (const i of path) {
     node = node.children[i];
-    names.push(`${nameOf(node)}[${i}]`);
+    names.push(`${getNodeName(node)}[${i}]`);
   }
   return names.join(' › ');
 }
 
-function nameOf(vnode) {
+function getNodeName(vnode) {
   return typeof vnode === 'string' ? '#text' : vnode.type;
 }
 
 function describePatch(p) {
   switch (p.type) {
     case CREATE:
-      return `+ ${snippet(p.vnode)}`;
+      return `+ ${formatSnippet(p.vnode)}`;
     case REMOVE:
-      return `− ${snippet(p.vnode)}`;
+      return `− ${formatSnippet(p.vnode)}`;
     case REPLACE:
-      return `${snippet(p.from)} → ${snippet(p.vnode)}`;
+      return `${formatSnippet(p.from)} → ${formatSnippet(p.vnode)}`;
     case TEXT:
       return `"${truncate(p.from)}" → "${truncate(p.to)}"`;
     case PROPS:
@@ -315,7 +328,7 @@ function describePatch(p) {
   }
 }
 
-function snippet(vnode) {
+function formatSnippet(vnode) {
   return truncate(toHTML(vnode).replace(/\n\s*/g, ''));
 }
 
@@ -326,7 +339,7 @@ function truncate(text) {
 function addLog(kind, message) {
   const li = document.createElement('li');
   const time = new Date().toLocaleTimeString('ko-KR', { hour12: false });
-  li.append(span('log__time', time), tag(kind), span('log__message', message));
+  li.append(createSpan('log__time', time), createTag(kind), createSpan('log__message', message));
   changeLog.prepend(li);
   logCount.textContent = changeLog.children.length;
   logEmpty.hidden = true;
@@ -334,14 +347,15 @@ function addLog(kind, message) {
 
 const TAG_CLASS = {
   [CREATE]: 'create', [REMOVE]: 'remove', [REPLACE]: 'replace', [TEXT]: 'text', [PROPS]: 'props',
-  PATCH: 'create', LOAD: 'text', BACK: 'props', FORWARD: 'props', SKIP: 'muted', ERROR: 'remove', DOM: 'dom',
+  [LOG_KIND.PATCH]: 'create', [LOG_KIND.LOAD]: 'text', [LOG_KIND.BACK]: 'props', [LOG_KIND.FORWARD]: 'props',
+  [LOG_KIND.SKIP]: 'muted', [LOG_KIND.ERROR]: 'remove', [LOG_KIND.DOM]: 'dom',
 };
 
-function tag(kind) {
-  return span(`tag tag--${TAG_CLASS[kind] ?? 'muted'}`, kind);
+function createTag(kind) {
+  return createSpan(`tag tag--${TAG_CLASS[kind] ?? 'muted'}`, kind);
 }
 
-function span(className, text) {
+function createSpan(className, text) {
   const el = document.createElement('span');
   el.className = className;
   el.textContent = text;

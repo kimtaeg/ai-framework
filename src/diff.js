@@ -81,7 +81,7 @@ export function patch(container, patches) {
 }
 
 // 실제 DOM이 patch 밖에서 바뀌어 VNode와 어긋났으면 경로를 따라갈 수 없다 → 명확한 에러로 알린다
-function nodeAt(container, path) {
+function getNodeAt(container, path) {
   let node = container.firstChild;
   for (const i of path) {
     node = node?.childNodes[i];
@@ -93,24 +93,24 @@ function nodeAt(container, path) {
 function applyPatch(container, p) {
   switch (p.type) {
     case CREATE: {
-      const parent = p.path.length === 0 ? container : nodeAt(container, p.path.slice(0, -1));
+      const parent = p.path.length === 0 ? container : getNodeAt(container, p.path.slice(0, -1));
       const index = p.path.length === 0 ? 0 : p.path[p.path.length - 1];
       parent.insertBefore(render(p.vnode, isSvgContext(parent)), parent.childNodes[index] ?? null);
       break;
     }
     case REMOVE:
-      nodeAt(container, p.path).remove();
+      getNodeAt(container, p.path).remove();
       break;
     case REPLACE: {
-      const node = nodeAt(container, p.path);
+      const node = getNodeAt(container, p.path);
       node.replaceWith(render(p.vnode, isSvgContext(node.parentNode)));
       break;
     }
     case TEXT:
-      nodeAt(container, p.path).nodeValue = p.to;
+      getNodeAt(container, p.path).nodeValue = p.to;
       break;
     case PROPS:
-      updateProps(nodeAt(container, p.path), p.oldProps, p.newProps);
+      updateProps(getNodeAt(container, p.path), p.oldProps, p.newProps);
       break;
     default:
       throw new Error(`알 수 없는 patch 종류: ${p.type}`);

@@ -1,9 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
+import { flush } from './helpers.js';
 import { h } from '../src/vdom.js';
 import { expand, FunctionComponent } from '../src/component.js';
 import { createApp, TodoItem, TodoList, FilterBar, TodoInput, TodoFooter } from '../phase2/app.js';
-
-const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 const TODOS = [
   { id: 'a', text: '빨래', done: true },
@@ -114,7 +113,7 @@ describe('할 일 앱 동작', () => {
 
   it('완료 항목 지우기, 모두 끝나면 안내 문구와 제목', async () => {
     const app = mountApp();
-    await app.$('.todo-footer .btn').click();
+    app.$('.todo-footer .btn').click();
     await flush();
     expect(app.texts()).toEqual(['청소', '장보기']);
 

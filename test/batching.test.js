@@ -1,11 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import { flush } from './helpers.js';
 import { h } from '../src/vdom.js';
 import { FunctionComponent } from '../src/component.js';
 import { useState } from '../src/hooks.js';
 import { OBSERVE_OPTIONS, summarizeMutations } from '../src/mutationStats.js';
-
-// 예약된 update(마이크로태스크)가 끝날 때까지 기다린다
-const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 // 클릭 한 번에 setState를 3번 부르는 카운터. 배칭 켬/끔만 바꿔 같은 코드로 비교한다.
 function mountCounter(options) {

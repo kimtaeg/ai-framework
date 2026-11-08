@@ -1,10 +1,8 @@
 import { describe, it, expect } from 'vitest';
+import { flush } from './helpers.js';
 import { h } from '../src/vdom.js';
 import { FunctionComponent } from '../src/component.js';
 import { useState } from '../src/hooks.js';
-
-// setState는 다시 그리기를 예약만 한다. 예약된 update(마이크로태스크)가 끝날 때까지 기다린다.
-const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 // fn을 container에 마운트하고, 렌더 횟수를 세는 도우미
 function mount(fn) {

@@ -1,10 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
+import { flush } from './helpers.js';
 import { h } from '../src/vdom.js';
 import { FunctionComponent } from '../src/component.js';
 import { useState, useEffect, useMemo } from '../src/hooks.js';
-
-// setState는 다시 그리기를 예약만 한다. 예약된 update가 끝날 때까지 기다린다.
-const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function mount(fn) {
   const container = document.createElement('div');

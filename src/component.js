@@ -9,7 +9,7 @@
 
 import { render } from './vdom.js';
 import { diff, patch } from './diff.js';
-import { runRender } from './hooks.js';
+import { runRender, HOOK_ORDER_RULE } from './hooks.js';
 
 export function expand(vnode) {
   // 루트 함수가 null·false를 돌려준 경우도 같은 에러로 알린다
@@ -185,7 +185,7 @@ export class FunctionComponent {
     if (this.expectedHookCount !== null && this.hookIndex !== this.expectedHookCount) {
       throw new Error(
         `Hook 개수가 이전 렌더(${this.expectedHookCount}개)와 다릅니다(이번 ${this.hookIndex}개). ` +
-          'Hook은 if·for 안이 아니라 컴포넌트 맨 위에서 항상 같은 순서로 호출하세요.'
+          HOOK_ORDER_RULE
       );
     }
     this.expectedHookCount = this.hookIndex;

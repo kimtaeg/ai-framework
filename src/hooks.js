@@ -10,6 +10,9 @@
 const ROOT_PHASE = 'root'; // 루트 컴포넌트 함수 실행 중 → Hook 허용
 const CHILDREN_PHASE = 'children'; // expand로 자식 컴포넌트를 펼치는 중 → Hook 금지
 
+// Hook 순서·개수 에러에 공통으로 붙이는 안내 (component.js도 사용)
+export const HOOK_ORDER_RULE = 'Hook은 if·for 안이 아니라 컴포넌트 맨 위에서 항상 같은 순서로 호출하세요.';
+
 let currentComponent = null;
 let renderPhase = null;
 
@@ -55,7 +58,7 @@ function takeHookSlot(component, hookName, createSlot) {
     if (component.expectedHookCount !== null) {
       throw new Error(
         `${hookOrder}(${hookName})이 이전 렌더에는 없었습니다. Hook 개수가 렌더마다 달라지면 안 됩니다. ` +
-          'Hook은 if·for 안이 아니라 컴포넌트 맨 위에서 항상 같은 순서로 호출하세요.'
+          HOOK_ORDER_RULE
       );
     }
     const slot = { hookName, ...createSlot() };
@@ -67,7 +70,7 @@ function takeHookSlot(component, hookName, createSlot) {
   if (slot.hookName !== hookName) {
     throw new Error(
       `${hookOrder}이 이전 렌더에서는 ${slot.hookName}였는데 이번에는 ${hookName}입니다. ` +
-        'Hook은 if·for 안이 아니라 컴포넌트 맨 위에서 항상 같은 순서로 호출하세요.'
+        HOOK_ORDER_RULE
     );
   }
   return slot;
