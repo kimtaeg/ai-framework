@@ -62,8 +62,13 @@ function normalizeOutput(output, component) {
 //   unmount : 모든 cleanup 호출 → 화면 비우기
 //
 // hooks 배열은 인스턴스에 있으므로 fn이 몇 번을 다시 실행돼도 상태가 유지된다.
+//
+// options
+//   batching : true(기본) — setState를 모아 한 번만 다시 그린다. false면 setState마다 즉시 그린다 (비교용)
+//   onRender : 렌더가 화면에 반영될 때마다 { type, renderCount, batchSize, patches }를 받는 콜백.
+//              렌더 횟수를 useState에 넣으면 그 setState가 또 렌더를 일으키므로, 화면 밖에서 표시할 때 쓴다.
 export class FunctionComponent {
-  constructor(fn, container) {
+  constructor(fn, container, { batching = true, onRender } = {}) {
     this.fn = fn;
     this.container = container;
     this.hooks = []; // useState 등이 호출 순서대로 칸을 차지하는 사물함
@@ -72,6 +77,11 @@ export class FunctionComponent {
     this.pendingEffects = []; // 이번 렌더에서 실행하기로 한 effect (patch 뒤에 실행)
     this.isUpdateScheduled = false;
     this.isMounted = false;
+    this.isBatching = batching;
+    this.onRender = onRender;
+    this.renderCount = 0; // 화면에 반영된 렌더 수 (mount 포함)
+    this.pendingSetStateCount = 0; // 다음 렌더에 합쳐질 setState 호출 수
+    this.lastBatchSize = 0; // 직전 렌더에 합쳐진 setState 호출 수
   }
 
   mount() {
@@ -79,6 +89,7 @@ export class FunctionComponent {
     this.container.replaceChildren(render(vnode));
     this.prevVNode = vnode;
     this.isMounted = true;
+    this.recordRender('mount', []);
     this.runEffects(); // DOM이 붙은 뒤라 effect에서 실제 요소를 읽을 수 있다
     return this;
   }
@@ -91,8 +102,16 @@ export class FunctionComponent {
     const patches = diff(this.prevVNode, nextVNode);
     patch(this.container, patches);
     this.prevVNode = nextVNode;
+    this.recordRender('update', patches);
     this.runEffects();
     return patches;
+  }
+
+  recordRender(type, patches) {
+    this.renderCount++;
+    this.lastBatchSize = this.pendingSetStateCount;
+    this.pendingSetStateCount = 0;
+    this.onRender?.({ type, renderCount: this.renderCount, batchSize: this.lastBatchSize, patches });
   }
 
   unmount() {
@@ -106,11 +125,21 @@ export class FunctionComponent {
     this.hooks = [];
     this.prevVNode = null;
     this.pendingEffects = [];
+    this.pendingSetStateCount = 0;
   }
 
-  // setState가 여러 번 불려도 지금 실행 중인 코드(이벤트 핸들러 등)가 끝난 직후 한 번만 다시 그린다
+  // Batching: setState가 여러 번 불려도 바로 그리지 않고 예약만 한다.
+  // 이미 예약돼 있으면 다시 예약하지 않으므로, 지금 실행 중인 코드(이벤트 핸들러 등)가 끝난 직후
+  // 마이크로태스크에서 update가 한 번만 일어난다. 그때는 모든 setState가 사물함에 반영된 뒤다.
   scheduleUpdate() {
-    if (this.isUpdateScheduled || !this.isMounted) return;
+    if (!this.isMounted) return;
+    this.pendingSetStateCount++;
+
+    if (!this.isBatching) {
+      this.update(); // 비교용: setState마다 즉시 렌더
+      return;
+    }
+    if (this.isUpdateScheduled) return;
     this.isUpdateScheduled = true;
     queueMicrotask(() => this.update());
   }
