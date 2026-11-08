@@ -14,7 +14,8 @@ npm install        # 테스트 도구(vitest, jsdom) 설치
 npm test           # 단위 테스트 전체 실행
 npm run test:watch # 파일 저장 시마다 테스트
 
-npm run serve      # http://localhost:8000/phase1/ 접속
+npm run serve      # http://localhost:8000/phase1/ (Phase 1 검증 페이지)
+                   # http://localhost:8000/phase2/ (Phase 2 할 일 앱 + 디버그 패널)
 ```
 
 > ES 모듈(`import`)은 `file://`로 열면 브라우저가 막습니다. 반드시 HTTP 서버로 여세요.
@@ -40,7 +41,12 @@ ai-framework/
 │   ├── index.html          # 실제 영역 · 테스트 영역 · 비교 패널 · patch 목록 · 로그
 │   ├── style.css           # 라이트/다크, 모바일 대응
 │   └── main.js             # 화면 동작 연결
-└── test/                   # vitest + jsdom 단위 테스트 (155개)
+├── phase2/                 # 할 일 앱 (우리 라이브러리만 사용)
+│   ├── app.js              # App(useState·useMemo·useEffect) + 순수 자식 컴포넌트
+│   ├── main.js             # 마운트, localStorage, 디버그 패널(onRender + MutationObserver)
+│   ├── index.html
+│   └── style.css
+└── test/                   # vitest + jsdom 단위 테스트 (175개)
 ```
 
 ### 데이터 흐름
@@ -165,6 +171,24 @@ new FunctionComponent(App, document.getElementById('app')).mount();
 - setState는 **예약만** 하고, 지금 실행 중인 코드가 끝난 직후(마이크로태스크) `update()`를 한 번 실행합니다.
   `update()` = 루트 함수 재실행 → `expand` → `diff(prevVNode, next)` → `patch` → `prevVNode` 교체.
 - Hook은 **루트 컴포넌트에서만** 씁니다. 자식 컴포넌트·렌더 밖에서 부르거나 렌더 중에 setState하면 원인을 알려 주는 에러가 납니다.
+
+#### Batching (Phase 2)
+
+같은 이벤트 안에서 setState를 여러 번 불러도 **렌더는 한 번**입니다.
+
+```
+클릭 → setCount(c=>c+1) ×3 → 사물함 0→1→2→3, 예약은 1번 → 핸들러 종료 → update() 1번 → "count 3"
+```
+
+| 클릭 한 번에 setState 3번 | 렌더 | 실제 DOM 텍스트 변경 | 중간값(1, 2) |
+|---|---|---|---|
+| Batching 켬 (기본) | **1번** | **1번** | 화면에 안 나옴 |
+| `{ batching: false }` | 3번 | 3번 | DOM을 거쳐 감 |
+
+- `scheduleUpdate()`는 `queueMicrotask`로 예약만 하고, 이미 예약돼 있으면 다시 예약하지 않습니다.
+- `component.renderCount`(mount 포함 렌더 수), `component.lastBatchSize`(직전 렌더에 합쳐진 setState 수)를 기록합니다.
+- `new FunctionComponent(App, el, { onRender(info) {...} })`로 렌더마다 `{ type, renderCount, batchSize, patches }`를 받습니다.
+  렌더 횟수를 useState에 넣으면 그 setState가 또 렌더를 일으키므로, 화면 밖 패널에 표시할 때 씁니다.
 
 #### 부수 효과: useEffect (Phase 2)
 

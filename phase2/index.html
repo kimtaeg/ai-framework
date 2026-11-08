@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>할 일 · Mini React</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="main.js"></script>
+</head>
+<body>
+  <header class="page-header">
+    <div class="wrap page-header__inner">
+      <div>
+        <p class="eyebrow">Mini React · Phase 2</p>
+        <h1>할 일 목록</h1>
+        <p class="lead">
+          외부 라이브러리 없이 직접 만든 <b>컴포넌트 · useState · useMemo · useEffect</b>로 동작합니다.
+          디버그 패널에서 렌더마다 <b>무엇이 patch됐는지</b> 확인할 수 있습니다.
+        </p>
+      </div>
+      <button type="button" class="btn btn--ghost" id="btn-reset">샘플로 초기화</button>
+    </div>
+  </header>
+
+  <main class="wrap layout">
+    <section class="panel" aria-labelledby="app-title">
+      <div class="panel__head">
+        <h2 id="app-title" class="panel__title"><span class="dot dot--live" aria-hidden="true"></span>앱</h2>
+        <span class="panel__hint">상태는 루트 App에만 · 자식은 props만</span>
+      </div>
+      <!-- FunctionComponent(App)가 여기에 그린다 -->
+      <div id="app"></div>
+    </section>
+
+    <aside class="panel panel--debug" aria-labelledby="debug-title">
+      <div class="panel__head">
+        <h2 id="debug-title" class="panel__title"><span class="dot dot--debug" aria-hidden="true"></span>디버그</h2>
+        <span class="panel__hint">onRender + MutationObserver</span>
+      </div>
+      <div id="debug" aria-live="polite"></div>
+    </aside>
+  </main>
+
+  <footer class="page-footer">
+    <div class="wrap">외부 라이브러리 없이 만든 Virtual DOM · Phase 2</div>
+  </footer>
+</body>
+</html>
