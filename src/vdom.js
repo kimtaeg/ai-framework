@@ -29,6 +29,10 @@ export function render(vnode, isSvg = false) {
   if (typeof vnode === 'string') {
     return document.createTextNode(vnode);
   }
+  if (typeof vnode.type === 'function') {
+    // createElement(함수)는 이상한 태그를 만들거나 에러가 나므로, 원인을 바로 알 수 있게 막는다
+    throw new Error(`컴포넌트(${vnode.type.name || '익명'})는 expand()로 먼저 펼친 뒤 render하세요.`);
+  }
   const isInSvg = isSvg || vnode.type === 'svg';
   const el = isInSvg ? document.createElementNS(SVG_NS, vnode.type) : document.createElement(vnode.type);
   for (const child of vnode.children) {
