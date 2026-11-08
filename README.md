@@ -27,7 +27,7 @@ ai-framework/
 ├── src/                    # Virtual DOM 코어 (브라우저·테스트 공용, 외부 의존성 없음)
 │   ├── vdom.js             # VNode 모양, h(), render() (SVG 네임스페이스 포함)
 │   ├── component.js        # expand() — 컴포넌트 펼치기, FunctionComponent — mount/update/unmount 렌더 루프
-│   ├── hooks.js            # useState · useEffect — hooks 배열 + 호출 순서로 상태 유지
+│   ├── hooks.js            # useState · useEffect · useMemo — hooks 배열 + 호출 순서로 상태 유지
 │   ├── props.js            # setProp / removeProp / updateProps — 속성·프로퍼티 반영의 단일 창구
 │   ├── diff.js             # diff(old, new) → patch 목록, patch(container, patches) → 실제 DOM 반영
 │   ├── domToVNode.js       # 실제 DOM → VNode
@@ -40,7 +40,7 @@ ai-framework/
 │   ├── index.html          # 실제 영역 · 테스트 영역 · 비교 패널 · patch 목록 · 로그
 │   ├── style.css           # 라이트/다크, 모바일 대응
 │   └── main.js             # 화면 동작 연결
-└── test/                   # vitest + jsdom 단위 테스트 (144개)
+└── test/                   # vitest + jsdom 단위 테스트 (155개)
 ```
 
 ### 데이터 흐름
@@ -186,6 +186,22 @@ useEffect(() => {
 - 함수를 돌려주면 cleanup으로 저장합니다. 다시 실행하기 직전에 **옛 cleanup을 모두 먼저** 부른 뒤 새 effect들을 실행합니다.
 - `unmount()`는 모든 cleanup을 부르고 화면을 비웁니다. unmount 뒤의 setState나 이미 예약된 update는 무시됩니다.
 
+#### 계산 재사용: useMemo (Phase 2)
+
+```js
+const doneCount = useMemo(() => todos.filter((t) => t.done).length, [todos]);
+```
+
+- 렌더 **도중** 바로 계산해 값을 돌려줍니다. deps가 이전과 같으면(useEffect와 같은 `haveDepsChanged`) fn을 부르지 않고 저장된 값을 돌려줍니다.
+- setState 한 번에 루트 함수 전체가 다시 실행되므로, 상관없는 상태(입력창 글자 등)가 바뀔 때 무거운 계산이 반복되는 것을 막습니다.
+- 동작을 바꾸지 않는 최적화입니다. deps를 빼면 매 렌더 다시 계산합니다.
+
+| | useMemo | useEffect |
+|---|---|---|
+| 언제 실행 | 렌더 도중 (동기) | patch가 끝난 뒤 |
+| 반환값 | 계산 결과를 그 렌더에서 사용 | 없음 (cleanup 함수만) |
+| 용도 | 순수한 계산 결과 재사용 | DOM·타이머·요청 등 바깥세상 작업 |
+
 ### 4. MutationObserver로 본 patch vs innerHTML
 
 같은 변경을 두 방식으로 적용했을 때 바뀐 노드 수 (샘플 카드 = 노드 21개):
@@ -219,7 +235,6 @@ patch는 **바뀐 만큼만** 고칩니다(비용 ∝ 변경 크기). 노드가 
 ## 알려진 한계 (다음 단계)
 
 - **key 기반 diff 미지원**: 리스트 맨 앞을 지우면 REMOVE 1개가 아니라 TEXT/PROPS 여러 개 + 마지막 REMOVE로 나옵니다.
-- **useMemo 미지원**: Hook은 useState·useEffect만 있습니다. (Phase 2 다음 단계)
 - Hook 호출 순서가 렌더마다 달라지는 경우(if 안의 useState)를 감지하지 않습니다.
 - 컴포넌트는 배열(Fragment)을 돌려줄 수 없습니다. 하나의 태그로 감싸야 합니다.
 - 루트 요소는 하나만 받습니다.

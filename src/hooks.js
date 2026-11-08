@@ -97,3 +97,24 @@ export function useEffect(effect, deps) {
     component.pendingEffects.push({ hook, effect, deps });
   }
 }
+
+// 렌더 중에 바로 계산해 값을 돌려준다. deps가 같으면 fn을 다시 부르지 않고 지난 값을 꺼낸다.
+// setState 한 번에 루트 함수 전체가 다시 실행되므로, 상관없는 상태가 바뀔 때마다
+// 무거운 계산(큰 목록 필터링 등)이 반복되는 것을 막는다. 동작은 바꾸지 않는 최적화일 뿐이다.
+export function useMemo(compute, deps) {
+  const component = getRenderingComponent('useMemo');
+  const index = component.hookIndex++;
+
+  if (index === component.hooks.length) {
+    component.hooks.push({ value: undefined, deps: undefined });
+  }
+  const hook = component.hooks[index];
+
+  if (haveDepsChanged(hook.deps, deps)) {
+    // compute가 에러를 던지면 아래 대입이 일어나지 않아 다음 렌더에 다시 계산한다
+    const value = compute();
+    hook.value = value;
+    hook.deps = deps;
+  }
+  return hook.value;
+}
