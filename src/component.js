@@ -57,8 +57,9 @@ function normalizeOutput(output, component) {
 
 // 상태를 가진 루트 컴포넌트 하나를 container에 그리고, setState가 오면 다시 그린다.
 //
-//   mount  : hookIndex = 0 → fn 실행 → expand → render → prevVNode 저장
-//   update : hookIndex = 0 → fn 다시 실행 → expand → diff(prevVNode, next) → patch → prevVNode 교체
+//   mount   : hookIndex = 0 → fn 실행 → expand → render → prevVNode 저장 → effect 실행
+//   update  : hookIndex = 0 → fn 다시 실행 → expand → diff(prevVNode, next) → patch → prevVNode 교체 → effect 실행
+//   unmount : 모든 cleanup 호출 → 화면 비우기
 //
 // hooks 배열은 인스턴스에 있으므로 fn이 몇 번을 다시 실행돼도 상태가 유지된다.
 export class FunctionComponent {
@@ -68,28 +69,48 @@ export class FunctionComponent {
     this.hooks = []; // useState 등이 호출 순서대로 칸을 차지하는 사물함
     this.hookIndex = 0; // 이번 렌더에서 다음에 열 사물함 번호
     this.prevVNode = null; // 마지막으로 화면에 반영한 VDOM (다음 diff의 기준)
+    this.pendingEffects = []; // 이번 렌더에서 실행하기로 한 effect (patch 뒤에 실행)
     this.isUpdateScheduled = false;
+    this.isMounted = false;
   }
 
   mount() {
     const vnode = this.renderVNode();
     this.container.replaceChildren(render(vnode));
     this.prevVNode = vnode;
+    this.isMounted = true;
+    this.runEffects(); // DOM이 붙은 뒤라 effect에서 실제 요소를 읽을 수 있다
     return this;
   }
 
   update() {
     this.isUpdateScheduled = false;
+    // unmount 뒤에 늦게 도착한 예약(타이머 안의 setState 등)은 무시한다
+    if (!this.isMounted) return [];
     const nextVNode = this.renderVNode();
     const patches = diff(this.prevVNode, nextVNode);
     patch(this.container, patches);
     this.prevVNode = nextVNode;
+    this.runEffects();
     return patches;
+  }
+
+  unmount() {
+    if (!this.isMounted) return;
+    this.isMounted = false;
+    // 타이머·구독처럼 effect가 열어 둔 것을 닫는다 (선언 순서대로)
+    for (const hook of this.hooks) {
+      if (typeof hook.cleanup === 'function') hook.cleanup();
+    }
+    this.container.replaceChildren();
+    this.hooks = [];
+    this.prevVNode = null;
+    this.pendingEffects = [];
   }
 
   // setState가 여러 번 불려도 지금 실행 중인 코드(이벤트 핸들러 등)가 끝난 직후 한 번만 다시 그린다
   scheduleUpdate() {
-    if (this.isUpdateScheduled) return;
+    if (this.isUpdateScheduled || !this.isMounted) return;
     this.isUpdateScheduled = true;
     queueMicrotask(() => this.update());
   }
@@ -97,6 +118,25 @@ export class FunctionComponent {
   renderVNode() {
     // 매 렌더 첫 번째 Hook이 0번 사물함을 열도록 되돌린다. 호출 순서가 곧 사물함 번호다.
     this.hookIndex = 0;
+    this.pendingEffects = []; // 이전 렌더가 실패해 남은 예약은 버린다
     return runRender(this, () => this.fn({}), expand);
+  }
+
+  // 다시 실행할 effect들의 옛 cleanup을 먼저 전부 호출한 뒤, 새 effect를 실행한다.
+  // 정리와 실행이 섞이지 않게 두 번에 나눠 돈다 (A 정리 → B 정리 → A 실행 → B 실행).
+  runEffects() {
+    const effects = this.pendingEffects;
+    this.pendingEffects = [];
+
+    for (const { hook } of effects) {
+      if (typeof hook.cleanup === 'function') hook.cleanup();
+      hook.cleanup = undefined;
+    }
+    for (const { hook, effect, deps } of effects) {
+      hook.deps = deps;
+      const cleanup = effect();
+      // 함수를 돌려주면 다음 실행 직전이나 unmount 때 부를 cleanup으로 저장한다
+      hook.cleanup = typeof cleanup === 'function' ? cleanup : undefined;
+    }
   }
 }

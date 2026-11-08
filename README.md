@@ -26,8 +26,8 @@ npm run serve      # http://localhost:8000/phase1/ 접속
 ai-framework/
 ├── src/                    # Virtual DOM 코어 (브라우저·테스트 공용, 외부 의존성 없음)
 │   ├── vdom.js             # VNode 모양, h(), render() (SVG 네임스페이스 포함)
-│   ├── component.js        # expand() — 컴포넌트 펼치기, FunctionComponent — mount/update 렌더 루프
-│   ├── hooks.js            # useState — hooks 배열 + 호출 순서로 상태 유지
+│   ├── component.js        # expand() — 컴포넌트 펼치기, FunctionComponent — mount/update/unmount 렌더 루프
+│   ├── hooks.js            # useState · useEffect — hooks 배열 + 호출 순서로 상태 유지
 │   ├── props.js            # setProp / removeProp / updateProps — 속성·프로퍼티 반영의 단일 창구
 │   ├── diff.js             # diff(old, new) → patch 목록, patch(container, patches) → 실제 DOM 반영
 │   ├── domToVNode.js       # 실제 DOM → VNode
@@ -40,7 +40,7 @@ ai-framework/
 │   ├── index.html          # 실제 영역 · 테스트 영역 · 비교 패널 · patch 목록 · 로그
 │   ├── style.css           # 라이트/다크, 모바일 대응
 │   └── main.js             # 화면 동작 연결
-└── test/                   # vitest + jsdom 단위 테스트 (127개)
+└── test/                   # vitest + jsdom 단위 테스트 (144개)
 ```
 
 ### 데이터 흐름
@@ -166,6 +166,26 @@ new FunctionComponent(App, document.getElementById('app')).mount();
   `update()` = 루트 함수 재실행 → `expand` → `diff(prevVNode, next)` → `patch` → `prevVNode` 교체.
 - Hook은 **루트 컴포넌트에서만** 씁니다. 자식 컴포넌트·렌더 밖에서 부르거나 렌더 중에 setState하면 원인을 알려 주는 에러가 납니다.
 
+#### 부수 효과: useEffect (Phase 2)
+
+```js
+useEffect(() => {
+  const id = setInterval(tick, 1000);
+  return () => clearInterval(id);   // cleanup
+}, []);                              // deps
+```
+
+| deps | 실행 |
+|---|---|
+| 없음 | 매 렌더 |
+| `[]` | 처음 한 번 |
+| `[a, b]` | 원소 하나라도 바뀌면 (`Object.is` 얕은 비교) |
+
+- 렌더 중에는 "실행할지"만 판단해 예약하고, **patch가 끝난 뒤** 실행합니다. 그래서 effect 안에서 바뀐 DOM을 읽을 수 있습니다.
+  (React의 `useLayoutEffect`와 같은 시점입니다. React `useEffect`는 브라우저가 화면을 그린 뒤 실행됩니다.)
+- 함수를 돌려주면 cleanup으로 저장합니다. 다시 실행하기 직전에 **옛 cleanup을 모두 먼저** 부른 뒤 새 effect들을 실행합니다.
+- `unmount()`는 모든 cleanup을 부르고 화면을 비웁니다. unmount 뒤의 setState나 이미 예약된 update는 무시됩니다.
+
 ### 4. MutationObserver로 본 patch vs innerHTML
 
 같은 변경을 두 방식으로 적용했을 때 바뀐 노드 수 (샘플 카드 = 노드 21개):
@@ -199,7 +219,7 @@ patch는 **바뀐 만큼만** 고칩니다(비용 ∝ 변경 크기). 노드가 
 ## 알려진 한계 (다음 단계)
 
 - **key 기반 diff 미지원**: 리스트 맨 앞을 지우면 REMOVE 1개가 아니라 TEXT/PROPS 여러 개 + 마지막 REMOVE로 나옵니다.
-- **Hook은 useState만**: useEffect·useMemo는 아직 없습니다. (Phase 2 다음 단계)
+- **useMemo 미지원**: Hook은 useState·useEffect만 있습니다. (Phase 2 다음 단계)
 - Hook 호출 순서가 렌더마다 달라지는 경우(if 안의 useState)를 감지하지 않습니다.
 - 컴포넌트는 배열(Fragment)을 돌려줄 수 없습니다. 하나의 태그로 감싸야 합니다.
 - 루트 요소는 하나만 받습니다.

@@ -72,3 +72,28 @@ export function useState(initialValue) {
   const hook = component.hooks[index];
   return [hook.value, hook.setState];
 }
+
+// deps가 없으면 매번 "바뀜". 길이가 다르거나 원소 하나라도 다르면(Object.is, 얕은 비교) "바뀜".
+// [] 는 비교할 원소가 없어 두 번째 렌더부터 항상 "같음" → 처음 한 번만 실행된다.
+function haveDepsChanged(prevDeps, nextDeps) {
+  if (prevDeps === undefined || nextDeps === undefined) return true;
+  if (prevDeps.length !== nextDeps.length) return true;
+  return nextDeps.some((dep, i) => !Object.is(dep, prevDeps[i]));
+}
+
+// 렌더 중에는 "실행할지"만 판단해 예약하고, 실제 실행은 FunctionComponent가 patch를 끝낸 뒤에 한다.
+// 렌더 함수는 순수해야 하고 몇 번 실행될지 모르므로, 바깥세상(DOM 측정, 타이머, 요청)과 닿는 일은 여기로 뺀다.
+export function useEffect(effect, deps) {
+  const component = getRenderingComponent('useEffect');
+  const index = component.hookIndex++;
+
+  if (index === component.hooks.length) {
+    component.hooks.push({ deps: undefined, cleanup: undefined });
+  }
+  const hook = component.hooks[index];
+
+  // deps는 실제로 실행할 때 저장한다 (렌더가 중간에 실패하면 실행되지 않은 deps가 남지 않도록)
+  if (haveDepsChanged(hook.deps, deps)) {
+    component.pendingEffects.push({ hook, effect, deps });
+  }
+}
