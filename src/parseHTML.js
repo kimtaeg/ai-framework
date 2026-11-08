@@ -38,6 +38,8 @@ export function parseHTML(source) {
     );
   }
 
+  checkAttributeNames(template.content, source);
+
   const roots = [...template.content.childNodes].map(toVNode).filter((v) => v !== null);
 
   if (roots.length === 0) {
@@ -54,6 +56,26 @@ export function parseHTML(source) {
 
 function getLineNumber(text, index) {
   return text.slice(0, index).split('\n').length;
+}
+
+// 브라우저 HTML 파서는 @click, :a 같은 속성 이름도 받아들이지만 setAttribute는 InvalidCharacterError를 던진다.
+// 그대로 두면 render/patch 도중에 터져 실제 영역이 일부만 바뀐 채 남으므로, 파싱 단계에서 미리 알린다.
+function checkAttributeNames(fragment, source) {
+  const probe = document.createElement('div');
+  for (const el of fragment.querySelectorAll('*')) {
+    for (const { name } of el.attributes) {
+      try {
+        probe.setAttribute(name, '');
+        probe.removeAttribute(name);
+      } catch {
+        const index = source.indexOf(name);
+        throw new HTMLParseError(
+          `"${name}"은(는) 속성 이름으로 쓸 수 없습니다. 영문자로 시작하는 이름을 쓰세요.`,
+          index === -1 ? undefined : getLineNumber(source, index)
+        );
+      }
+    }
+  }
 }
 
 function checkTags(source) {

@@ -7,9 +7,11 @@
 
 ## 실행 방법
 
+**필요 환경**: Node.js 22.12 이상 (Vitest 5가 Node 20을 지원하지 않습니다), Python 3 (`npm run serve`용)
+
 ```bash
 npm install        # 테스트 도구(vitest, jsdom) 설치
-npm test           # 단위 테스트 전체 실행 (191개)
+npm test           # 단위 테스트 전체 실행 (194개)
 npm run test:watch # 파일 저장 시마다 테스트
 
 npm run serve      # http://localhost:8000/phase1/ (Phase 1 검증 페이지)
@@ -17,6 +19,7 @@ npm run serve      # http://localhost:8000/phase1/ (Phase 1 검증 페이지)
 ```
 
 > ES 모듈(`import`)은 `file://`로 열면 브라우저가 막습니다. 반드시 HTTP 서버로 여세요.
+> `npm run serve`는 `127.0.0.1`에만 열립니다. 모든 네트워크에 열면 같은 네트워크의 누구나 `/.git/` 같은 저장소 파일을 받아 갈 수 있습니다.
 
 ## 폴더 구조
 
@@ -40,7 +43,7 @@ ai-framework/
 │   ├── main.js             # 마운트, localStorage, 디버그 패널(onRender + MutationObserver)
 │   ├── index.html
 │   └── style.css
-└── test/                   # vitest + jsdom 단위 테스트 (191개)
+└── test/                   # vitest + jsdom 단위 테스트 (194개)
 ```
 
 ### 계층

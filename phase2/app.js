@@ -148,7 +148,7 @@ export function createApp({ initialTodos = [], storage } = {}) {
         input: (event) => setInput(event.currentTarget.value),
         submit: (event) => {
           event.preventDefault();
-          const text = new FormData(event.currentTarget).get('text').trim();
+          const text = (new FormData(event.currentTarget).get('text') ?? '').trim();
           if (text === '') return;
           setTodos((list) => [...list, createTodo(text)]);
           setInput('');

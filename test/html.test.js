@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { parseHTML, HTMLParseError } from '../src/parseHTML.js';
 import { toHTML } from '../src/toHTML.js';
-import { h } from '../src/vdom.js';
+import { h, render } from '../src/vdom.js';
 
 describe('parseHTML', () => {
   it('루트 요소 하나를 VNode로 만든다 (앞뒤 공백·주석 무시)', () => {
@@ -24,6 +24,9 @@ describe('parseHTML', () => {
     ['<div>a', '<div>의 닫는 태그가 없습니다'],
     ['<div>a</div></span>', '</span>에 맞는 여는 태그가 없습니다'],
     ['<div class="a"\n  <p>x</p></div>', "'>' 누락"],
+    // 브라우저 파서는 통과시키지만 setAttribute가 InvalidCharacterError를 던지는 이름
+    ['<div>\n  <button @click="go">x</button>\n</div>', '2번째 줄: "@click"은(는) 속성 이름으로 쓸 수 없습니다'],
+    ['<p [title]="a">x</p>', '"[title]"은(는) 속성 이름으로 쓸 수 없습니다'],
   ])('잘못된 입력 %j → 에러', (source, message) => {
     expect(() => parseHTML(source)).toThrow(HTMLParseError);
     expect(() => parseHTML(source)).toThrow(message);
@@ -69,5 +72,12 @@ describe('toHTML', () => {
   it('특수문자를 이스케이프해서 다시 파싱해도 같다', () => {
     const vnode = h('div', { title: 'a "b" & <c>' }, h('p', null, '1 < 2 & 3 > 2'), h('span'));
     expect(parseHTML(toHTML(vnode))).toEqual(vnode);
+  });
+});
+
+describe('잘못된 속성 이름은 render 전에 막는다', () => {
+  it('parseHTML이 에러를 내므로 render·patch까지 가지 않는다 (정상 이름은 그대로 통과)', () => {
+    expect(() => render(parseHTML('<div data-ok="1" aria-label="a" xml:lang="ko">x</div>'))).not.toThrow();
+    expect(() => parseHTML('<div @click="x">hi</div>')).toThrow(HTMLParseError);
   });
 });
