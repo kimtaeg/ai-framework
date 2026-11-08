@@ -28,9 +28,10 @@ core
 
 # macOS
 .DS_Store
-# Claude Code 개인 설정 (Jev 훅)
+# Claude Code 개인 설정 (Jev 훅, CLAUDE.md)
 .claude/settings.local.json
 .claude/hooks/
+CLAUDE.md
 
 # Node
 node_modules/
