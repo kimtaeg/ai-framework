@@ -26,6 +26,8 @@ npm run serve      # http://localhost:8000/phase1/ 접속
 ai-framework/
 ├── src/                    # Virtual DOM 코어 (브라우저·테스트 공용, 외부 의존성 없음)
 │   ├── vdom.js             # VNode 모양, h(), render() (SVG 네임스페이스 포함)
+│   ├── component.js        # expand() — 컴포넌트 펼치기, FunctionComponent — mount/update 렌더 루프
+│   ├── hooks.js            # useState — hooks 배열 + 호출 순서로 상태 유지
 │   ├── props.js            # setProp / removeProp / updateProps — 속성·프로퍼티 반영의 단일 창구
 │   ├── diff.js             # diff(old, new) → patch 목록, patch(container, patches) → 실제 DOM 반영
 │   ├── domToVNode.js       # 실제 DOM → VNode
@@ -38,7 +40,7 @@ ai-framework/
 │   ├── index.html          # 실제 영역 · 테스트 영역 · 비교 패널 · patch 목록 · 로그
 │   ├── style.css           # 라이트/다크, 모바일 대응
 │   └── main.js             # 화면 동작 연결
-└── test/                   # vitest + jsdom 단위 테스트 (82개)
+└── test/                   # vitest + jsdom 단위 테스트 (127개)
 ```
 
 ### 데이터 흐름
@@ -116,7 +118,53 @@ path는 루트에서 자식 인덱스를 따라간 경로입니다. (`[2, 0]` = 
 #### attribute와 property
 
 `value`, `checked`, `selected`는 HTML 속성(attribute, 초기값)과 DOM 프로퍼티(property, 현재 화면 값)가
-사용자 입력 이후 따로 움직입니다. `setProp`은 둘 다 맞추고, `key`와 `on*` prop은 DOM에 그리지 않습니다.
+사용자 입력 이후 따로 움직입니다. `setProp`은 둘 다 맞추고, `key` prop은 DOM에 그리지 않습니다.
+
+#### 이벤트 (Phase 2)
+
+`onClick`처럼 `on` + 대문자로 시작하는 **함수** prop은 `addEventListener`로 붙습니다.
+(`onClick` → `click`, `onInput` → `input`, `onDoubleClick` → `dblclick`)
+
+- 핸들러가 바뀌면 **옛 핸들러를 떼고** 새 핸들러를 붙입니다. 떼지 않으면 클릭 한 번에 둘 다 실행됩니다.
+- prop이 사라지거나 `null`/`false`가 되면 뗍니다.
+- 컴포넌트는 렌더마다 새 함수를 만들므로 diff는 매번 PROPS로 잡습니다. 새 함수가 **최신 상태를 담은 클로저**이므로
+  일부러 교체합니다. 같은 함수 참조를 넘기면 patch가 나오지 않습니다.
+- HTML에서 온 문자열 핸들러(`onclick="..."`)는 코드로 실행되지 않도록 무시합니다.
+
+#### 컴포넌트 (Phase 2)
+
+`h()`의 첫 인자로 함수를 넣으면 컴포넌트가 됩니다. 자식 컴포넌트는 **props만 받는 순수 함수**입니다.
+
+```js
+const TodoItem = ({ text, done }) => h('li', { class: done ? 'done' : '' }, text);
+const Card = ({ title, children }) => h('section', null, h('h3', null, title), children);
+
+const tree = h(Card, { title: '할 일' }, h(TodoItem, { text: '빨래' }));  // 컴포넌트 트리 (아직 실행 안 함)
+const vdom = expand(tree);   // 함수를 끝까지 실행 → 태그만 남은 Phase 1 VDOM
+render(vdom); diff(prev, vdom);   // 기존 엔진 그대로
+```
+
+- `h()`는 기록만 하고, **`expand()`가 실행**합니다. (`src/component.js`)
+- 컴포넌트가 컴포넌트를 돌려줘도 태그가 나올 때까지 재귀로 펼칩니다.
+- 태그 안에 쓴 자식은 `props.children`(배열)으로 받습니다.
+- `null`·`false`를 돌려주면 그 자리가 비고, `undefined`(return 누락)나 배열은 원인을 알려 주는 에러를 냅니다.
+- 펼치지 않은 트리를 `render`하면 "expand()로 먼저 펼치세요" 에러가 납니다.
+
+#### 상태: useState와 FunctionComponent (Phase 2)
+
+```js
+function App() {
+  const [count, setCount] = useState(0);
+  return h('button', { onClick: () => setCount((c) => c + 1) }, `클릭 ${count}`);
+}
+new FunctionComponent(App, document.getElementById('app')).mount();
+```
+
+- 상태는 함수 밖, 인스턴스의 `hooks` 배열에 **호출 순서대로** 저장됩니다. 렌더마다 `hookIndex`를 0으로 되돌립니다.
+- `setState(값)` 또는 `setState(prev => 새값)`. 같은 값(`Object.is`)이면 다시 그리지 않습니다.
+- setState는 **예약만** 하고, 지금 실행 중인 코드가 끝난 직후(마이크로태스크) `update()`를 한 번 실행합니다.
+  `update()` = 루트 함수 재실행 → `expand` → `diff(prevVNode, next)` → `patch` → `prevVNode` 교체.
+- Hook은 **루트 컴포넌트에서만** 씁니다. 자식 컴포넌트·렌더 밖에서 부르거나 렌더 중에 setState하면 원인을 알려 주는 에러가 납니다.
 
 ### 4. MutationObserver로 본 patch vs innerHTML
 
@@ -151,7 +199,9 @@ patch는 **바뀐 만큼만** 고칩니다(비용 ∝ 변경 크기). 노드가 
 ## 알려진 한계 (다음 단계)
 
 - **key 기반 diff 미지원**: 리스트 맨 앞을 지우면 REMOVE 1개가 아니라 TEXT/PROPS 여러 개 + 마지막 REMOVE로 나옵니다.
-- **이벤트 미지원**: `onClick` 등은 지금은 건너뜁니다. (`src/props.js`의 `TODO(Phase 2)`)
+- **Hook은 useState만**: useEffect·useMemo는 아직 없습니다. (Phase 2 다음 단계)
+- Hook 호출 순서가 렌더마다 달라지는 경우(if 안의 useState)를 감지하지 않습니다.
+- 컴포넌트는 배열(Fragment)을 돌려줄 수 없습니다. 하나의 태그로 감싸야 합니다.
 - 루트 요소는 하나만 받습니다.
 - `<textarea>`·`<script>` 안에 태그 모양 텍스트를 쓰면 구조 검사가 오탐할 수 있습니다.
 - 뒤로/앞으로를 누르면 textarea에서 Patch하지 않은 편집 내용은 덮어씁니다.
