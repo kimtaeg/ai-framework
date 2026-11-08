@@ -26,7 +26,8 @@ describe('key', () => {
 });
 
 describe('on으로 시작하는 prop', () => {
-  it('지금은 속성으로 그리지 않는다', () => {
+  // 함수 핸들러는 리스너로 붙고(test/events.test.js), 문자열 핸들러는 무시된다. 둘 다 속성은 아니다.
+  it('속성으로 그리지 않는다', () => {
     const el = render(h('button', { onClick: () => {}, onclick: 'alert(1)' }, 'go'));
     expect(el.hasAttribute('onclick')).toBe(false);
     expect(el.attributes.length).toBe(0);

@@ -28,7 +28,8 @@ function toInlineHTML(vnode) {
 
 function createOpenTag(vnode) {
   const attrs = Object.entries(vnode.props)
-    .filter(([, value]) => value !== false && value !== null && value !== undefined)
+    // 함수(이벤트 핸들러)는 HTML 속성으로 표현할 수 없으므로 쓰지 않는다
+    .filter(([, value]) => value !== false && value !== null && value !== undefined && typeof value !== 'function')
     .map(([key, value]) => (value === '' || value === true ? ` ${key}` : ` ${key}="${escapeAttr(value)}"`))
     .join('');
   return `<${vnode.type}${attrs}>`;
