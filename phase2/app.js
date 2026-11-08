@@ -32,6 +32,20 @@ export function createTodo(text) {
   return { id: `todo-${Date.now().toString(36)}-${idSeed}`, text, done: false };
 }
 
+// localStorage는 사용자가 직접 고치거나 예전 형식이 남아 있을 수 있다.
+// 그대로 쓰면 todo.done 같은 접근에서 앱이 시작조차 못 하므로, 올바른 항목만 남기고 빠진 값은 채운다.
+export function sanitizeTodos(saved) {
+  if (!Array.isArray(saved)) return null;
+  const seenIds = new Set();
+  return saved
+    .filter((item) => item && typeof item === 'object' && typeof item.text === 'string' && item.text.trim() !== '')
+    .map((item) => {
+      const id = typeof item.id === 'string' && !seenIds.has(item.id) ? item.id : createTodo('').id;
+      seenIds.add(id);
+      return { id, text: item.text.slice(0, MAX_TEXT_LENGTH), done: item.done === true };
+    });
+}
+
 // ── 자식 컴포넌트: props → VNode 순수 함수 (Hook 없음) ──────────────
 
 export function TodoInput({ value, onInput, onSubmit }) {

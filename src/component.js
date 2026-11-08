@@ -67,6 +67,11 @@ function normalizeOutput(output, component) {
 //   batching : true(기본) — setState를 모아 한 번만 다시 그린다. false면 setState마다 즉시 그린다 (비교용)
 //   onRender : 렌더가 화면에 반영될 때마다 { type, renderCount, batchSize, patches }를 받는 콜백.
 //              렌더 횟수를 useState에 넣으면 그 setState가 또 렌더를 일으키므로, 화면 밖에서 표시할 때 쓴다.
+
+// 한 틱(브라우저가 다른 일을 하기 전) 안에서 예약 렌더가 이만큼 이어지면 무한 루프로 본다.
+// 예약 렌더는 마이크로태스크라 끝없이 이어지면 브라우저가 화면을 그리지도 못하고 멈추기 때문이다.
+const MAX_CHAINED_UPDATES = 50;
+
 export class FunctionComponent {
   constructor(fn, container, { batching = true, onRender } = {}) {
     this.fn = fn;
@@ -82,9 +87,14 @@ export class FunctionComponent {
     this.renderCount = 0; // 화면에 반영된 렌더 수 (mount 포함)
     this.pendingSetStateCount = 0; // 다음 렌더에 합쳐질 setState 호출 수
     this.lastBatchSize = 0; // 직전 렌더에 합쳐진 setState 호출 수
+    this.expectedHookCount = null; // 직전 렌더의 Hook 개수 (첫 렌더 전에는 null)
+    this.chainedUpdateCount = 0; // 이번 틱에 이어진 예약 렌더 수
   }
 
   mount() {
+    if (this.isMounted) {
+      throw new Error('이미 mount된 컴포넌트입니다. 처음부터 다시 그리려면 unmount() 후 mount()하세요.');
+    }
     const vnode = this.renderVNode();
     this.container.replaceChildren(render(vnode));
     this.prevVNode = vnode;
@@ -126,6 +136,7 @@ export class FunctionComponent {
     this.prevVNode = null;
     this.pendingEffects = [];
     this.pendingSetStateCount = 0;
+    this.expectedHookCount = null;
   }
 
   // Batching: setState가 여러 번 불려도 바로 그리지 않고 예약만 한다.
@@ -141,14 +152,44 @@ export class FunctionComponent {
     }
     if (this.isUpdateScheduled) return;
     this.isUpdateScheduled = true;
-    queueMicrotask(() => this.update());
+    queueMicrotask(() => this.runScheduledUpdate());
+  }
+
+  // deps 없는 useEffect 안에서 setState하면 렌더 → effect → setState → 렌더…가 마이크로태스크로 끝없이 이어진다.
+  // 다음 매크로태스크(setTimeout)가 오기 전까지 이어진 렌더 수를 세어, 너무 많으면 멈추고 원인을 알린다.
+  runScheduledUpdate() {
+    this.chainedUpdateCount++;
+    if (this.chainedUpdateCount === 1) {
+      setTimeout(() => {
+        this.chainedUpdateCount = 0;
+      }, 0);
+    }
+    if (this.chainedUpdateCount > MAX_CHAINED_UPDATES) {
+      this.isUpdateScheduled = false;
+      this.pendingSetStateCount = 0;
+      throw new Error(
+        `렌더가 쉬지 않고 ${MAX_CHAINED_UPDATES}번 넘게 이어져 멈췄습니다. ` +
+          'deps 없는 useEffect 안에서 setState하고 있지 않은지 확인하세요.'
+      );
+    }
+    this.update();
   }
 
   renderVNode() {
     // 매 렌더 첫 번째 Hook이 0번 사물함을 열도록 되돌린다. 호출 순서가 곧 사물함 번호다.
     this.hookIndex = 0;
     this.pendingEffects = []; // 이전 렌더가 실패해 남은 예약은 버린다
-    return runRender(this, () => this.fn({}), expand);
+    const vnode = runRender(this, () => this.fn({}), expand);
+
+    // Hook이 이전 렌더보다 적어졌으면 뒤쪽 사물함이 엉뚱한 값을 갖게 된다 (많아진 경우는 takeHookSlot이 바로 잡는다)
+    if (this.expectedHookCount !== null && this.hookIndex !== this.expectedHookCount) {
+      throw new Error(
+        `Hook 개수가 이전 렌더(${this.expectedHookCount}개)와 다릅니다(이번 ${this.hookIndex}개). ` +
+          'Hook은 if·for 안이 아니라 컴포넌트 맨 위에서 항상 같은 순서로 호출하세요.'
+      );
+    }
+    this.expectedHookCount = this.hookIndex;
+    return vnode;
   }
 
   // 다시 실행할 effect들의 옛 cleanup을 먼저 전부 호출한 뒤, 새 effect를 실행한다.

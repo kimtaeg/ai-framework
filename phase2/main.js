@@ -7,7 +7,7 @@
 import { h, render } from '../src/vdom.js';
 import { expand, FunctionComponent } from '../src/component.js';
 import { OBSERVE_OPTIONS, summarizeMutations } from '../src/mutationStats.js';
-import { createApp, createTodo } from './app.js';
+import { createApp, createTodo, sanitizeTodos } from './app.js';
 
 const STORAGE_KEY = 'mini-react-todos';
 const RECENT_RENDER_LIMIT = 6;
@@ -22,8 +22,8 @@ const resetButton = document.getElementById('btn-reset');
 const storage = {
   load() {
     try {
-      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
-      return Array.isArray(saved) ? saved : null;
+      // 깨진 항목은 버리고 올바른 항목만 남긴다 (배열이 아니면 null → 샘플로 시작)
+      return sanitizeTodos(JSON.parse(localStorage.getItem(STORAGE_KEY)));
     } catch {
       return null;
     }

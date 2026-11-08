@@ -43,15 +43,46 @@ function getRenderingComponent(hookName) {
   return currentComponent;
 }
 
+// 이번 Hook 호출이 열 사물함을 꺼낸다. 사물함에는 이름표가 없고 번호(호출 순서)만 있으므로,
+// if·for 안에서 Hook을 부르면 남의 사물함을 열게 된다. 이를 조용히 넘기지 않고 바로 에러로 알린다.
+//   - 같은 번호인데 종류가 다르면(useState 칸을 useMemo가 엶) → 에러
+//   - 이전 렌더보다 Hook이 많아지면 → 에러 (적어지는 경우는 렌더가 끝난 뒤 FunctionComponent가 잡는다)
+function takeHookSlot(component, hookName, createSlot) {
+  const index = component.hookIndex++;
+  const hookOrder = `${index + 1}번째 Hook`;
+
+  if (index === component.hooks.length) {
+    if (component.expectedHookCount !== null) {
+      throw new Error(
+        `${hookOrder}(${hookName})이 이전 렌더에는 없었습니다. Hook 개수가 렌더마다 달라지면 안 됩니다. ` +
+          'Hook은 if·for 안이 아니라 컴포넌트 맨 위에서 항상 같은 순서로 호출하세요.'
+      );
+    }
+    const slot = { hookName, ...createSlot() };
+    component.hooks.push(slot);
+    return slot;
+  }
+
+  const slot = component.hooks[index];
+  if (slot.hookName !== hookName) {
+    throw new Error(
+      `${hookOrder}이 이전 렌더에서는 ${slot.hookName}였는데 이번에는 ${hookName}입니다. ` +
+        'Hook은 if·for 안이 아니라 컴포넌트 맨 위에서 항상 같은 순서로 호출하세요.'
+    );
+  }
+  return slot;
+}
+
 export function useState(initialValue) {
   const component = getRenderingComponent('useState');
-  const index = component.hookIndex++;
 
-  // 첫 렌더: 사물함이 비어 있으므로 초기값과 setState를 만들어 넣는다.
-  // 다음 렌더부터는 같은 번호의 사물함을 그대로 꺼내므로 초기값은 무시된다.
-  if (index === component.hooks.length) {
-    const hook = { value: initialValue };
+  // 첫 렌더: 사물함이 비어 있으므로 초기값을 넣는다. 다음 렌더부터는 같은 사물함을 꺼내므로 초기값은 무시된다.
+  // useState(() => 무거운 계산)처럼 함수를 넘기면 첫 렌더에 한 번만 실행한다 (지연 초기화, React와 같은 규칙).
+  const hook = takeHookSlot(component, 'useState', () => ({
+    value: typeof initialValue === 'function' ? initialValue() : initialValue,
+  }));
 
+  if (!hook.setState) {
     // setState는 클로저로 "자기 사물함(hook)"과 "자기 컴포넌트"를 기억한다.
     // 그래서 렌더가 끝난 뒤 이벤트 핸들러에서 불려도 어디에 값을 넣고 누구를 다시 그릴지 안다.
     // 첫 렌더에 한 번만 만들어 두므로 렌더마다 같은 함수다 (props로 넘겨도 PROPS patch가 생기지 않는다).
@@ -65,11 +96,8 @@ export function useState(initialValue) {
       hook.value = nextValue;
       component.scheduleUpdate();
     };
-
-    component.hooks.push(hook);
   }
 
-  const hook = component.hooks[index];
   return [hook.value, hook.setState];
 }
 
@@ -85,12 +113,7 @@ function haveDepsChanged(prevDeps, nextDeps) {
 // 렌더 함수는 순수해야 하고 몇 번 실행될지 모르므로, 바깥세상(DOM 측정, 타이머, 요청)과 닿는 일은 여기로 뺀다.
 export function useEffect(effect, deps) {
   const component = getRenderingComponent('useEffect');
-  const index = component.hookIndex++;
-
-  if (index === component.hooks.length) {
-    component.hooks.push({ deps: undefined, cleanup: undefined });
-  }
-  const hook = component.hooks[index];
+  const hook = takeHookSlot(component, 'useEffect', () => ({ deps: undefined, cleanup: undefined }));
 
   // deps는 실제로 실행할 때 저장한다 (렌더가 중간에 실패하면 실행되지 않은 deps가 남지 않도록)
   if (haveDepsChanged(hook.deps, deps)) {
@@ -103,12 +126,7 @@ export function useEffect(effect, deps) {
 // 무거운 계산(큰 목록 필터링 등)이 반복되는 것을 막는다. 동작은 바꾸지 않는 최적화일 뿐이다.
 export function useMemo(compute, deps) {
   const component = getRenderingComponent('useMemo');
-  const index = component.hookIndex++;
-
-  if (index === component.hooks.length) {
-    component.hooks.push({ value: undefined, deps: undefined });
-  }
-  const hook = component.hooks[index];
+  const hook = takeHookSlot(component, 'useMemo', () => ({ value: undefined, deps: undefined }));
 
   if (haveDepsChanged(hook.deps, deps)) {
     // compute가 에러를 던지면 아래 대입이 일어나지 않아 다음 렌더에 다시 계산한다
