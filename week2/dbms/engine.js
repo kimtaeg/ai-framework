@@ -13,7 +13,7 @@
  */
 import { parse, SqlError } from './sql.js';
 import { BPlusTree } from './bptree.js';
-import { encodeRow, decodeRow } from './storage.js';
+import { encodeRow, decodeRow, decodeField } from './storage.js';
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
@@ -142,10 +142,19 @@ export class Database {
     const rows = [];
     let scanned = 0;
     const limit = st.limit ?? Infinity;
+    // 열마다 숫자로 바꿔야 하는지 미리 계산 (행마다 열 형식을 다시 보지 않게)
+    const numeric = t.columns.map((c) => c.type === 'INT' || c.type === 'REAL');
+    const nconds = conds.length;
     const take = (line) => {
       scanned++;
-      const rec = typed(decodeRow(line), t.columns);
-      if (conds.every((c) => test(rec[c.i], c.op, c.value))) rows.push(outCols.map((i) => rec[i]));
+      // 조건에 쓰는 열만 먼저 꺼내서 검사 → 맞는 행만 전체를 읽는다 (전체 읽기에서 대부분의 행은 탈락)
+      // 따옴표가 있는 줄은 형식 오류를 놓치지 않도록 처음부터 전체를 해석한다 (decodeField 가 그렇게 함)
+      for (let k = 0; k < nconds; k++) {
+        const c = conds[k];
+        if (!test(typedValue(decodeField(line, c.i), c.i, numeric), c.op, c.value)) return;
+      }
+      const raw = decodeRow(line);
+      rows.push(outCols.map((i) => typedValue(raw[i], i, numeric)));
     };
     if (limit > 0) {
       if (plan.type === 'index-lookup') {
@@ -217,8 +226,10 @@ function coerce(v, col, pos) {
   return String(v.value); // TEXT: 숫자를 넣어도 문자열로
 }
 
-function typed(raw, columns) {
-  return raw.map((v, i) => (v === null ? null : columns[i]?.type === 'INT' || columns[i]?.type === 'REAL' ? Number(v) : v));
+/** 저장된 값(문자열/null) 하나를 열 형식에 맞게: INT·REAL 열이면 숫자, 아니면 그대로 */
+function typedValue(v, i, numeric) {
+  if (v == null) return v; // null(NULL 값) 또는 undefined(줄에 그 열이 없음) 는 그대로
+  return numeric[i] ? Number(v) : v;
 }
 
 function test(a, op, b) {

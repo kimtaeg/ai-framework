@@ -1,11 +1,11 @@
 import './setup.js';
 import assert from 'node:assert/strict';
-import { h, createElement, TEXT } from '../src/lib/vdom.js';
+import { h, createElement } from '../src/lib/vdom.js';
 import { diff } from '../src/lib/diff.js';
 import { applyPatches } from '../src/lib/patch.js';
 import { MiniRedis } from '../week2/redis/miniredis.js';
 import { BPlusTree } from '../week2/dbms/bptree.js';
-import { tokenize, parse } from '../week2/dbms/sql.js';
+import { parse } from '../week2/dbms/sql.js';
 
 console.log('======================================================================');
 console.log('🚀 [미니 리액트 · 레디스 · DBMS] 전 영역 400개 무작위 퍼즈 검증 시작');

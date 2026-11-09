@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import { h } from '../src/lib/vdom.js';
 import {
   FunctionComponent, useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, useReducer,
-  createContext, useContext,
 } from '../src/lib/component.js';
 import { container, flushMicrotasks } from './setup.js';
 

@@ -23,6 +23,7 @@ import { FileStorage } from '../week2/dbms/storage-file.js';
 import { seedRows } from '../week2/dbms/seed.js';
 import { createDbService } from '../week2/dbms/service.js';
 import { MiniRedisClient } from '../week2/redis/client.js';
+import { nodeFetch } from '../week2/redis/node-fetch.js';
 import { RespClient } from './resp.js';
 
 const env = (k, d) => process.env[k] ?? d;
@@ -66,7 +67,8 @@ async function resetDb() {
   if (rows !== ROWS) throw new Error(`products 가 ${rows}건입니다 (기대 ${ROWS}건)`);
   return rows;
 }
-const mini = new MiniRedisClient(env('MINI_URL', 'http://127.0.0.1:6380'));
+// 내장 fetch 대신 연결을 재사용하는 가벼운 node:http 요청 (같은 HTTP + JSON, 요청당 CPU 만 줄임)
+const mini = new MiniRedisClient(env('MINI_URL', 'http://127.0.0.1:6380'), { fetch: nodeFetch });
 const redis = new RespClient({ host: env('REDIS_HOST', '127.0.0.1'), port: Number(env('REDIS_PORT', 6379)) });
 const caches = { none: null, mini, redis };
 

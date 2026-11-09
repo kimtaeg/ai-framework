@@ -96,6 +96,13 @@ export function diffProps(oldProps = {}, newProps = {}) {
 export function diffChildren(oldCh, newCh, parentPath, patches) {
   if (oldCh.length === 0 && newCh.length === 0) return;
 
+  // ---- 빠른 길: key 가 하나도 없고 개수가 같으면 → i 번째끼리 짝, 삭제·이동·삽입 없음 ----
+  // (아래 일반 과정을 거쳐도 결과가 정확히 같다. 다시 그릴 때 가장 흔한 경우라 Map·Set·LIS 를 만들지 않는다)
+  if (oldCh.length === newCh.length && allUnkeyed(oldCh) && allUnkeyed(newCh)) {
+    for (let i = 0; i < newCh.length; i++) diff(oldCh[i], newCh[i], parentPath.concat(i), patches);
+    return;
+  }
+
   // ---- 1. 매칭 ----
   const keyed = new Map();
   const unkeyed = [];
@@ -139,24 +146,37 @@ export function diffChildren(oldCh, newCh, parentPath, patches) {
   const stable = new Set(longestIncreasingSubsequence(seq).map((k) => live[k]));
 
   const placed = new Array(newCh.length); // 새 인덱스 i 에 놓인 live 항목
+  // anchor(바로 오른쪽 이웃) 의 live 위치를 매번 indexOf 로 찾지 않고 기억해 둔다 (큰 목록에서 O(n²) → 대부분 O(n)).
+  // 같은 VNode 객체가 live 에 두 번 들어 있으면 위치가 하나로 정해지지 않으므로, 그때만 원래대로 매번 찾는다.
+  const unique = new Set(live).size === live.length;
+  let anchorAt = live.length;
   for (let i = newCh.length - 1; i >= 0; i--) {
     const anchor = i + 1 < newCh.length ? placed[i + 1] : null;
+    const at = anchor ? (unique ? anchorAt : live.indexOf(anchor)) : live.length; // anchor 의 지금 위치
     const m = matchOf[i];
     if (m && stable.has(m)) {
       placed[i] = m;
+      // 움직이지 않는 노드는 anchor 보다 앞에 있다 → 뒤에서부터 찾으면 금방 나온다 (못 찾으면 처음부터)
+      if (unique) {
+        anchorAt = at > 0 ? live.lastIndexOf(m, at - 1) : -1;
+        if (anchorAt === -1) anchorAt = live.indexOf(m);
+      }
       continue;
     }
     if (m) {
       const from = live.indexOf(m);
       live.splice(from, 1);
-      const to = anchor ? live.indexOf(anchor) : live.length;
+      // m 을 빼면 그 뒤의 anchor 는 한 칸 앞으로 (중복 객체가 있으면 원래대로 다시 찾는다)
+      const to = !anchor ? live.length : unique ? (from < at ? at - 1 : at) : live.indexOf(anchor);
       live.splice(to, 0, m);
       if (from !== to) {
         patches.push({ type: PatchType.MOVE, path: parentPath, from, to, key: m.key });
       }
       placed[i] = m;
+      anchorAt = to;
     } else {
-      const index = anchor ? live.indexOf(anchor) : live.length;
+      const index = at;
+      anchorAt = index;
       const marker = { inserted: newCh[i] };
       live.splice(index, 0, marker);
       patches.push({ type: PatchType.INSERT, path: parentPath, index, node: newCh[i] });
@@ -194,6 +214,11 @@ export function longestIncreasingSubsequence(arr) {
   const result = [];
   for (let k = tails[tails.length - 1]; k !== -1; k = prev[k]) result.push(k);
   return result.reverse();
+}
+
+function allUnkeyed(list) {
+  for (let i = 0; i < list.length; i++) if (list[i].key != null) return false;
+  return true;
 }
 
 function isPlainObject(v) {

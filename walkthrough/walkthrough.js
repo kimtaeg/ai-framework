@@ -184,7 +184,7 @@ const stable = new Set(longestIncreasingSubsequence(seq).map((k) => live[k]));`,
     patches.push({ type: 'INSERT', path: parentPath, index, node: newCh[i] });
   }
 }`,
-          note: '뒤에서부터 각 새 노드를 "오른쪽 이웃 바로 앞" 에 놓습니다. LIS 노드는 건너뛰고, 나머지 옛 노드는 MOVE, 짝이 없는 새 노드는 ① INSERT. 뒤에서부터 하면 오른쪽 이웃이 이미 제자리에 있으므로 기준점이 됩니다.',
+          note: '뒤에서부터 각 새 노드를 "오른쪽 이웃 바로 앞" 에 놓습니다. LIS 노드는 건너뛰고, 나머지 옛 노드는 MOVE, 짝이 없는 새 노드는 ① INSERT. 뒤에서부터 하면 오른쪽 이웃이 이미 제자리에 있으므로 기준점이 됩니다. (실제 코드는 오른쪽 이웃의 위치를 기억해 두어 큰 목록에서 indexOf 를 덜 부르고, key 없는 같은 개수의 목록은 이 과정 없이 i 번째끼리 바로 비교합니다. 결과 패치는 같습니다)',
         },
         {
           code: `// ---- 4. 재귀 diff (이제 live 순서 == newCh 순서) ----

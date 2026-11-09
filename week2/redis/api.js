@@ -29,8 +29,10 @@ class HttpError extends Error {
 }
 
 function send(res, status, body) {
-  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(body));
+  const s = JSON.stringify(body);
+  // 길이를 알려 주면 chunked 인코딩 없이 헤더와 본문을 한 번에 보낸다
+  res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Length': Buffer.byteLength(s) });
+  res.end(s);
 }
 
 export function readJson(req, limit = MAX_BODY) {

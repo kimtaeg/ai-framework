@@ -5,7 +5,7 @@
  *   node load/alt-bench.js persist   AOF everysec vs AOF always vs 스냅샷(전체 저장, RDB 방식)
  * 마지막 줄에 RESULT {json} 을 찍는다 (테스트 실험실이 읽어 감). 첫 번째 variant 가 우리 기술.
  */
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, renameSync, statSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, renameSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';

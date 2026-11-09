@@ -27,6 +27,8 @@ function escapeField(v) {
 }
 
 function unescapeField(s) {
+  // 대부분의 값에는 역슬래시가 없다 → 정규식을 돌리지 않고 그대로 (전체 읽기에서 가장 많이 불리는 함수)
+  if (s.indexOf('\\') === -1) return s;
   return s.replace(/\\(\\|n|r)/g, (m, c) => (c === 'n' ? '\n' : c === 'r' ? '\r' : '\\'));
 }
 
@@ -35,8 +37,32 @@ export function encodeRow(values) {
   return values.map(escapeField).join(',');
 }
 
+/**
+ * 한 줄에서 i 번째 값만 — decodeRow(line)[i] 와 같다.
+ * 따옴표가 없는 줄은 쉼표 위치만 찾아서 그 값 하나만 꺼낸다 (전체 읽기에서 조건 열만 볼 때 빠름)
+ */
+export function decodeField(line, i) {
+  if (line.indexOf('"') !== -1) return decodeRow(line)[i];
+  let s = 0;
+  for (let k = 0; k < i; k++) {
+    const c = line.indexOf(',', s);
+    if (c === -1) return undefined; // 그 열이 없는 줄
+    s = c + 1;
+  }
+  let e = line.indexOf(',', s);
+  if (e === -1) e = line.length;
+  const raw = line.slice(s, e);
+  return raw === NULL_MARK ? null : unescapeField(raw);
+}
+
 /** 한 줄 → 값 배열 (문자열 또는 null) */
 export function decodeRow(line) {
+  // 따옴표가 없는 줄(대부분)은 쉼표로 나누기만 하면 된다 — 아래 일반 경로와 결과가 같다
+  if (line.indexOf('"') === -1) {
+    const out = line.split(',');
+    for (let k = 0; k < out.length; k++) out[k] = out[k] === NULL_MARK ? null : unescapeField(out[k]);
+    return out;
+  }
   const out = [];
   let i = 0;
   while (i <= line.length) {

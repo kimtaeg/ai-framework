@@ -1,18 +1,10 @@
 // 미니 DBMS Phase 3 · API 서버 — 실제 엔진 코드를 브라우저에서 그대로 실행 (저장소만 메모리)
 import { planLabel } from '../engine.js';
-import { esc, table, treeHtml } from '../view.js';
+import { esc, table } from '../view.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const isServer = location.protocol.startsWith('http');
-
-const SCHEMA = {
-  users: { columns: [{ name: 'id', type: 'INT' }, { name: 'name', type: 'TEXT' }, { name: 'age', type: 'INT' }, { name: 'email', type: 'TEXT' }] },
-  products: { columns: [{ name: 'id', type: 'INT' }, { name: 'name', type: 'TEXT' }, { name: 'price', type: 'INT' }, { name: 'category', type: 'TEXT' }] },
-};
-// 오래된 브라우저에는 structuredClone 이 없어서 JSON 으로 복사
-const cloneSchema = () => JSON.parse(JSON.stringify(SCHEMA));
 
 // ============================================================ 1. 스레드 풀 + 락 시뮬레이션
 const sim = { workers: 4, queue: [], lanes: [], lock: { readers: 0, writer: false }, nextId: 1, ids: [], log: [] };

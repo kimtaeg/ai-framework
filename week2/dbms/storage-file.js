@@ -86,13 +86,14 @@ export class FileStorage {
     const f = this.#file(table);
     this.#flushFile(f);
     this.reads++;
-    let buf = Buffer.alloc(256);
+    // 읽기용 버퍼는 한 번 만들어 계속 쓴다 (조회마다 새로 만들지 않음). 돌려주는 것은 문자열이라 공유해도 안전
+    let buf = (this._readBuf ??= Buffer.allocUnsafe(256));
     let len = 0;
     for (;;) {
       if (len === buf.length) {
-        const bigger = Buffer.alloc(buf.length * 2);
+        const bigger = Buffer.allocUnsafe(buf.length * 2);
         buf.copy(bigger);
-        buf = bigger;
+        buf = this._readBuf = bigger;
       }
       const n = readSync(f.fd, buf, len, buf.length - len, loc + len);
       const nl = buf.indexOf(10, len); // '\n'
@@ -116,11 +117,19 @@ export class FileStorage {
       pos += n;
       let data = carry.length ? Buffer.concat([carry, buf.subarray(0, n)]) : buf.subarray(0, n);
       let start = 0;
-      for (let nl = data.indexOf(10, start); nl !== -1; nl = data.indexOf(10, start)) {
-        this.reads++;
-        yield [lineStart, data.toString('utf8', start, nl)];
-        lineStart += nl - start + 1;
-        start = nl + 1;
+      const last = data.lastIndexOf(10);
+      if (last !== -1) {
+        // 덩어리 안의 완성된 줄들을 한 번에 문자열로 바꾼 뒤 나눈다 (줄마다 바꾸는 것보다 훨씬 빠름).
+        // '\n'(0x0A) 은 UTF-8 여러 바이트 문자 안에 나올 수 없으므로 줄마다 바꾼 결과와 같다.
+        // 위치(바이트 offset)는 버퍼에서 줄바꿈 위치로 따로 센다.
+        const lines = data.toString('utf8', 0, last).split('\n');
+        for (let k = 0; k < lines.length; k++) {
+          const nl = data.indexOf(10, start);
+          this.reads++;
+          yield [lineStart, lines[k]];
+          lineStart += nl - start + 1;
+          start = nl + 1;
+        }
       }
       carry = Buffer.from(data.subarray(start)); // 덜 끝난 줄은 다음 덩어리와 합친다
     }

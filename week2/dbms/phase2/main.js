@@ -3,12 +3,11 @@ import { Database } from '../engine.js';
 import { MemoryStorage } from '../storage.js';
 import { BPlusTree } from '../bptree.js';
 import { seedRows } from '../seed.js';
-import { esc, table, treeHtml } from '../view.js';
+import { treeHtml } from '../view.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const isServer = location.protocol.startsWith('http');
 
 const SCHEMA = {
   users: { columns: [{ name: 'id', type: 'INT' }, { name: 'name', type: 'TEXT' }, { name: 'age', type: 'INT' }, { name: 'email', type: 'TEXT' }] },
