@@ -149,6 +149,14 @@ export class ThreadPool {
     this.closed = true;
     for (const job of this.queue) job.reject(new Error('스레드 풀이 닫혔습니다.'));
     this.queue = [];
+    // 워커에서 실행 중이던 요청도 실패로 끝낸다 — 워커를 끝내면 응답이 오지 않으므로, 그대로 두면 영원히 기다린다
+    for (const w of this.workers) {
+      if (!w.busy) continue;
+      clearTimeout(w.busy.timer);
+      this.stats.failed++;
+      w.busy.reject(new Error('스레드 풀이 닫혔습니다 (실행 중이던 요청).'));
+      w.busy = null;
+    }
     await Promise.all(this.workers.map((w) => w.worker.terminate()));
   }
 }

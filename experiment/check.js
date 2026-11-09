@@ -11,7 +11,10 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const RAW = join(dirname(fileURLToPath(import.meta.url)), 'results', 'raw');
-const runs = readdirSync(RAW).filter((f) => f.endsWith('.json')).map((f) => ({ f, key: f.replace(/_r\d+\.json$/, ''), ...JSON.parse(readFileSync(join(RAW, f), 'utf8')) }));
+// k6 가 쓰다가 끊긴(잘린) 파일은 점검을 멈추지 않고 '실패한 회차' 로 센다 (rps 0)
+const read = (f) => { try { return JSON.parse(readFileSync(join(RAW, f), 'utf8')); } catch { return { rps: 0, broken: true }; } };
+const runs = readdirSync(RAW).filter((f) => f.endsWith('.json')).map((f) => ({ f, key: f.replace(/_r\d+\.json$/, ''), ...read(f) }));
+const broken = runs.filter((r) => r.broken).map((r) => r.f);
 if (!runs.length) {
   console.log('RELIABILITY=N/A runs=0 (아직 측정된 회차가 없음)');
   process.exit(0);
@@ -42,4 +45,5 @@ if (!counted) {
 const repro = inBand / counted;
 const reliability = Math.min(success, repro);
 console.log(`RELIABILITY=${(reliability * 100).toFixed(1)}% runs=${runs.length} success=${(success * 100).toFixed(1)}% repro=${(repro * 100).toFixed(1)}% (${inBand}/${counted})`);
+if (broken.length) console.log(`읽을 수 없는 파일 ${broken.length}개 (실패로 셈): ${broken.join(', ')}`);
 if (process.argv.includes('-v')) console.log(outliers.join('\n'));

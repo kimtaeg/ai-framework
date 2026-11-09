@@ -30,7 +30,11 @@ const stat = (xs) => {
 const groups = {};
 for (const f of readdirSync(RAW).filter((f) => f.endsWith('.json'))) {
   const key = f.replace(/_r\d+\.json$/, '');
-  const d = JSON.parse(readFileSync(join(RAW, f), 'utf8'));
+  let d;
+  try { d = JSON.parse(readFileSync(join(RAW, f), 'utf8')); } catch {
+    console.error(`건너뜀: ${f} (잘렸거나 깨진 결과 파일 — node experiment/run.js --resume 로 다시 측정하세요)`);
+    continue;
+  }
   d.file = f;
   (groups[key] ??= { key, exp: key.split('_')[0], params: d.params, runs: [] }).runs.push(d);
 }
@@ -101,7 +105,14 @@ for (const g of Object.values(groups)) {
 }
 driftCheck.sort((a, b) => Math.abs(b.diffPct) - Math.abs(a.diffPct));
 
-const env = JSON.parse(readFileSync(join(HERE, 'results', 'env.json'), 'utf8'));
+// env.json 은 run.js 가 측정 환경(CPU · Docker · 반복 횟수)을 적어 두는 파일 — 결과 파일만 받아 온 경우 없을 수 있다
+const ENV_FILE = join(HERE, 'results', 'env.json');
+let env;
+try { env = JSON.parse(readFileSync(ENV_FILE, 'utf8')); } catch (e) {
+  console.error(`측정 환경 파일을 읽을 수 없습니다: ${ENV_FILE}`);
+  console.error(e.code === 'ENOENT' ? '  → 측정한 컴퓨터의 experiment/results/env.json 도 함께 복사하거나, node experiment/run.js 로 다시 측정하세요.' : `  → 파일이 깨졌습니다 (${e.message})`);
+  process.exit(1);
+}
 const summary = { env, conditions: conds.sort((a, b) => a.key.localeCompare(b.key)), models, breakEven, driftCheck, maxCvPct: Math.max(...conds.map((c) => c.rps?.cvPct ?? 0)) };
 writeFileSync(join(HERE, 'results', 'summary.json'), JSON.stringify(summary, null, 2));
 
