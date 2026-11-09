@@ -6,6 +6,7 @@ import { expand, FunctionComponent } from '../src/component.js';
 import { useState, useEffect } from '../src/hooks.js';
 import { createRecorder } from '../phase2-learn/recorder.js';
 import { TRACE_EVENT_TYPES, describeStep } from '../phase2-learn/explain.js';
+import { SCENARIOS, runScenario } from '../phase2-learn/scenarios.js';
 
 function mountRecorded(fn, recorderOptions = {}) {
   const container = document.createElement('div');
@@ -184,5 +185,142 @@ describe('explain', () => {
     expect(result.source).toBe('엔진');
     expect(result.text.length).toBeGreaterThan(0);
     expect(result.mark).toBe('xxx');
+  });
+});
+
+describe('scenarios', () => {
+  const run = (id, options = {}) => runScenario(id, options, document.createElement('div'));
+  const typesOf = (steps) => steps.map((s) => s.event.type);
+  const count = (steps, type) => steps.filter((s) => s.event.type === type).length;
+  const lastHtml = (steps) => steps.at(-1).snapshot.html;
+
+  it('4개 장이 정해진 순서와 모양으로 있다', () => {
+    expect(SCENARIOS.map((s) => s.id)).toEqual(['expand', 'hooks', 'setstate', 'effects']);
+    for (const s of SCENARIOS) {
+      expect(s.title.length).toBeGreaterThan(0);
+      expect(s.code.length).toBeGreaterThan(0);
+      expect(s.panels.length).toBeGreaterThan(0);
+      expect(Array.isArray(s.controls)).toBe(true);
+    }
+  });
+
+  it.each(['expand', 'hooks', 'setstate', 'effects'])('%s: 기본값으로 실행하면 steps가 생기고 에러가 없다', async (id) => {
+    const { steps, error, isTruncated } = await run(id);
+    expect(steps.length).toBeGreaterThan(3);
+    expect(error).toBeNull();
+    expect(isTruncated).toBe(false);
+    expect(steps.some((s) => s.event.type === 'error')).toBe(false);
+  });
+
+  it('code의 mark는 실제로 나오는 사건과 맞는다 (강조할 줄이 하나 이상 있다)', async () => {
+    for (const s of SCENARIOS) {
+      const { steps } = await run(s.id);
+      const marks = new Set(steps.map((step) => describeStep(step).mark));
+      expect(s.code.some((line) => marks.has(line.mark))).toBe(true);
+    }
+  });
+
+  it('expand: skipExpand면 마지막이 error, 메시지에 "expand()로 먼저 펼친 뒤"', async () => {
+    const { steps, error } = await run('expand', { skipExpand: true });
+    expect(steps.at(-1).event.type).toBe('error');
+    expect(steps.at(-1).event.message).toContain('expand()로 먼저 펼친 뒤');
+    expect(error).not.toBeNull();
+  });
+
+  it('expand: itemCount 3이면 expand:component가 Card 1 + Item 3', async () => {
+    const { steps } = await run('expand', { itemCount: 3 });
+    expect(steps.filter((s) => s.event.type === 'expand:component').map((s) => s.event.name)).toEqual(['Card', 'Item', 'Item', 'Item']);
+    expect(lastHtml(steps)).toContain('장보기');
+  });
+
+  it('expand: scenario:h의 tree에는 ƒ Card가, scenario:vdom의 vdom에는 태그만 있다', async () => {
+    const { steps } = await run('expand');
+    const tree = steps.find((s) => s.event.type === 'scenario:h').event.tree;
+    const vdom = steps.find((s) => s.event.type === 'scenario:vdom').event.vdom;
+    expect(tree.type).toBe('ƒ Card');
+    expect(tree.children[0].type).toBe('ƒ Item');
+    const types = [];
+    const walk = (node) => {
+      if (typeof node === 'string') return;
+      types.push(node.type);
+      node.children.forEach(walk);
+    };
+    walk(vdom);
+    expect(types.every((t) => !t.startsWith('ƒ'))).toBe(true);
+    expect(types[0]).toBe('section');
+  });
+
+  it('hooks: 두 번째 렌더에서는 저장된 값을 꺼낸다 (isFirst false)', async () => {
+    const { steps } = await run('hooks');
+    const states = steps.filter((s) => s.event.type === 'hook:state').map((s) => s.event.isFirst);
+    expect(states).toEqual([true, true, false, false]);
+  });
+
+  it('hooks: conditionalHook이면 마지막이 error, 메시지에 "이전 렌더에는 없었습니다"', async () => {
+    const { steps, error } = await run('hooks', { conditionalHook: true });
+    expect(steps.at(-1).event.type).toBe('error');
+    expect(steps.at(-1).event.message).toContain('이전 렌더에는 없었습니다');
+    expect(error).not.toBeNull();
+  });
+
+  it('setstate: 3번 + batching 켬 → update:start 1번, 화면 "클릭 3"', async () => {
+    const { steps } = await run('setstate', { setStateCount: 3, batching: true });
+    expect(count(steps, 'state:set')).toBe(3);
+    expect(count(steps, 'update:start')).toBe(1);
+    expect(lastHtml(steps)).toContain('클릭 3');
+    expect(typesOf(steps)).toContain('scenario:click');
+  });
+
+  it('setstate: batching 끔 → update:start 3번', async () => {
+    const { steps } = await run('setstate', { setStateCount: 3, batching: false });
+    expect(count(steps, 'update:start')).toBe(3);
+    expect(lastHtml(steps)).toContain('클릭 3');
+  });
+
+  it('setstate: value 방식 3번 → 화면 "클릭 1"', async () => {
+    const { steps } = await run('setstate', { setStateCount: 3, updateStyle: 'value' });
+    expect(lastHtml(steps)).toContain('클릭 1');
+    expect(steps.filter((s) => s.event.type === 'state:set').map((s) => s.event.skipped)).toEqual([false, true, true]);
+  });
+
+  it('effects: deps [count]에서 text만 바꾸면 effect:run 없음, hook:memo recomputed false', async () => {
+    const { steps } = await run('effects', { deps: 'count', change: 'text' });
+    const afterClick = steps.slice(steps.findIndex((s) => s.event.type === 'scenario:click'));
+    expect(count(afterClick, 'effect:run')).toBe(0);
+    expect(afterClick.find((s) => s.event.type === 'hook:memo').event.recomputed).toBe(false);
+  });
+
+  it('effects: count를 바꾸면 cleanup → run, memo 다시 계산', async () => {
+    const { steps } = await run('effects', { deps: 'count', change: 'count' });
+    const afterClick = typesOf(steps.slice(steps.findIndex((s) => s.event.type === 'scenario:click')));
+    expect(afterClick.slice(-2)).toEqual(['effect:cleanup', 'effect:run']);
+    expect(steps.filter((s) => s.event.type === 'hook:memo').map((s) => s.event.recomputed)).toEqual([true, true]);
+  });
+
+  it('effects: deps 없음이면 text만 바꿔도 effect가 다시 돈다, []이면 안 돈다', async () => {
+    const none = await run('effects', { deps: 'none', change: 'text' });
+    const empty = await run('effects', { deps: 'empty', change: 'text' });
+    expect(count(none.steps, 'effect:run')).toBe(2);
+    expect(count(empty.steps, 'effect:run')).toBe(1);
+  });
+
+  it('effects: unmount 켜면 마지막 쪽에 unmount → effect:cleanup', async () => {
+    const { steps } = await run('effects', { unmount: true });
+    expect(typesOf(steps).slice(-2)).toEqual(['unmount', 'effect:cleanup']);
+  });
+
+  it('실행이 끝나면 정리용 unmount는 기록에 남기지 않는다', async () => {
+    const { steps } = await run('effects');
+    expect(count(steps, 'unmount')).toBe(0);
+  });
+
+  it('다시 실행해도 이전 실행이 섞이지 않는다', async () => {
+    const container = document.createElement('div');
+    const first = await runScenario('setstate', {}, container);
+    const second = await runScenario('setstate', {}, container);
+    expect(second.steps[0].event).toEqual({ type: 'render:start', kind: 'mount' });
+    expect(second.steps.map((s) => s.index)[0]).toBe(0);
+    expect(count(second.steps, 'update:start')).toBe(count(first.steps, 'update:start'));
+    expect(second.steps.length).toBe(first.steps.length);
   });
 });
