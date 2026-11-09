@@ -130,6 +130,10 @@ function handleMove(move) {
 
 // patches를 실제 영역에 적용하고, 같은 변경을 innerHTML로 했을 때와 변경 노드 수를 비교한다
 function compareMutations(prev, next, patches, label) {
+  // next를 render하는 innerHTML 측정을 patch보다 먼저 한다.
+  // next를 그릴 수 없으면 여기서 에러가 나므로, 실제 영역을 건드리기 전에 멈춘다 (일부만 patch된 상태 방지).
+  const byInnerHTML = measureInnerHTML(prev, next);
+
   reportOutsideMutations(actualObserver.takeRecords()); // 이전에 쌓인 기록은 patch와 섞이지 않게 먼저 꺼낸다
   try {
     patch(actualRoot, patches);
@@ -139,7 +143,6 @@ function compareMutations(prev, next, patches, label) {
     addLog(LOG_KIND.ERROR, `patch 실패 — ${error.message} 실제 영역을 다시 그려 복구했습니다.`);
   }
   const byPatch = summarizeMutations(actualObserver.takeRecords());
-  const byInnerHTML = measureInnerHTML(prev, next);
 
   showComparison(byPatch, byInnerHTML, label);
   addLog(

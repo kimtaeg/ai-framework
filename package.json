@@ -9,7 +9,7 @@
     "serve": "python3 -m http.server --bind 127.0.0.1 8000"
   },
   "engines": {
-    "node": ">=22.12.0"
+    "node": "^22.13.0 || ^24.0.0 || >=26.0.0"
   },
   "devDependencies": {
     "jsdom": "^29.1.1",

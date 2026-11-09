@@ -7,11 +7,11 @@
 
 ## 실행 방법
 
-**필요 환경**: Node.js 22.12 이상 (Vitest 5가 Node 20을 지원하지 않습니다), Python 3 (`npm run serve`용)
+**필요 환경**: Node.js `^22.13.0 || ^24.0.0 || >=26.0.0` (jsdom 29와 Vitest 5가 함께 지원하는 범위, 23·25는 제외), Python 3 (`npm run serve`용)
 
 ```bash
 npm install        # 테스트 도구(vitest, jsdom) 설치
-npm test           # 단위 테스트 전체 실행 (198개)
+npm test           # 단위 테스트 전체 실행 (199개)
 npm run test:watch # 파일 저장 시마다 테스트
 
 npm run serve      # http://localhost:8000/phase1/ (Phase 1 검증 페이지)
@@ -43,7 +43,7 @@ ai-framework/
 │   ├── main.js             # 마운트, localStorage, 디버그 패널(onRender + MutationObserver)
 │   ├── index.html
 │   └── style.css
-└── test/                   # vitest + jsdom 단위 테스트 (198개)
+└── test/                   # vitest + jsdom 단위 테스트 (199개)
 ```
 
 ### 계층

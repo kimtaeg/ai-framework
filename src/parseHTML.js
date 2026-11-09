@@ -3,6 +3,7 @@
 // 사용자가 쓴 그대로를 기준으로 에러를 알려 준다.
 
 import { toVNode } from './domToVNode.js';
+import { render } from './vdom.js';
 import { VOID_TAGS, SVG_TAG, FOREIGN_OBJECT_TAG } from './htmlTags.js';
 
 // <태그 속성="값 > 포함 가능"> / </태그> / <태그 />
@@ -50,6 +51,14 @@ export function parseHTML(source) {
   }
   if (typeof roots[0] === 'string') {
     throw new HTMLParseError('루트는 텍스트가 아니라 요소여야 합니다.');
+  }
+
+  // 브라우저 파서가 받아들여도 우리 render가 만들 수 없는 경우가 있다 (예: <svg> 안의 <xmlns:x> → NamespaceError).
+  // patch 도중에 터지면 실제 영역이 일부만 바뀐 채 남으므로, 여기서 한 번 그려 보고 실패하면 미리 알린다.
+  try {
+    render(roots[0]);
+  } catch (error) {
+    throw new HTMLParseError(`화면에 그릴 수 없는 요소가 있습니다. (${error.name}: ${error.message})`);
   }
   return roots[0];
 }

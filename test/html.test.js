@@ -27,6 +27,8 @@ describe('parseHTML', () => {
     // 브라우저 파서는 통과시키지만 setAttribute가 InvalidCharacterError를 던지는 이름
     ['<div>\n  <button @click="go">x</button>\n</div>', '2번째 줄: "@click"은(는) 속성 이름으로 쓸 수 없습니다'],
     ['<p [title]="a">x</p>', '"[title]"은(는) 속성 이름으로 쓸 수 없습니다'],
+    // 브라우저 파서는 통과시키지만 render(createElementNS)가 NamespaceError를 던지는 요소
+    ['<svg><xmlns:x></xmlns:x></svg>', '화면에 그릴 수 없는 요소가 있습니다. (NamespaceError'],
   ])('잘못된 입력 %j → 에러', (source, message) => {
     expect(() => parseHTML(source)).toThrow(HTMLParseError);
     expect(() => parseHTML(source)).toThrow(message);
