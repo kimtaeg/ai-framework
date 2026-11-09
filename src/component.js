@@ -11,10 +11,12 @@ import { render } from './vdom.js';
 import { diff, patch } from './diff.js';
 import { runRender, HOOK_ORDER_RULE } from './hooks.js';
 
-export function expand(vnode) {
+// options.onComponent: 함수 컴포넌트를 실행하기 직전 { type: 'expand:component', name, props }를 받는 콜백.
+// 학습 페이지가 "어느 컴포넌트가 어떤 props로 펼쳐지는지" 기록할 때만 쓴다 (없으면 동작 변화 없음).
+export function expand(vnode, options = {}) {
   // 루트 함수가 null·false를 돌려준 경우도 같은 에러로 알린다
   const isEmpty = vnode === null || vnode === undefined || typeof vnode === 'boolean';
-  const result = isEmpty ? null : expandNode(vnode);
+  const result = isEmpty ? null : expandNode(vnode, options);
   if (result === null) {
     throw new Error('루트 컴포넌트가 아무것도 돌려주지 않았습니다. 화면에 그릴 요소가 하나는 있어야 합니다.');
   }
@@ -22,22 +24,24 @@ export function expand(vnode) {
 }
 
 // 펼친 결과가 비었으면(null) 부모의 자식 목록에서 빠진다
-function expandNode(vnode) {
+function expandNode(vnode, options) {
   if (typeof vnode === 'string') return vnode;
 
   if (typeof vnode.type === 'function') {
     const component = vnode.type;
     // 자식 컴포넌트는 props만 받는 순수 함수다. 태그 안에 쓴 자식은 props.children으로 넘긴다.
-    const output = component({ ...vnode.props, children: vnode.children });
+    const props = { ...vnode.props, children: vnode.children };
+    options.onComponent?.({ type: 'expand:component', name: component.name || '익명', props });
+    const output = component(props);
     const normalized = normalizeOutput(output, component);
     // 컴포넌트가 또 컴포넌트를 돌려줘도 태그가 나올 때까지 계속 펼친다
-    return normalized === null ? null : expandNode(normalized);
+    return normalized === null ? null : expandNode(normalized, options);
   }
 
   return {
     type: vnode.type,
     props: vnode.props,
-    children: vnode.children.map(expandNode).filter((child) => child !== null),
+    children: vnode.children.map((child) => expandNode(child, options)).filter((child) => child !== null),
   };
 }
 
@@ -67,13 +71,15 @@ function normalizeOutput(output, component) {
 //   batching : true(기본) — setState를 모아 한 번만 다시 그린다. false면 setState마다 즉시 그린다 (비교용)
 //   onRender : 렌더가 화면에 반영될 때마다 { type, renderCount, batchSize, patches }를 받는 콜백.
 //              렌더 횟수를 useState에 넣으면 그 setState가 또 렌더를 일으키므로, 화면 밖에서 표시할 때 쓴다.
+//   trace    : 엔진 안에서 일어난 일을 (event, component)로 알리는 콜백. 학습 페이지가 한 단계씩 재생하려고 쓴다.
+//              event는 { type, ...필드 } (render:start, hook:state, state:set, update:schedule, diff:done 등).
 
 // 한 틱(브라우저가 다른 일을 하기 전) 안에서 예약 렌더가 이만큼 이어지면 무한 루프로 본다.
 // 예약 렌더는 마이크로태스크라 끝없이 이어지면 브라우저가 화면을 그리지도 못하고 멈추기 때문이다.
 const MAX_CHAINED_UPDATES = 50;
 
 export class FunctionComponent {
-  constructor(fn, container, { batching = true, onRender } = {}) {
+  constructor(fn, container, { batching = true, onRender, trace } = {}) {
     this.fn = fn;
     this.container = container;
     this.hooks = []; // useState 등이 호출 순서대로 칸을 차지하는 사물함
@@ -84,6 +90,7 @@ export class FunctionComponent {
     this.isMounted = false;
     this.isBatching = batching;
     this.onRender = onRender;
+    this.trace = trace;
     this.renderCount = 0; // 화면에 반영된 렌더 수 (mount 포함)
     this.pendingSetStateCount = 0; // 다음 렌더에 합쳐질 setState 호출 수
     this.lastBatchSize = 0; // 직전 렌더에 합쳐진 setState 호출 수
@@ -103,8 +110,9 @@ export class FunctionComponent {
     // 재사용하면 그 setState가 세대가 달라 무시되기 때문이다.
     this.hooks = [];
     this.expectedHookCount = null;
-    const vnode = this.renderVNode();
+    const vnode = this.renderVNode('mount');
     this.container.replaceChildren(render(vnode));
+    this.emitTrace({ type: 'commit:done', kind: 'mount' });
     this.prevVNode = vnode;
     this.isMounted = true;
     this.recordRender('mount', []);
@@ -116,13 +124,20 @@ export class FunctionComponent {
     this.isUpdateScheduled = false;
     // unmount 뒤에 늦게 도착한 예약(타이머 안의 setState 등)은 무시한다
     if (!this.isMounted) return [];
-    const nextVNode = this.renderVNode();
+    this.emitTrace({ type: 'update:start' });
+    const nextVNode = this.renderVNode('update');
     const patches = diff(this.prevVNode, nextVNode);
+    this.emitTrace({ type: 'diff:done', patches });
     patch(this.container, patches);
     this.prevVNode = nextVNode;
+    this.emitTrace({ type: 'commit:done', kind: 'update' });
     this.recordRender('update', patches);
     this.runEffects();
     return patches;
+  }
+
+  emitTrace(event) {
+    this.trace?.(event, this);
   }
 
   recordRender(type, patches) {
@@ -135,10 +150,13 @@ export class FunctionComponent {
   unmount() {
     if (!this.isMounted) return;
     this.isMounted = false;
+    this.emitTrace({ type: 'unmount' });
     // 타이머·구독처럼 effect가 열어 둔 것을 닫는다 (선언 순서대로)
-    for (const hook of this.hooks) {
-      if (typeof hook.cleanup === 'function') hook.cleanup();
-    }
+    this.hooks.forEach((hook, index) => {
+      if (typeof hook.cleanup !== 'function') return;
+      this.emitTrace({ type: 'effect:cleanup', index });
+      hook.cleanup();
+    });
     this.container.replaceChildren();
     this.hooks = [];
     this.prevVNode = null;
@@ -156,6 +174,7 @@ export class FunctionComponent {
   scheduleUpdate() {
     if (!this.isMounted) return;
     this.pendingSetStateCount++;
+    this.emitTrace({ type: 'update:schedule', alreadyScheduled: this.isBatching && this.isUpdateScheduled });
 
     if (!this.isBatching) {
       this.update(); // 비교용: setState마다 즉시 렌더
@@ -191,11 +210,13 @@ export class FunctionComponent {
     this.update();
   }
 
-  renderVNode() {
+  renderVNode(kind) {
+    this.emitTrace({ type: 'render:start', kind });
     // 매 렌더 첫 번째 Hook이 0번 사물함을 열도록 되돌린다. 호출 순서가 곧 사물함 번호다.
     this.hookIndex = 0;
     this.pendingEffects = []; // 이전 렌더가 실패해 남은 예약은 버린다
-    const vnode = runRender(this, () => this.fn({}), expand);
+    const expandTree = (tree) => expand(tree, { onComponent: (event) => this.emitTrace(event) });
+    const vnode = runRender(this, () => this.fn({}), expandTree);
 
     // Hook이 이전 렌더보다 적어졌으면 뒤쪽 사물함이 엉뚱한 값을 갖게 된다 (많아진 경우는 takeHookSlot이 바로 잡는다)
     if (this.expectedHookCount !== null && this.hookIndex !== this.expectedHookCount) {
@@ -214,12 +235,16 @@ export class FunctionComponent {
     const effects = this.pendingEffects;
     this.pendingEffects = [];
 
-    for (const { hook } of effects) {
-      if (typeof hook.cleanup === 'function') hook.cleanup();
+    for (const { hook, index } of effects) {
+      if (typeof hook.cleanup === 'function') {
+        this.emitTrace({ type: 'effect:cleanup', index });
+        hook.cleanup();
+      }
       hook.cleanup = undefined;
     }
-    for (const { hook, effect, deps } of effects) {
+    for (const { hook, effect, deps, index } of effects) {
       hook.deps = deps;
+      this.emitTrace({ type: 'effect:run', index });
       const cleanup = effect();
       // 함수를 돌려주면 다음 실행 직전이나 unmount 때 부를 cleanup으로 저장한다
       hook.cleanup = typeof cleanup === 'function' ? cleanup : undefined;

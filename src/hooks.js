@@ -79,6 +79,8 @@ function takeHookSlot(component, hookName, createSlot) {
 
 export function useState(initialValue) {
   const component = getRenderingComponent('useState');
+  const index = component.hookIndex; // 이번에 열 사물함 번호 (trace 알림용)
+  const isFirst = index === component.hooks.length;
 
   // 첫 렌더: 사물함이 비어 있으므로 초기값을 넣는다. 다음 렌더부터는 같은 사물함을 꺼내므로 초기값은 무시된다.
   // useState(() => 무거운 계산)처럼 함수를 넘기면 첫 렌더에 한 번만 실행한다 (지연 초기화, React와 같은 규칙).
@@ -98,12 +100,15 @@ export function useState(initialValue) {
       }
       // prev => next 형태면 사물함의 최신 값을 넘긴다 (연속 호출해도 앞의 변경이 반영된다)
       const nextValue = typeof action === 'function' ? action(hook.value) : action;
-      if (Object.is(nextValue, hook.value)) return; // 같은 값이면 다시 그리지 않는다
+      const skipped = Object.is(nextValue, hook.value);
+      component.emitTrace?.({ type: 'state:set', index, prev: hook.value, next: nextValue, skipped });
+      if (skipped) return; // 같은 값이면 다시 그리지 않는다
       hook.value = nextValue;
       component.scheduleUpdate();
     };
   }
 
+  component.emitTrace?.({ type: 'hook:state', index, isFirst, value: hook.value });
   return [hook.value, hook.setState];
 }
 
@@ -119,12 +124,13 @@ function haveDepsChanged(prevDeps, nextDeps) {
 // 렌더 함수는 순수해야 하고 몇 번 실행될지 모르므로, 바깥세상(DOM 측정, 타이머, 요청)과 닿는 일은 여기로 뺀다.
 export function useEffect(effect, deps) {
   const component = getRenderingComponent('useEffect');
+  const index = component.hookIndex;
   const hook = takeHookSlot(component, 'useEffect', () => ({ deps: undefined, cleanup: undefined }));
 
   // deps는 실제로 실행할 때 저장한다 (렌더가 중간에 실패하면 실행되지 않은 deps가 남지 않도록)
-  if (haveDepsChanged(hook.deps, deps)) {
-    component.pendingEffects.push({ hook, effect, deps });
-  }
+  const queued = haveDepsChanged(hook.deps, deps);
+  if (queued) component.pendingEffects.push({ hook, effect, deps, index });
+  component.emitTrace?.({ type: 'hook:effect', index, queued });
 }
 
 // 렌더 중에 바로 계산해 값을 돌려준다. deps가 같으면 fn을 다시 부르지 않고 지난 값을 꺼낸다.
@@ -132,13 +138,16 @@ export function useEffect(effect, deps) {
 // 무거운 계산(큰 목록 필터링 등)이 반복되는 것을 막는다. 동작은 바꾸지 않는 최적화일 뿐이다.
 export function useMemo(compute, deps) {
   const component = getRenderingComponent('useMemo');
+  const index = component.hookIndex;
   const hook = takeHookSlot(component, 'useMemo', () => ({ value: undefined, deps: undefined }));
 
-  if (haveDepsChanged(hook.deps, deps)) {
+  const recomputed = haveDepsChanged(hook.deps, deps);
+  if (recomputed) {
     // compute가 에러를 던지면 아래 대입이 일어나지 않아 다음 렌더에 다시 계산한다
     const value = compute();
     hook.value = value;
     hook.deps = deps;
   }
+  component.emitTrace?.({ type: 'hook:memo', index, recomputed, value: hook.value });
   return hook.value;
 }
