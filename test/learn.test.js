@@ -5,6 +5,7 @@ import { h } from '../src/vdom.js';
 import { expand, FunctionComponent } from '../src/component.js';
 import { useState, useEffect } from '../src/hooks.js';
 import { createRecorder } from '../phase2-learn/recorder.js';
+import { TRACE_EVENT_TYPES, describeStep } from '../phase2-learn/explain.js';
 
 function mountRecorded(fn, recorderOptions = {}) {
   const container = document.createElement('div');
@@ -117,5 +118,71 @@ describe('recorder', () => {
 
     recorder.note({ type: 'scenario:click' }); // 다음 단계
     expect(recorder.steps.at(-1).snapshot.hooks[0]).toEqual({ kind: 'useEffect', value: undefined, deps: [1, 'a'], hasCleanup: true });
+  });
+});
+
+describe('explain', () => {
+  // 사건 종류마다 실제로 올 법한 필드를 채운 예
+  const SAMPLE_EVENTS = {
+    'render:start': { kind: 'update' },
+    'hook:state': { index: 0, isFirst: false, value: 3 },
+    'hook:memo': { index: 2, recomputed: false, value: 6 },
+    'hook:effect': { index: 1, queued: true },
+    'expand:component': { name: 'Card', props: { title: '할 일', children: [] } },
+    'state:set': { index: 0, prev: 0, next: 1, skipped: false },
+    'update:schedule': { alreadyScheduled: false },
+    'update:start': {},
+    'diff:done': { patches: [{ type: 'TEXT', path: [0], from: '0', to: '1' }] },
+    'commit:done': { kind: 'update' },
+    'effect:cleanup': { index: 1 },
+    'effect:run': { index: 1 },
+    unmount: {},
+    'scenario:h': { tree: { type: 'ƒ Card', props: {}, children: [] } },
+    'scenario:vdom': { vdom: { type: 'section', props: {}, children: [] } },
+    'scenario:click': { label: '버튼 클릭' },
+    error: { message: '일부러 낸 에러' },
+  };
+  const step = (type, fields = SAMPLE_EVENTS[type]) => ({ index: 0, event: { type, ...fields }, snapshot: {} });
+
+  it('사건 종류 목록은 스펙의 13종 + 시나리오 3종 + error', () => {
+    expect(new Set(TRACE_EVENT_TYPES)).toEqual(new Set(Object.keys(SAMPLE_EVENTS)));
+  });
+
+  it.each(Object.keys(SAMPLE_EVENTS))('%s: 출처와 설명이 비어 있지 않다', (type) => {
+    const { source, text, mark } = describeStep(step(type));
+    expect(source.length).toBeGreaterThan(0);
+    expect(text.length).toBeGreaterThan(0);
+    expect(mark.length).toBeGreaterThan(0);
+  });
+
+  it('엔진 사건의 출처는 "파일 › 함수", 시나리오는 "예제", 에러는 "에러"', () => {
+    expect(describeStep(step('state:set')).source).toBe('hooks.js › setState');
+    expect(describeStep(step('hook:state')).source).toBe('hooks.js › useState');
+    expect(describeStep(step('diff:done')).source).toBe('diff.js › diff');
+    expect(describeStep(step('scenario:click')).source).toBe('예제');
+    expect(describeStep(step('error')).source).toBe('에러');
+  });
+
+  it('state:set은 skipped에 따라 문장이 다르다', () => {
+    expect(describeStep(step('state:set')).text).toBe('사물함 0번 값을 0에서 1로 바꿨습니다. 화면은 아직 그대로예요.');
+    expect(describeStep(step('state:set', { index: 0, prev: 1, next: 1, skipped: true })).text).toBe(
+      '같은 값이라 아무것도 하지 않았습니다.'
+    );
+  });
+
+  it('error 단계 설명에는 엔진 메시지가 그대로 들어간다', () => {
+    expect(describeStep(step('error')).text).toContain('일부러 낸 에러');
+  });
+
+  it('expand:component의 mark는 component:이름, 나머지는 사건 type', () => {
+    expect(describeStep(step('expand:component')).mark).toBe('component:Card');
+    expect(describeStep(step('state:set')).mark).toBe('state:set');
+  });
+
+  it('모르는 사건은 기본 설명으로', () => {
+    const result = describeStep({ index: 0, event: { type: 'xxx' }, snapshot: {} });
+    expect(result.source).toBe('엔진');
+    expect(result.text.length).toBeGreaterThan(0);
+    expect(result.mark).toBe('xxx');
   });
 });
