@@ -1,0 +1,52 @@
+# 캐시 실험 환경 — 자원을 고정하고, 컨테이너마다 다른 CPU 코어를 써서 서로 뺏지 않게 한다.
+#   docker compose -f experiment/docker-compose.yml up -d --build
+#   (측정은 node experiment/run.js 가 k6 컨테이너를 띄워서 한다)
+name: cache-exp
+
+services:
+  app:
+    build: { context: .., dockerfile: experiment/Dockerfile }
+    command: node experiment/app.js
+    environment:
+      PORT: 8080
+      DATA_DIR: /data
+      ROWS: ${ROWS:-100000}
+      DB_WORKERS: 2
+      MINI_URL: http://miniredis:6380
+      REDIS_HOST: redis
+    volumes: [dbdata:/data]
+    cpuset: "2-4"          # 메인 스레드 1 + DB 워커 2
+    cpus: 3
+    mem_limit: 1g
+    depends_on: [miniredis, redis]
+    ports: ["8080:8080"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 2s
+      retries: 60
+
+  miniredis:
+    build: { context: .., dockerfile: experiment/Dockerfile }
+    command: node experiment/miniredis-server.js
+    cpuset: "5"
+    cpus: 1
+    mem_limit: 512m
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--io-threads", "1"]   # 미니 레디스와 같게: 영속성 끔, 스레드 1
+    cpuset: "6"
+    cpus: 1
+    mem_limit: 512m
+
+  k6:
+    image: grafana/k6:1.0.0
+    profiles: [tools]      # up 할 때는 안 뜨고 run 으로만 실행
+    volumes: ["./k6:/scripts:ro", "./results/raw:/out"]
+    cpuset: "8-11"
+    cpus: 4
+    mem_limit: 1g
+    depends_on: [app]
+
+volumes:
+  dbdata:

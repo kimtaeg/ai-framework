@@ -1,0 +1,7 @@
+node_modules
+.env
+.git
+week2/data
+experiment/.data
+experiment/results
+load/reports
