@@ -12,7 +12,9 @@
     "test": "node --test --test-timeout=20000 \"tests/**/*.test.js\"",
     "redis": "node week2/redis/server.js",
     "dbms": "node week2/dbms/server.js",
-    "bench:dbms": "node week2/dbms/bench.js --rows 1000000"
+    "bench:dbms": "node week2/dbms/bench.js --rows 1000000",
+    "bench:export": "node experiment/export.js",
+    "bench:compare": "node experiment/compare-hosts.js"
   },
   "devDependencies": {
     "jsdom": "^31.0.0"
