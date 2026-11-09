@@ -14,7 +14,8 @@
     "dbms": "node week2/dbms/server.js",
     "bench:dbms": "node week2/dbms/bench.js --rows 1000000",
     "bench:export": "node experiment/export.js",
-    "bench:compare": "node experiment/compare-hosts.js"
+    "bench:compare": "node experiment/compare-hosts.js",
+    "test:fuzz": "node tests/fuzz-400.js"
   },
   "devDependencies": {
     "jsdom": "^31.0.0"
