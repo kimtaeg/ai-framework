@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phase 2 개념 학습 · Mini React</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="main.js"></script>
+</head>
+<body>
+  <header class="page-header">
+    <div class="wrap">
+      <p class="eyebrow">Mini React · Phase 2 개념 학습</p>
+      <h1>엔진을 한 단계씩 따라가기</h1>
+      <p class="lead">
+        실제 엔진(<code>src/</code>)을 기록해 둔 그대로 재생합니다. <b>다음 ▶</b>(또는 → 키)을 누를 때마다
+        엔진이 한 칸 진행하고, 엔진 내부 패널에서 사물함·예약 큐·patch가 어떻게 바뀌는지 볼 수 있어요.
+      </p>
+    </div>
+  </header>
+
+  <main class="wrap layout">
+    <!-- 왼쪽: 장 목록 + 실험 조절 -->
+    <nav class="panel side" aria-label="장 목록">
+      <h2 class="panel__title">장</h2>
+      <ol class="chapters" id="chapters"></ol>
+      <h2 class="panel__title">실험 조절</h2>
+      <div class="controls" id="controls"></div>
+      <button type="button" class="btn btn--primary" id="btn-run">실행</button>
+      <p class="hint">조절을 바꾸고 <b>실행</b>을 누르면 새로 기록해 1단계부터 재생합니다.</p>
+    </nav>
+
+    <!-- 가운데: 코드 · 화면 · 설명 -->
+    <section class="panel center" aria-labelledby="chapter-title">
+      <h2 class="chapter-title" id="chapter-title"></h2>
+      <p class="chapter-summary" id="chapter-summary"></p>
+
+      <div class="explain" id="explain" aria-live="polite">
+        <p class="explain__meta"><span class="explain__step" id="explain-step"></span><code class="explain__source" id="explain-source"></code></p>
+        <p class="explain__text" id="explain-text"></p>
+      </div>
+
+      <h3 class="box-title">예제 코드 <span class="box-hint">지금 단계와 관련된 줄을 강조</span></h3>
+      <pre class="code" id="code"></pre>
+
+      <h3 class="box-title">화면 <span class="box-hint">그 순간의 실제 DOM</span></h3>
+      <div class="screen" id="screen"></div>
+      <p class="notice" id="notice" hidden></p>
+    </section>
+
+    <!-- 오른쪽: 엔진 내부 -->
+    <aside class="panel engine" aria-label="엔진 내부">
+      <h2 class="panel__title">엔진 내부</h2>
+      <div id="panels"></div>
+    </aside>
+  </main>
+
+  <!-- 하단: 단계 이동 -->
+  <div class="stepper" role="group" aria-label="단계 이동">
+    <div class="wrap stepper__inner">
+      <button type="button" class="btn" id="btn-prev">◀ 이전</button>
+      <button type="button" class="btn btn--primary" id="btn-next">다음 ▶</button>
+      <button type="button" class="btn btn--ghost" id="btn-restart">처음부터</button>
+      <div class="progress" aria-hidden="true"><div class="progress__bar" id="progress-bar"></div></div>
+      <output class="step-count" id="step-count">0 / 0</output>
+    </div>
+  </div>
+</body>
+</html>

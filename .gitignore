@@ -38,3 +38,6 @@ node_modules/
 
 # 개인 발표 자료 (저장소에 올리지 않음)
 docs/
+
+# Superpowers 작업 공간 (브레인스토밍 목업, 구현 진행 기록)
+.superpowers/

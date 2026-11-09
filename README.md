@@ -11,11 +11,12 @@
 
 ```bash
 npm install        # 테스트 도구(vitest, jsdom) 설치
-npm test           # 단위 테스트 전체 실행 (199개)
+npm test           # 단위 테스트 전체 실행 (262개)
 npm run test:watch # 파일 저장 시마다 테스트
 
 npm run serve      # http://localhost:8000/phase1/ (Phase 1 검증 페이지)
                    # http://localhost:8000/phase2/ (Phase 2 할 일 앱 + 디버그 패널)
+                   # http://localhost:8000/phase2-learn/ (Phase 2 개념 학습: 엔진을 한 단계씩 재생)
 ```
 
 > ES 모듈(`import`)은 `file://`로 열면 브라우저가 막습니다. 반드시 HTTP 서버로 여세요.
@@ -43,7 +44,14 @@ ai-framework/
 │   ├── main.js             # 마운트, localStorage, 디버그 패널(onRender + MutationObserver)
 │   ├── index.html
 │   └── style.css
-└── test/                   # vitest + jsdom 단위 테스트 (199개)
+├── phase2-learn/           # Phase 2 개념 학습 페이지 (실제 엔진 기록을 한 단계씩 재생)
+│   ├── scenarios.js        # 4개 장: 예제 컴포넌트, 실험 조절, 실행 대본
+│   ├── recorder.js         # trace 사건 + 그 순간의 스냅샷 → steps
+│   ├── explain.js          # 사건 → 출처(파일 › 함수)·설명·강조할 코드 줄
+│   ├── main.js             # 3단 화면, 이전/다음/처음부터, ← → 키
+│   ├── index.html
+│   └── style.css
+└── test/                   # vitest + jsdom 단위 테스트 (262개)
 ```
 
 ### 계층
