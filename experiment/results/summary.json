@@ -3851,7 +3851,7 @@
   },
   "breakEven": {
     "mini": null,
-    "redis": 0.007088164515423282
+    "redis": 0
   },
   "driftCheck": [
     {

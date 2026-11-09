@@ -19,7 +19,7 @@ services:
     cpus: 3
     mem_limit: 1g
     depends_on: [miniredis, redis]
-    ports: ["8080:8080"]
+    ports: ["127.0.0.1:8080:8080"]   # 이 컴퓨터에서만 접근 (같은 와이파이의 다른 기기가 /admin/reset 을 부르지 못하게)
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
       interval: 2s

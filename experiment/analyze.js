@@ -6,13 +6,15 @@
  *     E2 처리량    X(h) = min( X_db / (1−h), X_cache )      (DB 가 병목일 때: DB 로 가는 몫이 (1−h) 뿐)
  */
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { hitChart, barChart, COLORS, NAME } from './charts.js';
+import { renderHitChart, renderBarChart, COLORS, NAME } from './charts.js';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const RAW = join(HERE, 'results', 'raw');
-const T95 = { 1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447, 7: 2.365, 8: 2.306, 9: 2.262 };
+// t 분포 95% 양측 임계값 (자유도 1~30). 30을 넘으면 정규분포 근사 1.96 (오차 2% 미만)
+const T95 = [null, 12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179, 2.160, 2.145, 2.131,
+  2.120, 2.110, 2.101, 2.093, 2.086, 2.080, 2.074, 2.069, 2.064, 2.060, 2.056, 2.052, 2.048, 2.045, 2.042];
 
 const stat = (xs) => {
   xs = xs.filter((x) => x != null && Number.isFinite(x));
@@ -76,7 +78,9 @@ for (const b of ['mini', 'redis']) {
   const pts = conds.filter((c) => c.exp === 'E3' && c.BACKEND === b).sort((a, z) => a.HIT - z.HIT);
   if (!none3 || pts.length < 2) continue;
   const target = med(none3.rps);
-  if (med(pts[0].rps) >= target) { breakEven[b] = 0; continue; }
+  // 히트율 0% 에서 이미 캐시 없음과 같거나 빠르면(두 신뢰구간이 겹치면 같은 것으로 봄) 손익분기는 0% —
+  // 오차 범위 안의 차이를 보간해서 "0.7% 이상" 같은 가짜 정밀도를 만들지 않는다
+  if (med(pts[0].rps) >= target || target - med(pts[0].rps) <= pts[0].rps.ci95 + none3.rps.ci95) { breakEven[b] = 0; continue; }
   if (med(pts.at(-1).rps) < target) { breakEven[b] = null; continue; } // 100% 여도 손해
   for (let i = 1; i < pts.length; i++) {
     const [a, z] = [pts[i - 1], pts[i]];
@@ -110,7 +114,7 @@ md += `\n## E1 지연시간 모델 T(h) = h·T_hit + (1−h)·T_miss\n\n| 캐시
 for (const m of models.E1) md += `| ${m.backend} | ${f(m.hitMeasured * 100)}% | ${f(m.measuredMs, 2)} | ${f(m.predictedMs, 2)} | ${f(m.errorPct)}% |\n`;
 md += `\n## E2 처리량 모델 X(h) = min(X_db/(1−h), X_cache)\n\n| 캐시 | 히트율 | 실측 req/s | 예측 req/s | 오차 |\n|---|---|---|---|---|\n`;
 for (const m of models.E2) md += `| ${m.backend} | ${f(m.hitMeasured * 100)}% | ${f(m.measuredRps)} | ${f(m.predictedRps)} | ${f(m.errorPct)}% |\n`;
-md += `\n## E3 가벼운 쿼리 손익분기 히트율\n\n${Object.entries(breakEven).map(([b, v]) => `- ${b}: ${v == null ? '100% 여도 캐시 없음보다 느림' : f(v * 100) + '% 이상이어야 이득'}`).join('\n')}\n`;
+md += `\n## E3 가벼운 쿼리 손익분기 히트율\n\n${Object.entries(breakEven).map(([b, v]) => `- ${b}: ${v == null ? '100% 여도 캐시 없음보다 느림' : v === 0 ? '히트율 0% 에서도 캐시 없음과 오차 범위 안에서 같음 (손해 없음)' : f(v * 100) + '% 이상이어야 이득'}`).join('\n')}\n`;
 const drifted = driftCheck.filter((d) => Math.abs(d.diffPct) > 10);
 md += `\n## 점검: 시간에 따른 변화 (앞 회차 r1·r2 vs 뒤 회차 r4·r5 처리량)\n\n`;
 md += `- ±10% 를 넘는 조건: ${drifted.length}개 / ${driftCheck.length}개\n`;
@@ -124,7 +128,7 @@ const pts = (exp, b, field) => conds.filter((c) => c.exp === exp && c.BACKEND ==
 const modelLine = (rows, field) => rows.map((m) => ({ h: m.hitMeasured, y: m[field] })).filter((m) => Number.isFinite(m.y));
 const svg = (name, s) => writeFileSync(join(HERE, 'results', name), s);
 const none1 = find('E1', 'none'), none2 = find('E2', 'none');
-if (models.E1.length) svg('e1-latency.svg', hitChart({
+if (models.E1.length) svg('e1-latency.svg', renderHitChart({
   title: 'E1 · 응답시간은 공식대로 줄어든다 (VU 1, 전체 읽기 쿼리)',
   subtitle: '점: 실측 중앙값 (막대 = 95% 신뢰구간) · 점선: T(h) = h·T_hit + (1−h)·T_miss',
   yLabel: '평균 응답시간 (ms)', logY: true,
@@ -132,7 +136,7 @@ if (models.E1.length) svg('e1-latency.svg', hitChart({
   baseline: none1 && { y: med(none1.avg), label: `캐시 없음 ${f(med(none1.avg))}ms` },
   legendItems: [[NAME.mini, COLORS.mini], [NAME.redis, COLORS.redis], ['공식 예측', COLORS.soft, true]],
 }));
-if (models.E2.length) svg('e2-throughput.svg', hitChart({
+if (models.E2.length) svg('e2-throughput.svg', renderHitChart({
   title: 'E2 · 처리량은 DB 로 가는 몫(1−h)에 반비례 (VU 50, 전체 읽기 쿼리)',
   subtitle: '점: 실측 중앙값 · 점선: X(h) = min(X_db / (1−h), X_cache) · 세로축 로그',
   yLabel: '처리량 (req/s)', logY: true,
@@ -140,13 +144,13 @@ if (models.E2.length) svg('e2-throughput.svg', hitChart({
   baseline: none2 && { y: med(none2.rps), label: `캐시 없음 ${f(med(none2.rps))}/s` },
   legendItems: [[NAME.mini, COLORS.mini], [NAME.redis, COLORS.redis], ['공식 예측', COLORS.soft, true]],
 }));
-if (none3) svg('e3-light-query.svg', barChart({
+if (none3) svg('e3-light-query.svg', renderBarChart({
   title: 'E3 · 가벼운 쿼리(B+ 트리 조회)에서는 캐시가 손해일 수 있다',
   subtitle: 'VU 50 · 처리량 중앙값 (막대 위 숫자) · 오차 막대 = 95% 신뢰구간',
   yLabel: '처리량 (req/s)',
   groups: [0, 0.9, 1].map((h) => ({ label: `히트율 ${h * 100}%`, bars: ['none', 'mini', 'redis'].map((b) => { const c = b === 'none' ? none3 : find('E3', b, { HIT: h }); return c ? { key: b, y: med(c.rps), ci: c.rps.ci95 } : null; }).filter(Boolean) })),
 }));
-if (find('E4', 'none', { WORKLOAD: 'C' })) svg('e4-ycsb.svg', barChart({
+if (find('E4', 'none', { WORKLOAD: 'C' })) svg('e4-ycsb.svg', renderBarChart({
   title: 'E4 · YCSB 표준 워크로드 (Zipf θ=0.99, B+ 트리 조회, VU 50)',
   subtitle: '쓰기가 늘수록 캐시 무효화와 쓰기 락 때문에 이득이 줄어든다 · 막대 위: 처리량 (히트율)',
   yLabel: '처리량 (req/s)',

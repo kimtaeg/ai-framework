@@ -30,7 +30,7 @@ function legend(x, y, items) {
  * 히트율(x) 그래프. series: [{ key, color, points:[{h, y, ci}], model:[{h,y}] }]
  * logY: 처리량처럼 범위가 큰 값
  */
-export function hitChart({ title, subtitle, yLabel, series, baseline, logY = false, legendItems }) {
+export function renderHitChart({ title, subtitle, yLabel, series, baseline, logY = false, legendItems }) {
   const W = 880, H = 520, L = 88, R = 32, T = 104, B = 72;
   const pw = W - L - R, ph = H - T - B;
   const ys = series.flatMap((s) => [...s.points.map((p) => p.y + (p.ci || 0)), ...(s.model || []).map((m) => m.y)]).concat(baseline ? [baseline.y] : []).filter((v) => v > 0 && Number.isFinite(v));
@@ -59,7 +59,7 @@ export function hitChart({ title, subtitle, yLabel, series, baseline, logY = fal
 }
 
 /** 묶음 막대. groups: [{ label, bars:[{ key, y, ci, note }] }] */
-export function barChart({ title, subtitle, yLabel, groups }) {
+export function renderBarChart({ title, subtitle, yLabel, groups }) {
   const W = 880, H = 500, L = 88, R = 32, T = 104, B = 80;
   const pw = W - L - R, ph = H - T - B;
   const raw = Math.max(...groups.flatMap((g) => g.bars.map((b) => b.y + (b.ci || 0)))) * 1.12;

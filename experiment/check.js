@@ -12,8 +12,12 @@ import { fileURLToPath } from 'node:url';
 
 const RAW = join(dirname(fileURLToPath(import.meta.url)), 'results', 'raw');
 const runs = readdirSync(RAW).filter((f) => f.endsWith('.json')).map((f) => ({ f, key: f.replace(/_r\d+\.json$/, ''), ...JSON.parse(readFileSync(join(RAW, f), 'utf8')) }));
+if (!runs.length) {
+  console.log('RELIABILITY=N/A runs=0 (아직 측정된 회차가 없음)');
+  process.exit(0);
+}
 const ok = runs.filter((r) => r.rps > 0 && (r.errorRate ?? 0) < 0.01);
-const success = runs.length ? ok.length / runs.length : 1;
+const success = ok.length / runs.length;
 
 const byKey = {};
 for (const r of ok) (byKey[r.key] ??= []).push(r);
@@ -30,7 +34,12 @@ for (const [key, rs] of Object.entries(byKey)) {
     else outliers.push(`${r.f.replace('.json', '')} ${(dev * 100).toFixed(0)}%`);
   }
 }
-const repro = counted ? inBand / counted : 1;
+if (!counted) {
+  // 같은 조건을 2회 이상 잰 적이 없으면 재현성을 계산할 수 없다 → 100% 로 보이지 않게 한다
+  console.log(`RELIABILITY=N/A runs=${runs.length} success=${(success * 100).toFixed(1)}% repro=N/A (2회 이상 측정된 조건 없음)`);
+  process.exit(0);
+}
+const repro = inBand / counted;
 const reliability = Math.min(success, repro);
 console.log(`RELIABILITY=${(reliability * 100).toFixed(1)}% runs=${runs.length} success=${(success * 100).toFixed(1)}% repro=${(repro * 100).toFixed(1)}% (${inBand}/${counted})`);
 if (process.argv.includes('-v')) console.log(outliers.join('\n'));
