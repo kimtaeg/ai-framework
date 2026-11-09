@@ -242,3 +242,73 @@ describe('저장 데이터 정리 (sanitizeTodos)', () => {
     expect(container.querySelector('.todo__text').textContent).toBe('살아남음');
   });
 });
+
+describe('unmount 후 같은 인스턴스를 다시 mount (Codex 리뷰)', () => {
+  function setupCounter() {
+    const log = [];
+    const setters = [];
+    const container = document.createElement('div');
+    const component = new FunctionComponent(() => {
+      const [n, setN] = useState(0);
+      setters.push(setN);
+      log.push(`render ${n}`);
+      return h('p', null, String(n));
+    }, container);
+    component.mount();
+    return { component, container, log, setters };
+  }
+
+  it('예약된 update가 있는 채로 unmount → mount해도 옛 예약은 새 트리에 적용되지 않는다', async () => {
+    const { component, log, setters } = setupCounter();
+    setters[0](5); // 예약만 된 상태
+    component.unmount();
+    component.mount();
+    expect(component.isUpdateScheduled).toBe(false);
+
+    await flush();
+    expect(log).toEqual(['render 0', 'render 0']); // mount 2번뿐, 옛 예약으로 인한 렌더 없음
+    expect(component.renderCount).toBe(2);
+  });
+
+  it('remount 직후의 새 setState는 정상으로 예약·반영된다', async () => {
+    const { component, container, setters } = setupCounter();
+    setters[0](5);
+    component.unmount();
+    component.mount();
+    setters.at(-1)(7); // 새 mount의 setState
+    await flush();
+    expect(container.textContent).toBe('7');
+    expect(component.renderCount).toBe(3);
+  });
+
+  it('unmount 전에 받아 둔 옛 setState는 새 트리에 영향을 주지 않는다', async () => {
+    const { component, container, setters } = setupCounter();
+    const oldSetN = setters[0];
+    component.unmount();
+    component.mount();
+
+    oldSetN(99);
+    await flush();
+    expect(container.textContent).toBe('0');
+    expect(component.renderCount).toBe(2);
+  });
+
+  it('렌더 도중 실패한 mount를 다시 시도하면 빈 사물함에서 시작해 setState가 동작한다', async () => {
+    let shouldFail = true;
+    let setN;
+    const container = document.createElement('div');
+    const component = new FunctionComponent(() => {
+      const [n, s] = useState(0);
+      setN = s;
+      if (shouldFail) throw new Error('첫 mount 실패');
+      return h('p', null, String(n));
+    }, container);
+
+    expect(() => component.mount()).toThrow('첫 mount 실패');
+    shouldFail = false;
+    component.mount();
+    setN(3);
+    await flush();
+    expect(container.textContent).toBe('3');
+  });
+});

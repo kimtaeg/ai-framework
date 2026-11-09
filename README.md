@@ -11,7 +11,7 @@
 
 ```bash
 npm install        # 테스트 도구(vitest, jsdom) 설치
-npm test           # 단위 테스트 전체 실행 (194개)
+npm test           # 단위 테스트 전체 실행 (198개)
 npm run test:watch # 파일 저장 시마다 테스트
 
 npm run serve      # http://localhost:8000/phase1/ (Phase 1 검증 페이지)
@@ -43,7 +43,7 @@ ai-framework/
 │   ├── main.js             # 마운트, localStorage, 디버그 패널(onRender + MutationObserver)
 │   ├── index.html
 │   └── style.css
-└── test/                   # vitest + jsdom 단위 테스트 (194개)
+└── test/                   # vitest + jsdom 단위 테스트 (198개)
 ```
 
 ### 계층
@@ -317,6 +317,7 @@ App  ← useState(todos, input, filter) · useMemo(목록·개수·핸들러) ·
 | 빈 목록, 마지막 항목 삭제 | 필터별 안내 문구, 버튼 비활성, `ul → p` REPLACE |
 | localStorage에 깨진 데이터 | `sanitizeTodos`가 올바른 항목만 남기고 빠진 값은 채움 (배열이 아니면 샘플로 시작) |
 | unmount 뒤 늦게 온 setState (타이머 등) | 무시 |
+| 예약된 update가 있는 채로 unmount → 같은 인스턴스를 다시 mount | 세대 번호(`mountGeneration`)가 달라 옛 예약·옛 setState는 새 트리에 적용되지 않음 |
 | update 중 렌더 에러 | 콘솔에 에러, 화면은 이전 상태 유지, 다음 setState는 정상 |
 
 ---

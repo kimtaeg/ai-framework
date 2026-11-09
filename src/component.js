@@ -89,12 +89,20 @@ export class FunctionComponent {
     this.lastBatchSize = 0; // 직전 렌더에 합쳐진 setState 호출 수
     this.expectedHookCount = null; // 직전 렌더의 Hook 개수 (첫 렌더 전에는 null)
     this.chainedUpdateCount = 0; // 이번 틱에 이어진 예약 렌더 수
+    // mount할 때마다 1씩 늘어나는 세대 번호. 예약된 update와 setState가 "어느 mount 때 것인지" 구분해서,
+    // unmount 후 같은 인스턴스를 다시 mount했을 때 옛 작업이 새 트리에 적용되지 않게 한다.
+    this.mountGeneration = 0;
   }
 
   mount() {
     if (this.isMounted) {
       throw new Error('이미 mount된 컴포넌트입니다. 처음부터 다시 그리려면 unmount() 후 mount()하세요.');
     }
+    this.mountGeneration++; // 이번 렌더에서 만드는 사물함이 새 세대 번호를 갖도록 렌더 전에 올린다
+    // mount는 항상 빈 사물함에서 시작한다. 이전 mount 시도가 렌더 도중 실패했다면 옛 세대의 사물함이 남아 있어,
+    // 재사용하면 그 setState가 세대가 달라 무시되기 때문이다.
+    this.hooks = [];
+    this.expectedHookCount = null;
     const vnode = this.renderVNode();
     this.container.replaceChildren(render(vnode));
     this.prevVNode = vnode;
@@ -137,6 +145,9 @@ export class FunctionComponent {
     this.pendingEffects = [];
     this.pendingSetStateCount = 0;
     this.expectedHookCount = null;
+    // 이미 큐에 들어간 마이크로태스크는 꺼낼 수 없으므로 표시만 지운다.
+    // 그 작업은 실행될 때 세대 번호가 달라 무시된다 (runScheduledUpdate).
+    this.isUpdateScheduled = false;
   }
 
   // Batching: setState가 여러 번 불려도 바로 그리지 않고 예약만 한다.
@@ -152,12 +163,17 @@ export class FunctionComponent {
     }
     if (this.isUpdateScheduled) return;
     this.isUpdateScheduled = true;
-    queueMicrotask(() => this.runScheduledUpdate());
+    const generation = this.mountGeneration;
+    queueMicrotask(() => this.runScheduledUpdate(generation));
   }
 
   // deps 없는 useEffect 안에서 setState하면 렌더 → effect → setState → 렌더…가 마이크로태스크로 끝없이 이어진다.
   // 다음 매크로태스크(setTimeout)가 오기 전까지 이어진 렌더 수를 세어, 너무 많으면 멈추고 원인을 알린다.
-  runScheduledUpdate() {
+  runScheduledUpdate(generation) {
+    // 예약한 뒤 unmount → mount가 일어났다면 이전 세대의 작업이므로 새 트리에 적용하지 않는다.
+    // isUpdateScheduled는 새 세대의 것일 수 있으니 건드리지 않는다.
+    if (generation !== this.mountGeneration) return;
+
     this.chainedUpdateCount++;
     if (this.chainedUpdateCount === 1) {
       setTimeout(() => {

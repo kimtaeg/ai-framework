@@ -61,7 +61,8 @@ function takeHookSlot(component, hookName, createSlot) {
           HOOK_ORDER_RULE
       );
     }
-    const slot = { hookName, ...createSlot() };
+    // 어느 mount 때 만든 사물함인지 기록한다 (unmount 후 다시 mount하면 옛 setState를 무시하기 위해)
+    const slot = { hookName, mountGeneration: component.mountGeneration, ...createSlot() };
     component.hooks.push(slot);
     return slot;
   }
@@ -90,6 +91,8 @@ export function useState(initialValue) {
     // 그래서 렌더가 끝난 뒤 이벤트 핸들러에서 불려도 어디에 값을 넣고 누구를 다시 그릴지 안다.
     // 첫 렌더에 한 번만 만들어 두므로 렌더마다 같은 함수다 (props로 넘겨도 PROPS patch가 생기지 않는다).
     hook.setState = (action) => {
+      // unmount 전에 받아 둔 옛 setState: 그 사물함은 이미 버려졌으므로 새로 mount된 트리를 건드리지 않는다
+      if (hook.mountGeneration !== component.mountGeneration) return;
       if (renderPhase !== null) {
         throw new Error('렌더 중에 setState를 호출하면 무한히 다시 렌더됩니다. 이벤트 핸들러에서 호출하세요.');
       }
