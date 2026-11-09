@@ -5,7 +5,7 @@ import { h } from '../src/vdom.js';
 import { expand, FunctionComponent } from '../src/component.js';
 import { useState, useEffect } from '../src/hooks.js';
 import { createRecorder } from '../phase2-learn/recorder.js';
-import { TRACE_EVENT_TYPES, describeStep } from '../phase2-learn/explain.js';
+import { TRACE_EVENT_TYPES, describeStep, isRenderPhase, isLineCurrent } from '../phase2-learn/explain.js';
 import { SCENARIOS, runScenario } from '../phase2-learn/scenarios.js';
 
 function mountRecorded(fn, recorderOptions = {}) {
@@ -324,3 +324,62 @@ describe('scenarios', () => {
     expect(second.steps.length).toBe(first.steps.length);
   });
 });
+
+describe('리뷰 반영', () => {
+  it('recorder.stop() 뒤에는 기록하지 않고, DOM 감시도 끝난다', () => {
+    const container = document.createElement('div');
+    const recorder = createRecorder({ container });
+    recorder.note({ type: 'scenario:click' });
+    recorder.stop();
+    container.append(document.createElement('p'));
+    recorder.note({ type: 'scenario:click' });
+    recorder.trace({ type: 'commit:done', kind: 'update' }, null);
+    expect(recorder.steps).toHaveLength(1);
+  });
+
+  it('runScenario가 끝나면 기록기를 멈춘다 (나중 DOM 변경이 기록에 붙지 않음)', async () => {
+    const container = document.createElement('div');
+    const { steps } = await runScenario('setstate', {}, container);
+    const length = steps.length;
+    container.append(document.createElement('p'));
+    await flush();
+    expect(steps).toHaveLength(length);
+  });
+
+  it.each([
+    ['render:start', true], ['hook:state', true], ['hook:memo', true], ['hook:effect', true], ['expand:component', true],
+    ['commit:done', false], ['state:set', false], ['update:schedule', false], ['update:start', false],
+    ['diff:done', false], ['effect:run', false], ['scenario:click', false], ['unmount', false], ['error', false],
+  ])('isRenderPhase(%s) → %s', (type, expected) => {
+    expect(isRenderPhase({ index: 0, event: { type }, snapshot: {} })).toBe(expected);
+  });
+
+  it('isLineCurrent: mark가 같거나, marks에 "사건:사물함번호"가 있으면 강조', () => {
+    const step = (type, index) => ({ index: 0, event: { type, index }, snapshot: {} });
+    expect(isLineCurrent({ text: 'x', mark: 'hook:state' }, step('hook:state', 1))).toBe(true);
+    expect(isLineCurrent({ text: 'x', marks: ['hook:state:0', 'state:set:0'] }, step('state:set', 0))).toBe(true);
+    expect(isLineCurrent({ text: 'x', marks: ['hook:state:0', 'state:set:0'] }, step('state:set', 1))).toBe(false);
+    expect(isLineCurrent({ text: '' }, step('hook:state', 0))).toBe(false);
+  });
+
+  it('4장: count를 바꾸면 count 줄이, text를 바꾸면 text 줄이 강조된다', async () => {
+    const effects = SCENARIOS.find((s) => s.id === 'effects');
+    const lineOf = (needle) => effects.code.find((line) => line.text.includes(needle));
+    for (const [change, own, other] of [['count', 'useState(0)', "useState('a')"], ['text', "useState('a')", 'useState(0)']]) {
+      const { steps } = await run('effects', { change });
+      const setStep = steps.find((s) => s.event.type === 'state:set');
+      expect(isLineCurrent(lineOf(own), setStep)).toBe(true);
+      expect(isLineCurrent(lineOf(other), setStep)).toBe(false);
+    }
+  });
+
+  it('2장: 두 번째 렌더의 render:start 스냅샷 hookIndex는 0', async () => {
+    const { steps } = await run('hooks');
+    const starts = steps.filter((s) => s.event.type === 'render:start');
+    expect(starts.map((s) => s.snapshot.hookIndex)).toEqual([0, 0]);
+  });
+});
+
+function run(id, options = {}) {
+  return runScenario(id, options, document.createElement('div'));
+}

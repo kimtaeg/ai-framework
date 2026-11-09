@@ -202,8 +202,9 @@ export const SCENARIOS = [
     title: '4장 · useEffect와 useMemo',
     summary: 'useMemo는 렌더 도중 계산하고, useEffect는 화면 반영 뒤에 실행됩니다. deps가 그대로면 둘 다 건너뛰어요.',
     code: [
-      { text: 'const [count, setCount] = useState(0);', mark: 'hook:state' },
-      { text: "const [text, setText] = useState('a');", mark: 'state:set' },
+      // 사물함 번호까지 보고 강조한다: 0번(count)과 1번(text)을 구분해야 어느 상태가 바뀌는지 보인다
+      { text: 'const [count, setCount] = useState(0);', marks: ['hook:state:0', 'state:set:0'] },
+      { text: "const [text, setText] = useState('a');", marks: ['hook:state:1', 'state:set:1'] },
       { text: 'const doubled = useMemo(() => count * 2, [count]);', mark: 'hook:memo' },
       { text: 'useEffect(() => {', mark: 'effect:run' },
       { text: '  return () => { /* cleanup */ };', mark: 'effect:cleanup' },
@@ -257,6 +258,7 @@ export async function runScenario(id, options, container) {
     error = caught;
     recorder.recordError(caught);
   } finally {
+    recorder.stop();
     if (component) {
       component.trace = undefined;
       component.unmount();

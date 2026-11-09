@@ -211,10 +211,11 @@ export class FunctionComponent {
   }
 
   renderVNode(kind) {
-    this.emitTrace({ type: 'render:start', kind });
     // 매 렌더 첫 번째 Hook이 0번 사물함을 열도록 되돌린다. 호출 순서가 곧 사물함 번호다.
     this.hookIndex = 0;
     this.pendingEffects = []; // 이전 렌더가 실패해 남은 예약은 버린다
+    // 되돌린 뒤에 알린다: 기록된 "렌더 시작" 순간의 hookIndex가 0이어야 설명과 맞는다
+    this.emitTrace({ type: 'render:start', kind });
     const expandTree = (tree) => expand(tree, { onComponent: (event) => this.emitTrace(event) });
     const vnode = runRender(this, () => this.fn({}), expandTree);
 

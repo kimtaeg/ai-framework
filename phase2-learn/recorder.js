@@ -36,12 +36,14 @@ function snapshotHooks(component) {
 export function createRecorder({ container, limit = DEFAULT_LIMIT }) {
   const steps = [];
   let isTruncated = false;
+  let isStopped = false;
 
   // 기록 대상 container의 DOM 변경을 모아 두었다가 DOM 반영 완료(commit:done) 단계에서 센다
   const observer = new MutationObserver(() => {});
   observer.observe(container, OBSERVE_OPTIONS);
 
   function push(event, component) {
+    if (isStopped) return;
     if (steps.length >= limit) {
       isTruncated = true;
       return;
@@ -74,6 +76,12 @@ export function createRecorder({ container, limit = DEFAULT_LIMIT }) {
     },
     note(event) {
       push(event, lastComponent);
+    },
+    // 실행이 끝나면 부른다. 관찰자를 끊지 않으면 같은 container를 다시 쓸 때마다 관찰자가 쌓여
+    // 이후 모든 DOM 변경이 옛 기록기들에게도 전달되고, 그 steps도 메모리에 남는다.
+    stop() {
+      isStopped = true;
+      observer.disconnect();
     },
     recordError(error) {
       // 한도가 찼어도 에러는 마지막에 꼭 보이도록 마지막 자리를 비운다 (그만큼 기록이 잘린 것)

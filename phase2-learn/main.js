@@ -2,7 +2,7 @@
 // 화면은 steps(사건 + 그 순간의 스냅샷)만 보고 그리므로, 엔진을 다시 돌리지 않고 앞뒤로 오갈 수 있다.
 
 import { SCENARIOS, getScenario, getDefaultOptions, runScenario } from './scenarios.js';
-import { describeStep } from './explain.js';
+import { describeStep, isRenderPhase, isLineCurrent } from './explain.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -20,9 +20,6 @@ const state = {
   isTruncated: false,
   runId: 0, // 실행할 때마다 올린다. 늦게 끝난 이전 실행의 결과는 버린다
 };
-
-// 기록 대상 앱을 실제로 돌릴 곳. 화면에는 보이지 않고, 보여 주는 것은 각 단계의 스냅샷이다
-const sandbox = document.createElement('div');
 
 // ── 작은 DOM 도우미 ─────────────────────────────────
 
@@ -108,7 +105,7 @@ function renderCenter(step, description) {
 
   $('code').replaceChildren(
     ...scenario.code.map((line) =>
-      el('span', { class: line.mark && line.mark === description?.mark ? 'code__line is-current' : 'code__line' }, line.text || ' '))
+      el('span', { class: step && isLineCurrent(line, step) ? 'code__line is-current' : 'code__line' }, line.text || ' '))
   );
 
   // 스냅샷 HTML은 예제 앱이 render한 결과를 직렬화한 것이다 (사용자 입력이 아님)
@@ -161,7 +158,7 @@ function renderHooksPanel(step, prevStep) {
     el('div', { class: 'box' }, el('h4', {}, '사물함 (hooks 배열)'), slots),
     el('div', { class: 'box' },
       el('p', { class: 'kv' }, el('span', {}, 'hookIndex (다음에 열 번호)'),
-        el('code', {}, hookIndex === null || step.event.type === 'commit:done' || step.event.type.startsWith('effect') ? '— (렌더 밖)' : String(hookIndex)))),
+        el('code', {}, hookIndex !== null && isRenderPhase(step) ? String(hookIndex) : '— (렌더 밖)'))),
   ];
 }
 
@@ -260,13 +257,24 @@ async function run() {
   state.isTruncated = false;
   renderStep();
 
-  const result = await runScenario(state.scenarioId, { ...state.options }, sandbox);
-  if (runId !== state.runId) return; // 그 사이 다른 실행이 시작됨 → 이 결과는 버린다
-
-  state.steps = result.steps;
-  state.isTruncated = result.isTruncated;
+  // 실행마다 새 container에서 돌린다. 하나를 같이 쓰면, 장을 빠르게 바꿨을 때 앞 실행이 flush를 기다리는 사이
+  // 뒤 실행의 mount가 앞 실행의 DOM을 지우고(DOM 변경 수가 섞임), 앞 실행의 정리가 뒤 실행의 DOM을 지운다.
+  const sandbox = document.createElement('div');
+  try {
+    const result = await runScenario(state.scenarioId, { ...state.options }, sandbox);
+    if (runId !== state.runId) return; // 그 사이 다른 실행이 시작됨 → 이 결과는 버린다
+    state.steps = result.steps;
+    state.isTruncated = result.isTruncated;
+  } catch (error) {
+    // 기록 자체가 실패한 경우(예: 정리 중 cleanup이 던짐): 에러 단계 하나로 보여 준다
+    if (runId !== state.runId) return;
+    state.steps = [{ index: 0, event: { type: 'error', message: error.message }, snapshot: { hooks: [], hookIndex: null, isUpdateScheduled: false, html: '', mutations: null } }];
+    state.isTruncated = false;
+  } finally {
+    // 최신 실행만 버튼을 되살린다 (앞 실행이 끝났다고 진행 중인 뒤 실행의 버튼을 켜면 안 됨)
+    if (runId === state.runId) $('btn-run').disabled = false;
+  }
   state.stepIndex = 0;
-  $('btn-run').disabled = false;
   renderStep();
 }
 
@@ -287,6 +295,7 @@ $('btn-restart').addEventListener('click', () => goTo(0));
 
 document.addEventListener('keydown', (event) => {
   if (TYPING_TAGS.has(document.activeElement?.tagName)) return; // select에서 ← →는 값 바꾸기용
+  if (event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) return; // Alt/Cmd+← →는 브라우저 뒤로·앞으로
   if (event.key === 'ArrowRight') {
     event.preventDefault();
     goTo(state.stepIndex + 1);

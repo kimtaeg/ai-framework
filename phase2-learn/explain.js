@@ -104,6 +104,23 @@ function show(value) {
   return JSON.stringify(value);
 }
 
+// 컴포넌트 함수가 실행되는 도중(렌더 단계)의 사건. 이때만 hookIndex가 "다음에 열 사물함 번호"로 의미가 있다
+const RENDER_PHASE_EVENTS = new Set(['render:start', 'hook:state', 'hook:memo', 'hook:effect', 'expand:component']);
+
+export function isRenderPhase(step) {
+  return RENDER_PHASE_EVENTS.has(step.event.type);
+}
+
+// 예제 코드 한 줄을 이번 단계에서 강조할지. 줄은 mark 하나 또는 marks 여러 개를 가질 수 있고,
+// "사건:사물함번호"(예: state:set:1)로 적으면 같은 사건이라도 그 번호의 사물함일 때만 강조한다.
+export function isLineCurrent(line, step) {
+  const marks = line.marks ?? (line.mark ? [line.mark] : []);
+  if (marks.length === 0) return false;
+  const { mark } = describeStep(step);
+  const slotMark = step.event.index === undefined ? null : `${mark}:${step.event.index}`;
+  return marks.includes(mark) || (slotMark !== null && marks.includes(slotMark));
+}
+
 export function describeStep(step) {
   const { event } = step;
   const description = DESCRIPTIONS[event.type];

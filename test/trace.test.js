@@ -140,4 +140,17 @@ describe('trace', () => {
     component.unmount();
     expect(events).toEqual([{ type: 'unmount' }, { type: 'effect:cleanup', index: 0 }]);
   });
+
+  it('render:start 순간에는 이미 hookIndex가 0이다 (다시 렌더할 때도 0번 사물함부터)', async () => {
+    const seen = [];
+    const container = document.createElement('div');
+    const component = new FunctionComponent(createCounter(), container, {
+      trace: (event, c) => {
+        if (event.type === 'render:start') seen.push([event.kind, c.hookIndex]);
+      },
+    }).mount();
+    component.hooks[0].setState(5);
+    await flush();
+    expect(seen).toEqual([['mount', 0], ['update', 0]]);
+  });
 });

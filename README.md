@@ -11,7 +11,7 @@
 
 ```bash
 npm install        # 테스트 도구(vitest, jsdom) 설치
-npm test           # 단위 테스트 전체 실행 (262개)
+npm test           # 단위 테스트 전체 실행 (282개)
 npm run test:watch # 파일 저장 시마다 테스트
 
 npm run serve      # http://localhost:8000/phase1/ (Phase 1 검증 페이지)
@@ -51,7 +51,7 @@ ai-framework/
 │   ├── main.js             # 3단 화면, 이전/다음/처음부터, ← → 키
 │   ├── index.html
 │   └── style.css
-└── test/                   # vitest + jsdom 단위 테스트 (262개)
+└── test/                   # vitest + jsdom 단위 테스트 (282개)
 ```
 
 ### 계층
