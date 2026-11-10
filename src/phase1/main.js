@@ -10,6 +10,7 @@ import { diff } from '../core/diff.js';
 import { applyPatches } from '../core/patch.js';
 import { History } from './history.js';
 import { parseHTML, toHTML } from './html.js';
+import { summarizeMutations, flash as flashNode } from '../utils/domStats.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -19,6 +20,7 @@ const source = $('source');
 const sourceError = $('source-error');
 
 const FLASH_DURATION_MS = 900;
+const flash = (node) => flashNode(node, FLASH_DURATION_MS);
 const PATCH_TAG = { CREATE: 'create', REMOVE: 'remove', REPLACE: 'replace', UPDATE_PROPS: 'props', UPDATE_TEXT: 'text', MOVE: 'move' };
 const COUNT_LABELS = [
   ['created', 'CREATE 노드 추가'],
@@ -119,36 +121,6 @@ function applyAndMeasure(patches) {
   const counts = applyPatches(actual, patches, { onApply: flash });
   const mutations = summarizeMutations(observer.takeRecords());
   return { counts, mutations };
-}
-
-// MutationRecord → 실제로 바뀐 노드 수 (같은 노드가 여러 번 바뀌어도 한 번만 센다)
-function summarizeMutations(records) {
-  const added = new Set();
-  const removed = new Set();
-  const attributes = new Set();
-  const texts = new Set();
-  for (const record of records) {
-    if (record.type === 'childList') {
-      record.addedNodes.forEach((node) => added.add(node));
-      record.removedNodes.forEach((node) => removed.add(node));
-    } else if (record.type === 'attributes') {
-      attributes.add(record.target);
-    } else if (record.type === 'characterData') {
-      texts.add(record.target);
-    }
-  }
-  const touched = new Set([...added, ...removed, ...attributes, ...texts]);
-  return { added: added.size, removed: removed.size, attributes: attributes.size, texts: texts.size, total: touched.size };
-}
-
-// 바뀐 노드에 잠깐 노란 테두리. 속성을 건드리지 않도록 Web Animations API로만 그린다
-// (class를 붙였다 떼면 그것도 DOM 변경이라 MutationObserver 숫자가 흐려진다)
-function flash(node) {
-  const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-  el?.animate?.(
-    [{ outline: '3px solid #f59e0b', outlineOffset: '2px', backgroundColor: 'rgba(245, 158, 11, 0.18)' }, { outline: '3px solid transparent', outlineOffset: '2px' }],
-    { duration: FLASH_DURATION_MS, easing: 'ease-out' }
-  );
 }
 
 // ── 화면 갱신 ─────────────────────────────────────────

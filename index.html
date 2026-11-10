@@ -6,16 +6,18 @@
   <title>Mini React · Virtual DOM</title>
   <link rel="icon" href="data:,">
   <link rel="stylesheet" href="src/phase1/style.css">
+  <link rel="stylesheet" href="src/app/style.css">
   <script type="module" src="src/phase1/main.js"></script>
+  <script type="module" src="src/app/main.js"></script>
 </head>
 <body>
   <header class="page-header">
     <div class="wrap">
       <p class="eyebrow">Mini React</p>
-      <h1>Virtual DOM · Diff · Patch</h1>
+      <h1>Virtual DOM · Component · Hooks</h1>
       <nav class="tabs" role="tablist" aria-label="페이지">
         <button type="button" class="tab is-active" role="tab" id="tab-phase1" aria-selected="true" aria-controls="panel-phase1">Phase 1 검증</button>
-        <button type="button" class="tab" role="tab" id="tab-dashboard" aria-selected="false" aria-controls="panel-dashboard">대시보드 <span class="tab__badge">다음 단계</span></button>
+        <button type="button" class="tab" role="tab" id="tab-dashboard" aria-selected="false" aria-controls="panel-dashboard">대시보드</button>
       </nav>
     </div>
   </header>
@@ -111,11 +113,13 @@
       </div>
     </section>
 
-    <!-- ── 대시보드 (다음 단계) ────────────────────── -->
+    <!-- ── 대시보드: src/app (App + 순수 자식 컴포넌트) ── -->
     <section id="panel-dashboard" role="tabpanel" aria-labelledby="tab-dashboard" class="dashboard" hidden>
-      <div class="panel empty-state">
-        <h2>대시보드는 다음 단계에서 만듭니다</h2>
-        <p>Phase 1의 Virtual DOM 코어(<code>src/core</code>) 위에 Component와 Hooks를 올리고, 그 위에 대시보드 앱을 만들 예정이에요.</p>
+      <div class="dash-layout">
+        <!-- App이 그리는 곳 (MutationObserver가 지켜봄) -->
+        <div id="dashboard-app" class="dash-layout__app"></div>
+        <!-- RenderStats: App 밖에서 따로 그림 (통계를 App state에 넣으면 렌더가 끝없이 이어지므로) -->
+        <aside id="dashboard-stats" class="dash-layout__stats" aria-label="렌더 통계"></aside>
       </div>
     </section>
   </main>
