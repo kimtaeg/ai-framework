@@ -8,7 +8,7 @@
 | **2주차 · miniRedis** | FNV-1a 해시 테이블 · 점진적 리해시 · TTL 만료 · 태그/패턴 무효화 · AOF 영속성 · HTTP API |
 | **2주차 · miniDBMS** | SQL 토크나이저/파서 · B+ 트리 인덱스 · 페이지 스토리지 · 읽기/쓰기 락 · 워커 스레드 풀 API |
 
-> 📢 **발표 안내:** 아래 [🔬 발표: 줄 하나 옮기는 데 999번?](#-발표-줄-하나-옮기는-데-999번--minireact-diff-의-move) 섹션을 위에서부터 스크롤하며 발표합니다. 직접 눌러 보는 비교 페이지는 `npm start` 후 **http://localhost:5200/move/** 입니다.
+> 📢 **발표 안내:** 아래 [🔬 발표: 줄 하나 옮기는 데 999번?](#-발표-줄-하나-옮기는-데-999번--minireact-diff-의-move) 섹션을 위에서부터 스크롤하며 발표합니다. 직접 눌러 보는 비교 페이지는 `npm start` 후 **http://localhost:5200/move/** 입니다. (발표 대본 및 1분 Q&A 스크립트는 [`move/PRESENTATION.md`](move/PRESENTATION.md) 참고)
 > 🗂️ 2주차 발표(캐시는 정말 몇 배 빠를까?) 자료는 [`README-week2.md`](README-week2.md) 에 따로 보관했습니다.
 
 ---
