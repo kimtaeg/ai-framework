@@ -155,28 +155,45 @@ export function diffChildren(oldCh, newCh, parentPath, patches) {
 }
 
 /**
- * 최장 증가 부분 수열의 "인덱스" 들을 반환. O(n log n)
+ * 최장 증가 부분 수열의 "인덱스" 들을 반환. O(n log n), 이미 증가하는 부분은 O(1) 씩.
  * 예) [2, 0, 1, 3] → [1, 2, 3]  (값 0,1,3)
+ *  - 엄격하게 증가하는 수열만 센다 (같은 값은 이어지지 않음).
+ *  - 비교할 수 없는 값(undefined · null · NaN)은 건너뛴다. 예전에는 이런 값이 섞이면 결과가 짧아졌다
+ *    ([1, undefined, 2, 3] → 길이 2). diff 는 이런 값을 넘기지 않지만 밖에서 쓰는 경우를 위해 막아 둔다.
+ *  - 배열 · 타입 배열 모두 받는다.
  */
 export function longestIncreasingSubsequence(arr) {
   const n = arr.length;
   if (n === 0) return [];
-  const prev = new Array(n).fill(-1);
-  const tails = []; // tails[len] = 길이 len+1 인 증가 수열의 마지막 원소 인덱스
+  const prev = new Int32Array(n); // prev[i] = i 앞에 오는 원소의 인덱스 (+1, 0 이면 없음)
+  const tails = new Int32Array(n); // tails[len] = 길이 len+1 인 증가 수열의 마지막 원소 인덱스
+  let len = 0;
   for (let i = 0; i < n; i++) {
+    const v = arr[i];
+    if (v == null || v !== v) continue; // undefined · null · NaN
+    // 빠른 길: 지금까지 가장 긴 수열의 끝보다 크면 이분 탐색 없이 뒤에 붙인다 (이미 정렬된 구간이 많은 diff 에서 흔함)
+    if (len === 0 || arr[tails[len - 1]] < v) {
+      prev[i] = len > 0 ? tails[len - 1] + 1 : 0;
+      tails[len++] = i;
+      continue;
+    }
     let lo = 0;
-    let hi = tails.length;
+    let hi = len - 1;
     while (lo < hi) {
       const mid = (lo + hi) >> 1;
-      if (arr[tails[mid]] < arr[i]) lo = mid + 1;
+      if (arr[tails[mid]] < v) lo = mid + 1;
       else hi = mid;
     }
-    if (lo > 0) prev[i] = tails[lo - 1];
+    prev[i] = lo > 0 ? tails[lo - 1] + 1 : 0;
     tails[lo] = i;
   }
-  const result = [];
-  for (let k = tails[tails.length - 1]; k !== -1; k = prev[k]) result.push(k);
-  return result.reverse();
+  // 뒤에서부터 채워 reverse 없이 만든다
+  const result = new Array(len);
+  for (let k = len - 1, i = tails[len - 1]; k >= 0; k--) {
+    result[k] = i;
+    i = prev[i] - 1;
+  }
+  return result;
 }
 
 /**
@@ -202,7 +219,7 @@ function diffMostlyInPlace(oldCh, newCh, parentPath, patches) {
   if (k > 0) {
     // 어긋난 자리끼리 key 가 1:1 로 짝지어지는가
     const taken = new Uint8Array(k);
-    const seq = new Array(n);
+    const seq = new Int32Array(n);
     for (let i = 0; i < n; i++) seq[i] = i;
     for (let x = 0; x < k; x++) {
       const key = oldCh[mis[x]].key;

@@ -176,6 +176,26 @@ describe('LIS', () => {
     assert.equal(longestIncreasingSubsequence([5, 4, 3]).length, 1);
     assert.equal(longestIncreasingSubsequence([0, 8, 4, 12, 2, 10, 6, 14, 1, 9]).length, 4);
   });
+
+  test('무작위 3천 개: 길이가 O(n²) 정답과 같고, 고른 인덱스 · 값이 모두 증가 (같은 값 · 음수 · 소수 포함)', () => {
+    let seed = 11;
+    const rand = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const brute = (a) => { const d = a.map(() => 1); let m = 0; for (let i = 0; i < a.length; i++) { for (let j = 0; j < i; j++) if (a[j] < a[i]) d[i] = Math.max(d[i], d[j] + 1); m = Math.max(m, d[i]); } return m; };
+    for (let t = 0; t < 3000; t++) {
+      const n = Math.floor(rand() * 40);
+      const a = Array.from({ length: n }, () => Math.floor(rand() * 30) - 10 + (rand() < 0.1 ? 0.5 : 0));
+      const r = longestIncreasingSubsequence(a);
+      assert.equal(r.length, brute(a));
+      for (let i = 1; i < r.length; i++) assert.ok(r[i] > r[i - 1] && a[r[i]] > a[r[i - 1]]);
+    }
+  });
+
+  test('비교할 수 없는 값(undefined · null · NaN)은 건너뛰고, 타입 배열도 받는다', () => {
+    assert.deepEqual(longestIncreasingSubsequence([1, undefined, 2, 3]), [0, 2, 3]); // 예전에는 [2, 3] (길이 2)
+    assert.deepEqual(longestIncreasingSubsequence([null, NaN, 5, null, 6]), [2, 4]);
+    assert.deepEqual(longestIncreasingSubsequence([undefined, null]), []);
+    assert.deepEqual(longestIncreasingSubsequence(Int32Array.from([3, 0, 1, 2])), [1, 2, 3]);
+  });
 });
 
 // ---------------------------------------------------------------- 퍼즈 테스트
