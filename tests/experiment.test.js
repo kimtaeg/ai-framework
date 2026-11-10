@@ -13,13 +13,15 @@
  */
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:net';
+import { createServer, connect as netConnect } from 'node:net';
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { RespClient } from '../experiment/resp.js';
+import { RespClient, startRespServer, parseRequest, encodeReply as serverReply } from '../experiment/resp.js';
+import { MiniRedis } from '../week2/redis/miniredis.js';
+import { netemScript, parseMs } from '../experiment/netem.js';
 import { renderHitChart, renderBarChart } from '../experiment/charts.js';
 import { startRedisServer } from '../week2/redis/server.js';
 
@@ -382,16 +384,22 @@ describe('F. run.js 의 조건표와 반복 순서 섞기', () => {
   const src = readFileSync(join(EXP, 'run.js'), 'utf8');
   const body = src.slice(src.indexOf('const HITS_E1'), src.indexOf('function sh('));
   const load = (ONLY) => new Function('ONLY', `${body}; return { grid, id, shuffle };`)(ONLY);
-  const PER = { E1: 11, E2: 15, E3: 7, E4: 9 };
+  // 지연이 있을 때 / 없을 때 (--delay 0 이면 E5 와 E6 의 지연 절반이 빠진다)
+  const PER = { E1: 11, E2: 15, E3: 16, E4: 12, E5: 16, E6: 26 };
+  const PER0 = { ...PER, E5: 0, E6: 13 };
   for (let i = 0; i < 20; i++) {
-    const only = ['E1', 'E2', 'E3', 'E4'].filter(() => rand() < 0.6);
+    const only = ['E1', 'E2', 'E3', 'E4', 'E5', 'E6'].filter(() => rand() < 0.6);
     const seed = ri(1, 50);
-    test(`실험 [${only.join(',') || '없음'}] · 씨앗 ${seed}`, () => {
+    const delay = i % 4 === 3 ? 0 : pick([1, 0.5, 2]);
+    test(`실험 [${only.join(',') || '없음'}] · 지연 ${delay}ms · 씨앗 ${seed}`, () => {
       const { grid, id, shuffle } = load(only);
-      const g = grid();
-      assert.equal(g.length, only.reduce((a, e) => a + PER[e], 0), '조건 개수');
+      const g = grid(delay);
+      assert.equal(g.length, only.reduce((a, e) => a + (delay ? PER : PER0)[e], 0), '조건 개수');
       assert.equal(new Set(g.map(id)).size, g.length, '조건 이름(결과 파일 이름)이 겹치지 않음');
-      for (const c of g) assert.ok(['none', 'mini', 'redis'].includes(c.BACKEND) && c.VUS > 0);
+      for (const c of g) assert.ok(['none', 'mini', 'miniresp', 'redis'].includes(c.BACKEND) && c.VUS > 0);
+      for (const c of g) assert.equal(id(c).endsWith(`_d${delay}ms`), Boolean(c.DELAY_MS), '지연 조건만 이름에 _d…ms');
+      for (const c of g) if (c.DELAY_MS) assert.ok(['E5', 'E6'].includes(c.exp) && c.DELAY_MS === delay);
+      if (only.length === 6 && delay) assert.ok(g.length * 6 >= 500, '기본 6회 반복이면 500회 이상');
       const a = shuffle([...g], seed), b = shuffle([...g], seed);
       assert.deepEqual(a.map(id), b.map(id), '같은 씨앗 → 같은 순서 (재현 가능)');
       assert.deepEqual([...a.map(id)].sort(), [...g.map(id)].sort(), '섞기는 빠짐도 중복도 없는 순열');
@@ -430,17 +438,21 @@ describe('G. app.js 통합: 무작위 요청 90개 → 독립 모델과 비교',
   const CATS = ['키보드', '마우스', '모니터', '케이블', '스탠드'];
   let app, base, fake, mini;
   // 모델: 캐시 키 → 저장된 응답 (backend 별로 따로), DB 행 수
-  const cache = { mini: new Map(), redis: new Map() };
+  // mini 와 miniresp 는 같은 미니 레디스 저장소를 통신 방식만 달리 쓴다 → 모델도 하나를 함께 쓴다
+  const miniStore = new Map();
+  const cache = { mini: miniStore, miniresp: miniStore, redis: new Map() };
+  let resp;
   let rowCount = ROWS, writes = 0;
   const writtenIds = new Map(); // INSERT 로 생긴 id → 이름
   before(async () => {
     fake = await startFakeRedis();
     mini = await startRedisServer({ port: 0, aofPath: null });
+    resp = await startRespServer({ handler: (args) => mini.redis.command(args), port: 0, host: '127.0.0.1' });
     const port = await freePort();
     const dir = tempDir('exp-app-');
     app = spawn(process.execPath, [join(EXP, 'app.js')], {
       cwd: ROOT,
-      env: { ...process.env, PORT: String(port), DATA_DIR: dir, ROWS: String(ROWS), DB_WORKERS: '2', MINI_URL: `http://127.0.0.1:${mini.port}`, REDIS_HOST: '127.0.0.1', REDIS_PORT: String(fake.port) },
+      env: { ...process.env, PORT: String(port), DATA_DIR: dir, ROWS: String(ROWS), DB_WORKERS: '2', MINI_URL: `http://127.0.0.1:${mini.port}`, MINI_HOST: '127.0.0.1', MINI_RESP_PORT: String(resp.port), REDIS_HOST: '127.0.0.1', REDIS_PORT: String(fake.port) },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let err = '';
@@ -454,6 +466,7 @@ describe('G. app.js 통합: 무작위 요청 90개 → 독립 모델과 비교',
   });
   after(async () => {
     if (app && app.exitCode === null) { const exited = new Promise((r) => app.once("exit", r)); app.kill(); await exited; }
+    await resp?.close();
     await mini?.close();
     fake?.srv.close();
   });
@@ -465,9 +478,9 @@ describe('G. app.js 통합: 무작위 요청 90개 → 독립 모델과 비교',
     if (r < 0.06) ops.push({ kind: 'reset' });
     else if (r < 0.30 && ops.length <= 86) {
       // 읽기(캐시 채움) → 쓰기 → 같은 키 다시 읽기: 쓰기가 캐시를 지웠다면 MISS 여야 한다
-      const w = { backend: pick(['mini', 'redis', 'none']), origin: pick(['index', 'scan']), id: ri(1, 40) };
+      const w = { backend: pick(['mini', 'miniresp', 'redis', 'none']), origin: pick(['index', 'scan']), id: ri(1, 40) };
       ops.push({ kind: 'get', ...w, v: null }, { kind: 'write', ...w }, { kind: 'get', ...w, v: null });
-    } else ops.push({ kind: 'get', backend: pick(['none', 'mini', 'redis', 'mini', 'redis']), origin: pick(['index', 'scan']), id: rand() < 0.1 ? ri(ROWS + 1, ROWS + 4) : rand() < 0.15 ? ri(ROWS + 5, ROWS + 50) : ri(1, 40), v: rand() < 0.2 ? String(ri(1, 3)) : null });
+    } else ops.push({ kind: 'get', backend: pick(['none', 'mini', 'miniresp', 'redis', 'mini', 'miniresp', 'redis']), origin: pick(['index', 'scan']), id: rand() < 0.1 ? ri(ROWS + 1, ROWS + 4) : rand() < 0.15 ? ri(ROWS + 5, ROWS + 50) : ri(1, 40), v: rand() < 0.2 ? String(ri(1, 3)) : null });
   }
   ops.push({ kind: 'info' });
 
@@ -476,7 +489,7 @@ describe('G. app.js 통합: 무작위 요청 90개 → 독립 모델과 비교',
       if (op.kind === 'reset') {
         const r = await (await fetch(`${base}/admin/reset`, { method: 'POST' })).json();
         assert.equal(r.rows, ROWS, '되돌린 뒤 정확히 ROWS 건');
-        cache.mini.clear(); cache.redis.clear(); rowCount = ROWS; writes = 0; writtenIds.clear();
+        miniStore.clear(); cache.redis.clear(); rowCount = ROWS; writes = 0; writtenIds.clear();
         assert.equal(fake.store.size, 0, 'Redis 캐시도 비워짐');
         return;
       }
@@ -525,5 +538,115 @@ describe('G. app.js 통합: 무작위 요청 90개 → 독립 모델과 비교',
         assert.deepEqual(body, direct, '캐시 경로와 직접 조회가 같은 행');
       }
     });
+  });
+});
+
+// ---------- H. 미니 레디스 RESP/TCP 모드 (60) · 지연 주입 스크립트 (10) ----------
+// 같은 명령을 (1) RESP 서버를 거쳐서, (2) 다른 MiniRedis 에 직접 실행 → 결과 · 오류가 같아야 한다
+describe('H. 미니 레디스 RESP 서버: 직접 실행과 같은 결과 · 조각난 요청 · 잘못된 요청', () => {
+  let srv, direct, client;
+  before(async () => {
+    const viaResp = new MiniRedis();
+    direct = new MiniRedis();
+    srv = await startRespServer({ handler: (args) => viaResp.command(args), port: 0, host: '127.0.0.1' });
+    client = new RespClient({ host: '127.0.0.1', port: srv.port });
+  });
+  after(async () => { client?.close(); await srv?.close(); });
+  const keys = ['k1', 'k2', 'k3', '한글키', 'sp ace'];
+  const randomCmd = () => {
+    const k = pick(keys);
+    return pick([
+      () => ['SET', k, randomText()], () => ['SET', k, String(ri(-5, 5))], () => ['GET', k], () => ['DEL', k, pick(keys)],
+      () => ['INCR', k], () => ['EXISTS', k, pick(keys)], () => ['PING'], () => ['PING', randomText(4)],
+      () => ['GET'], () => ['NOPE', k], () => ['set', k, 'lower'], () => ['APPEND', k, randomText(3)],
+    ])();
+  };
+  for (let i = 0; i < 40; i++) {
+    const cmds = Array.from({ length: ri(1, 12) }, randomCmd);
+    test(`명령 묶음 ${i + 1} (${cmds.length}개, 파이프라이닝)`, async () => {
+      const want = cmds.map((c) => { try { return { ok: direct.command(c) }; } catch (e) { return { err: e.message }; } });
+      // 한꺼번에 보내기(파이프라이닝) → 응답이 보낸 순서대로 와야 한다
+      const got = await Promise.all(cmds.map((c) => client.command(...c).then((v) => ({ ok: v }), (e) => ({ err: e.message }))));
+      for (let j = 0; j < cmds.length; j++) {
+        const w = want[j], g = got[j];
+        if (w.err) { assert.equal(g.err, w.err, `${cmds[j].join(' ')} 오류 문구`); continue; }
+        assert.deepEqual(g.ok, w.ok, JSON.stringify(cmds[j]));
+      }
+    });
+  }
+  // 바이트를 무작위 조각으로 나눠 보내도(TCP 는 경계를 지켜 주지 않는다) 같은 응답
+  for (let i = 0; i < 15; i++) {
+    test(`조각난 요청 ${i + 1}`, async () => {
+      const m = new MiniRedis();
+      const s = await startRespServer({ handler: (a) => m.command(a), port: 0, host: '127.0.0.1' });
+      const ref = new MiniRedis();
+      const cmds = Array.from({ length: ri(1, 10) }, randomCmd);
+      let bytes = '', expect = '';
+      for (const c of cmds) {
+        // 일부는 telnet 식 한 줄 명령 (공백 없는 인자만)
+        const inline = rand() < 0.2 && c.every((a) => /^[A-Za-z0-9]+$/.test(a));
+        bytes += inline ? `${c.join(' ')}\r\n` : `*${c.length}\r\n${c.map((a) => `$${Buffer.byteLength(a)}\r\n${a}\r\n`).join('')}`;
+        let v; try { v = ref.command(c); } catch (e) { v = e; }
+        expect += serverReply(v, c[0].toUpperCase());
+      }
+      const buf = Buffer.from(bytes);
+      const out = await new Promise((done, fail) => {
+        const sock = netConnect(s.port, '127.0.0.1');
+        let recv = Buffer.alloc(0);
+        sock.on('data', (d) => { recv = Buffer.concat([recv, d]); if (recv.length >= Buffer.byteLength(expect)) { sock.end(); done(recv.toString()); } });
+        sock.on('error', fail);
+        (async () => { let p = 0; while (p < buf.length) { const n = ri(1, 9); sock.write(buf.subarray(p, p + n)); p += n; await sleep(rand() < 0.3 ? 2 : 0); } })();
+      });
+      await s.close();
+      assert.equal(out, expect);
+    });
+  }
+  test('잘못된 요청: 오류를 돌려주고 연결을 닫는다', async () => {
+    for (const bad of ['*2\r\n+oops\r\n', '*1\r\n$-5\r\n', '*x\r\n']) {
+      const r = await new Promise((done) => {
+        const sock = netConnect(srv.port, '127.0.0.1');
+        let recv = '';
+        sock.on('data', (d) => (recv += d));
+        sock.on('close', () => done(recv));
+        sock.write(bad);
+      });
+      assert.match(r, /^-ERR /, JSON.stringify(bad));
+    }
+    assert.equal(await client.command('PING'), 'PONG', '다른 연결은 영향 없음');
+  });
+  test('parseRequest: 덜 온 요청은 null, 빈 줄은 빈 명령', () => {
+    const full = Buffer.from('*2\r\n$3\r\nGET\r\n$1\r\na\r\n');
+    for (let k = 0; k < full.length; k++) assert.equal(parseRequest(full.subarray(0, k)), null, `${k}바이트까지`);
+    assert.deepEqual(parseRequest(full).args, ['GET', 'a']);
+    assert.deepEqual(parseRequest(Buffer.from('\r\n')).args, []);
+  });
+  test('상태 응답은 +OK, 값 OK 는 bulk', () => {
+    assert.equal(serverReply('OK', 'SET'), '+OK\r\n');
+    assert.equal(serverReply('OK', 'GET'), '$2\r\nOK\r\n');
+    assert.equal(serverReply(null), '$-1\r\n');
+    assert.equal(serverReply(['a', 1, null]), '*3\r\n$1\r\na\r\n:1\r\n$-1\r\n');
+  });
+});
+
+describe('H2. 지연 주입 (netem.js): 값 읽기 · tc 스크립트', () => {
+  test('parseMs', () => {
+    assert.equal(parseMs('1ms'), 1); assert.equal(parseMs('0.5'), 0.5); assert.equal(parseMs('200us'), 0.2);
+    assert.equal(parseMs('2s'), 2000); assert.equal(parseMs('off'), 0); assert.equal(parseMs(undefined), 0);
+    assert.throws(() => parseMs('fast'));
+  });
+  for (const [d, j] of [[1, undefined], [1, 0], [0.5, 0.1], [2, 0.4]]) {
+    test(`지연 ${d}ms · 지터 ${j ?? '기본(20%)'}`, () => {
+      const s = netemScript(d, j);
+      const jit = j ?? d * 0.2;
+      const line = s.split('\n').find((l) => l.includes('netem delay'));
+      assert.equal(line.split('netem delay ')[1], `${Math.round(d * 1000)}us${jit ? ` ${Math.round(jit * 1000)}us distribution normal` : ''}`);
+      assert.match(s, /parent 10:1 pfifo/, '순서 바뀜 방지 (pfifo)');
+      assert.equal((s.match(/flowid 1:1/g) || []).length, 2, '미니 레디스 · Redis 두 곳만 지연');
+      assert.match(s, /priomap( 2){16}/, '나머지 트래픽(k6 → 앱)은 지연 없는 칸으로');
+      assert.ok(s.startsWith('tc qdisc del dev eth0 root'), '먼저 이전 설정을 지운다');
+    });
+  }
+  test('지연 0 이면 지우기만 한다', () => {
+    assert.equal(netemScript(0), 'tc qdisc del dev eth0 root 2>/dev/null || true');
   });
 });

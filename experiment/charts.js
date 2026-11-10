@@ -2,11 +2,15 @@
  * summary.json → README 에 넣을 SVG 그래프 (의존성 없음, GitHub 에서 <img> 로 보임)
  *   analyze.js 가 불러서 results/*.svg 를 만든다.
  */
-const C = { none: '#8A93A3', mini: '#E07B24', redis: '#2F6FD6', ink: '#1A2233', soft: '#5A6578', grid: '#E3E1DA', bg: '#FBFAF7' };
-const NAME = { none: '캐시 없음', mini: '미니 레디스', redis: 'Redis 7' };
+const C = { none: '#8A93A3', mini: '#E07B24', miniresp: '#8B3FB8', redis: '#2F6FD6', ink: '#1A2233', soft: '#5A6578', grid: '#E3E1DA', bg: '#FBFAF7' };
+const NAME = { none: '캐시 없음', mini: '미니 레디스 (HTTP)', miniresp: '미니 레디스 (RESP)', redis: 'Redis 7' };
+const ORDER = ['none', 'mini', 'miniresp', 'redis'];
 const FONT = "font-family=\"-apple-system, 'Segoe UI', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif\"";
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
-const fmt = (x) => (x === 0 ? '0' : x >= 1000 ? `${(x / 1000).toFixed(x >= 10000 ? 0 : 1)}k` : x >= 10 ? x.toFixed(0) : x.toFixed(1));
+// 1 보다 작은 값(요청당 CPU ms 같은)은 유효숫자를 남긴다
+const fmt = (x) => (x === 0 ? '0' : x >= 1000 ? `${(x / 1000).toFixed(x >= 10000 ? 0 : 1)}k` : x >= 10 ? x.toFixed(0) : x >= 1 ? x.toFixed(1) : String(+x.toFixed(3)));
+// 글자 폭 어림 (14px 기준: 한글 14 · 그 밖 8) — 범례 항목 간격을 글자 길이에 맞춘다
+const textW = (s) => [...String(s)].reduce((w, ch) => w + (ch.charCodeAt(0) > 0x2e80 ? 14 : 8), 0);
 
 function frame(w, h, title, subtitle, body) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" ${FONT}>
@@ -18,8 +22,10 @@ ${body}
 }
 
 function legend(x, y, items) {
-  return items.map(([label, color, dashed], i) => {
-    const xx = x + i * 170;
+  let next = x;
+  return items.map(([label, color, dashed]) => {
+    const xx = next;
+    next += Math.max(170, 36 + textW(label) + 28);
     return `<line x1="${xx}" y1="${y}" x2="${xx + 28}" y2="${y}" stroke="${color}" stroke-width="3" ${dashed ? 'stroke-dasharray="6 5"' : ''}/>` +
       (dashed ? '' : `<circle cx="${xx + 14}" cy="${y}" r="5" fill="${color}"/>`) +
       `<text x="${xx + 36}" y="${y + 5}" font-size="14" fill="${C.ink}">${esc(label)}</text>`;
@@ -35,7 +41,9 @@ export function renderHitChart({ title, subtitle, yLabel, series, baseline, logY
   const pw = W - L - R, ph = H - T - B;
   const ys = series.flatMap((s) => [...s.points.map((p) => p.y + (p.ci || 0)), ...(s.model || []).map((m) => m.y)]).concat(baseline ? [baseline.y] : []).filter((v) => v > 0 && Number.isFinite(v));
   let y0 = logY ? Math.pow(10, Math.floor(Math.log10(Math.min(...ys)))) : 0;
-  let y1 = logY ? Math.pow(10, Math.ceil(Math.log10(Math.max(...ys)))) : Math.max(...ys) * 1.1;
+  // 선형 축은 눈금이 1 · 2 · 2.5 · 5 · 10 의 배수가 되게 위쪽 끝을 정한다 (4.3k · 0.738 같은 눈금 방지)
+  const niceStep = (raw) => { const mag = 10 ** Math.floor(Math.log10(raw / 5)); return [1, 2, 2.5, 5, 10].map((m) => m * mag).find((s) => s * 5 >= raw); };
+  let y1 = logY ? Math.pow(10, Math.ceil(Math.log10(Math.max(...ys)))) : niceStep(Math.max(...ys) * 1.05) * 5;
   const sx = (h) => L + h * pw;
   const sy = (v) => logY ? T + ph - (Math.log10(Math.max(v, y0)) - Math.log10(y0)) / (Math.log10(y1) - Math.log10(y0)) * ph : T + ph - (v - y0) / (y1 - y0) * ph;
   let g = '';
@@ -78,11 +86,14 @@ export function renderBarChart({ title, subtitle, yLabel, groups }) {
       const x = x0 + bi * bw;
       g += `<rect x="${x + 4}" y="${sy(b.y)}" width="${bw - 8}" height="${T + ph - sy(b.y)}" fill="${C[b.key]}" rx="3"/>`;
       if (b.ci) g += `<line x1="${x + bw / 2}" y1="${sy(Math.max(0, b.y - b.ci))}" x2="${x + bw / 2}" y2="${sy(b.y + b.ci)}" stroke="${C.ink}" stroke-width="1.5"/>`;
-      g += `<text x="${x + bw / 2}" y="${sy(b.y + (b.ci || 0)) - 8}" font-size="13" fill="${C.ink}" text-anchor="middle">${b.note ?? fmt(b.y)}</text>`;
+      // 막대가 좁으면(한 묶음에 막대가 많을 때) 숫자를 작게 써서 옆 막대 숫자와 겹치지 않게
+      g += `<text x="${x + bw / 2}" y="${sy(b.y + (b.ci || 0)) - 8}" font-size="${bw < 44 ? 11 : 13}" fill="${C.ink}" text-anchor="middle">${esc(b.note ?? fmt(b.y))}</text>`;
     });
     g += `<text x="${L + gi * gw + gw / 2}" y="${T + ph + 26}" font-size="14" fill="${C.ink}" text-anchor="middle">${esc(grp.label)}</text>`;
   });
-  g += legend(L, T - 16, ['none', 'mini', 'redis'].map((k) => [NAME[k], C[k]]));
+  // 범례: 실제로 그린 캐시 종류만 (none · mini · miniresp · redis 순서)
+  const keys = new Set(groups.flatMap((grp) => grp.bars.map((b) => b.key)));
+  g += legend(L, T - 16, ORDER.filter((k) => keys.has(k)).map((k) => [NAME[k], C[k]]));
   return frame(W, H, title, subtitle, g);
 }
 

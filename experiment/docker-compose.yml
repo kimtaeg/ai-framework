@@ -13,7 +13,10 @@ services:
       ROWS: ${ROWS:-100000}
       DB_WORKERS: 2
       MINI_URL: http://miniredis:6380
+      MINI_HOST: miniredis
+      MINI_RESP_PORT: 6381
       REDIS_HOST: redis
+    cap_add: [NET_ADMIN]   # tc netem 으로 캐시 쪽 네트워크 지연을 넣기 위해 (experiment/netem.js)
     volumes: [dbdata:/data]
     cpuset: "2-4"          # 메인 스레드 1 + DB 워커 2
     cpus: 3

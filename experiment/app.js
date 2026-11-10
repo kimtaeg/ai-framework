@@ -4,6 +4,7 @@
  *   GET  /item/:id?backend=none|mini|redis&origin=index|scan[&v=유일값]
  *        backend  none  캐시 없이 매번 DB
  *                 mini  미니 레디스 (별도 컨테이너, HTTP + JSON)
+ *                 miniresp 같은 미니 레디스 · 같은 저장소를 RESP over TCP 로 (통신 방식만 Redis 와 같게)
  *                 redis 실제 Redis 7 (별도 컨테이너, RESP over TCP)
  *        origin   index  SELECT * FROM products WHERE id = ?      (B+ 트리, 가벼운 쿼리)
  *                 scan   SELECT * FROM products WHERE name = ?    (전체 읽기, 무거운 쿼리)
@@ -12,6 +13,8 @@
  *                               (미니 DBMS 에 UPDATE 가 없어서 INSERT 로 쓰기 비용을 대신한다)
  *   POST /admin/reset           두 캐시 모두 비우기 + products 를 정확히 ROWS 건으로 되돌리기 (측정마다)
  *   GET  /admin/info            환경 정보 (행 수, 워커 수, 버전)
+ *   GET  /admin/cpu             지금까지 쓴 CPU 시간(µs): 앱 서버 · 미니 레디스 · Redis (k6 가 측정 시작 · 끝에 불러 차이를 낸다)
+ *   GET  /admin/rtt?backend=..&n=  캐시까지 PING 왕복 시간 (네트워크 지연을 넣었는지 확인용)
  *
  *  응답 헤더: X-Cache HIT|MISS|BYPASS, X-Server-Ms (서버 안에서 걸린 시간)
  */
@@ -70,7 +73,26 @@ async function resetDb() {
 // 내장 fetch 대신 연결을 재사용하는 가벼운 node:http 요청 (같은 HTTP + JSON, 요청당 CPU 만 줄임)
 const mini = new MiniRedisClient(env('MINI_URL', 'http://127.0.0.1:6380'), { fetch: nodeFetch });
 const redis = new RespClient({ host: env('REDIS_HOST', '127.0.0.1'), port: Number(env('REDIS_PORT', 6379)) });
-const caches = { none: null, mini, redis };
+// miniresp 는 처음 쓸 때 연결한다 (미니 레디스에 RESP 포트가 없는 환경에서도 나머지는 그대로 동작)
+let miniResp = null;
+const caches = {
+  none: null, mini, redis,
+  get miniresp() { return (miniResp ??= new RespClient({ host: env('MINI_HOST', '127.0.0.1'), port: Number(env('MINI_RESP_PORT', 6381)) })); },
+};
+
+// 프로세스별 누적 CPU 시간(µs). 못 읽은 쪽은 null
+async function cpuSnapshot() {
+  const u = process.cpuUsage(); // 메인 스레드 + DB 워커 스레드 모두 (프로세스 전체)
+  const safe = (p) => p.then((v) => v, () => null);
+  const [miniUs, redisUs] = await Promise.all([
+    safe(caches.miniresp.command('XCPU').then(Number)),
+    safe(redis.command('INFO', 'cpu').then((s) => {
+      const g = (k) => Number(s.match(new RegExp(`${k}:([\\d.]+)`))?.[1]);
+      return Math.round((g('used_cpu_user') + g('used_cpu_sys')) * 1e6);
+    })),
+  ]);
+  return { appUs: u.user + u.system, miniUs, redisUs, at: performance.now() };
+}
 
 const sqlFor = (origin, id) =>
   origin === 'scan' ? `SELECT * FROM products WHERE name = '${CATS[id % 5]} ${id}'` : `SELECT * FROM products WHERE id = ${id}`;
@@ -148,6 +170,16 @@ const server = createServer(async (req, res) => {
       const redisVer = (await redis.command('INFO', 'server')).match(/redis_version:(\S+)/)?.[1];
       return send(res, 200, { node: process.version, rows: tables, dbWorkers: DB_WORKERS, ttl: TTL, redisVersion: redisVer });
     }
+    if (url.pathname === '/admin/cpu') return send(res, 200, await cpuSnapshot());
+    if (url.pathname === '/admin/rtt') {
+      const cache = caches[url.searchParams.get('backend')];
+      if (!cache) return send(res, 400, { error: 'BAD_BACKEND' });
+      const n = Math.min(5000, Number(url.searchParams.get('n')) || 200);
+      const ts = [];
+      for (let i = 0; i < n; i++) { const t = performance.now(); await cache.command('PING'); ts.push(performance.now() - t); }
+      ts.sort((a, b) => a - b);
+      return send(res, 200, { n, medianMs: ts[n >> 1], p95Ms: ts[Math.floor(n * 0.95)], meanMs: ts.reduce((a, b) => a + b, 0) / n });
+    }
     if (url.pathname === '/health') return send(res, 200, { ok: true });
     send(res, 404, { error: 'NO_ROUTE' });
   } catch (e) {
@@ -157,6 +189,6 @@ const server = createServer(async (req, res) => {
 server.keepAliveTimeout = 65000;
 server.listen(PORT, '0.0.0.0', () => console.log(`experiment app → :${PORT} (rows=${ROWS}, dbWorkers=${DB_WORKERS})`));
 
-const stop = async () => { await db.close(); redis.close(); process.exit(0); };
+const stop = async () => { await db.close(); redis.close(); miniResp?.close(); process.exit(0); };
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);
