@@ -131,58 +131,17 @@ export function diffChildren(oldCh, newCh, parentPath, patches) {
   });
 
   // ---- 2. 삭제 (뒤에서부터) ----
-  const live = oldCh.slice(); // 패치가 적용되는 동안의 실제 DOM 형제 순서를 시뮬레이션
-  for (let i = live.length - 1; i >= 0; i--) {
-    if (!used.has(live[i])) {
-      patches.push({ type: PatchType.REMOVE, path: parentPath, index: i, node: live[i] });
-      live.splice(i, 1);
-    }
+  // 뒤에서부터 지우면 앞쪽 인덱스는 밀리지 않으므로, 패치 인덱스는 원래 인덱스 그대로다.
+  // (예전에는 지울 때마다 배열을 splice 해서 많이 지우면 O(n²) 이었다)
+  for (let i = oldCh.length - 1; i >= 0; i--) {
+    if (!used.has(oldCh[i])) patches.push({ type: PatchType.REMOVE, path: parentPath, index: i, node: oldCh[i] });
   }
+  const live = oldCh.filter((c) => used.has(c)); // 삭제 뒤 실제 DOM 형제 순서
 
   // ---- 3. 이동 / 삽입 ----
-  const newIndexOf = new Map();
-  matchOf.forEach((m, i) => m && newIndexOf.set(m, i));
-  const seq = live.map((m) => newIndexOf.get(m)); // 남은 old 노드들이 가야 할 새 인덱스
-  const stable = new Set(longestIncreasingSubsequence(seq).map((k) => live[k]));
-
-  const placed = new Array(newCh.length); // 새 인덱스 i 에 놓인 live 항목
-  // anchor(바로 오른쪽 이웃) 의 live 위치를 매번 indexOf 로 찾지 않고 기억해 둔다 (큰 목록에서 O(n²) → 대부분 O(n)).
-  // 같은 VNode 객체가 live 에 두 번 들어 있으면 위치가 하나로 정해지지 않으므로, 그때만 원래대로 매번 찾는다.
-  const unique = new Set(live).size === live.length;
-  let anchorAt = live.length;
-  for (let i = newCh.length - 1; i >= 0; i--) {
-    const anchor = i + 1 < newCh.length ? placed[i + 1] : null;
-    const at = anchor ? (unique ? anchorAt : live.indexOf(anchor)) : live.length; // anchor 의 지금 위치
-    const m = matchOf[i];
-    if (m && stable.has(m)) {
-      placed[i] = m;
-      // 움직이지 않는 노드는 anchor 보다 앞에 있다 → 뒤에서부터 찾으면 금방 나온다 (못 찾으면 처음부터)
-      if (unique) {
-        anchorAt = at > 0 ? live.lastIndexOf(m, at - 1) : -1;
-        if (anchorAt === -1) anchorAt = live.indexOf(m);
-      }
-      continue;
-    }
-    if (m) {
-      const from = live.indexOf(m);
-      live.splice(from, 1);
-      // m 을 빼면 그 뒤의 anchor 는 한 칸 앞으로 (중복 객체가 있으면 원래대로 다시 찾는다)
-      const to = !anchor ? live.length : unique ? (from < at ? at - 1 : at) : live.indexOf(anchor);
-      live.splice(to, 0, m);
-      if (from !== to) {
-        patches.push({ type: PatchType.MOVE, path: parentPath, from, to, key: m.key });
-      }
-      placed[i] = m;
-      anchorAt = to;
-    } else {
-      const index = at;
-      anchorAt = index;
-      const marker = { inserted: newCh[i] };
-      live.splice(index, 0, marker);
-      patches.push({ type: PatchType.INSERT, path: parentPath, index, node: newCh[i] });
-      placed[i] = marker;
-    }
-  }
+  // 같은 VNode 객체가 live 에 두 번 들어 있으면 위치가 하나로 정해지지 않으므로 예전 방식(배열 시뮬레이션)으로 처리한다.
+  if (new Set(live).size === live.length) placeFast(live, matchOf, newCh, parentPath, patches);
+  else placeBySimulation(live, matchOf, newCh, parentPath, patches);
 
   // ---- 4. 재귀 diff (이제 live 순서 == newCh 순서) ----
   for (let i = 0; i < newCh.length; i++) {
@@ -214,6 +173,106 @@ export function longestIncreasingSubsequence(arr) {
   const result = [];
   for (let k = tails[tails.length - 1]; k !== -1; k = prev[k]) result.push(k);
   return result.reverse();
+}
+
+/**
+ * 이동 / 삽입 패치 만들기 — O(n log n)
+ *  뒤에서부터 각 새 노드를 "오른쪽 이웃 앞" 에 둔다 (LIS 에 속한 노드는 그대로).
+ *  예전에는 매번 배열에서 indexOf · splice 로 위치를 찾아 O(n²) 이었다 (2만 줄 섞기 593ms).
+ *
+ *  아이디어: 모든 노드가 "언젠가 있게 될 자리" 를 미리 한 줄로 세워 둘 수 있다.
+ *   - 움직이지 않는 노드와 아직 안 옮긴 노드: 원래 자리 p           → 좌표 (p, ∞)
+ *   - 옮기거나 새로 넣는 새 인덱스 i 의 노드: 오른쪽에서 가장 가까운 안 움직이는 노드 s 바로 앞
+ *                                               → 좌표 (s 의 자리, i)   (s 가 없으면 맨 끝)
+ *   같은 s 앞에 붙는 노드들은 i 가 작을수록 왼쪽이고, 모두 s 바로 앞에 붙는다.
+ *  그러면 "지금 몇 번째인가" = 내 좌표보다 앞에 있는, 현재 DOM 에 있는 좌표의 개수 → Fenwick 트리로 O(log n).
+ *  결과 패치는 예전 방식과 똑같다 (tests/diff-patch.test.js 의 대조 테스트).
+ */
+function placeFast(live, matchOf, newCh, parentPath, patches) {
+  const L = live.length;
+  const n = newCh.length;
+  const posOf = new Map();
+  live.forEach((m, p) => posOf.set(m, p));
+  const newIndexOf = new Map();
+  matchOf.forEach((m, i) => m && newIndexOf.set(m, i));
+  const seq = live.map((m) => newIndexOf.get(m));
+  const stablePos = new Uint8Array(L);
+  for (const k of longestIncreasingSubsequence(seq)) stablePos[k] = 1;
+
+  // 새 인덱스마다: 움직이는 노드인가, 붙을 자리(base)는 어디인가
+  const moving = new Uint8Array(n);
+  const base = new Int32Array(n);
+  let nextStable = L; // 오른쪽에서 가장 가까운 안 움직이는 노드의 자리 (없으면 맨 끝 = L)
+  for (let i = n - 1; i >= 0; i--) {
+    const m = matchOf[i];
+    const p = m ? posOf.get(m) : -1;
+    if (m && stablePos[p]) { nextStable = p; continue; }
+    moving[i] = 1;
+    base[i] = nextStable;
+  }
+
+  // 좌표 → 순위: 자리 b 마다 [b 앞에 붙는 노드들(i 오름차순)] 다음에 [원래 자리 b] 순서
+  const before = Array.from({ length: L + 1 }, () => []);
+  for (let i = 0; i < n; i++) if (moving[i]) before[base[i]].push(i);
+  const rankOrig = new Int32Array(L);
+  const rankNew = new Int32Array(n);
+  let r = 0;
+  for (let b = 0; b <= L; b++) {
+    for (const i of before[b]) rankNew[i] = r++;
+    if (b < L) rankOrig[b] = r++;
+  }
+
+  // Fenwick 트리: 현재 DOM 에 있는 좌표를 1 로 표시
+  const tree = new Int32Array(r + 1);
+  const add = (k, v) => { for (k++; k <= r; k += k & -k) tree[k] += v; };
+  const countBefore = (k) => { let s = 0; for (; k > 0; k -= k & -k) s += tree[k]; return s; };
+  for (let p = 0; p < L; p++) add(rankOrig[p], 1);
+
+  for (let i = n - 1; i >= 0; i--) {
+    if (!moving[i]) continue;
+    const m = matchOf[i];
+    if (m) {
+      const ro = rankOrig[posOf.get(m)];
+      const from = countBefore(ro);
+      add(ro, -1);
+      const to = countBefore(rankNew[i]);
+      add(rankNew[i], 1);
+      if (from !== to) patches.push({ type: PatchType.MOVE, path: parentPath, from, to, key: m.key });
+    } else {
+      const index = countBefore(rankNew[i]);
+      add(rankNew[i], 1);
+      patches.push({ type: PatchType.INSERT, path: parentPath, index, node: newCh[i] });
+    }
+  }
+}
+
+/** 예전 방식: live 배열을 실제로 옮기며 위치를 센다 (같은 VNode 객체가 두 번 들어 있을 때만 쓴다) */
+function placeBySimulation(live, matchOf, newCh, parentPath, patches) {
+  live = live.slice();
+  const newIndexOf = new Map();
+  matchOf.forEach((m, i) => m && newIndexOf.set(m, i));
+  const seq = live.map((m) => newIndexOf.get(m));
+  const stable = new Set(longestIncreasingSubsequence(seq).map((k) => live[k]));
+  const placed = new Array(newCh.length);
+  for (let i = newCh.length - 1; i >= 0; i--) {
+    const anchor = i + 1 < newCh.length ? placed[i + 1] : null;
+    const at = anchor ? live.indexOf(anchor) : live.length;
+    const m = matchOf[i];
+    if (m && stable.has(m)) { placed[i] = m; continue; }
+    if (m) {
+      const from = live.indexOf(m);
+      live.splice(from, 1);
+      const to = anchor ? live.indexOf(anchor) : live.length;
+      live.splice(to, 0, m);
+      if (from !== to) patches.push({ type: PatchType.MOVE, path: parentPath, from, to, key: m.key });
+      placed[i] = m;
+    } else {
+      const marker = { inserted: newCh[i] };
+      live.splice(at, 0, marker);
+      patches.push({ type: PatchType.INSERT, path: parentPath, index: at, node: newCh[i] });
+      placed[i] = marker;
+    }
+  }
 }
 
 function allUnkeyed(list) {

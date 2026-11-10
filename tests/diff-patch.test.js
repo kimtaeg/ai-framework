@@ -237,3 +237,42 @@ describe('무작위 트리 퍼즈 테스트', () => {
     }
   });
 });
+
+describe('diff — 긴 목록의 이동 계산 (O(n log n) 배치)', () => {
+  let seed = 7;
+  const rand = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const keyedUl = (keys) => h('ul', null, ...keys.map((k) => h('li', { key: k }, String(k))));
+
+  test('무작위 삽입·삭제·섞기 300번: DOM 결과가 맞고, 같은 key 의 노드를 재사용하며, MOVE 횟수 = 남은 줄 − LIS', () => {
+    for (let t = 0; t < 300; t++) {
+      const n = Math.floor(rand() * 60);
+      const oldKeys = Array.from({ length: n }, (_, i) => i);
+      let newKeys = oldKeys.filter(() => rand() > 0.2);
+      for (let i = newKeys.length - 1; i > 0; i--) if (rand() < 0.5) { const j = Math.floor(rand() * (i + 1)); [newKeys[i], newKeys[j]] = [newKeys[j], newKeys[i]]; }
+      newKeys = newKeys.flatMap((k) => (rand() < 0.15 ? [k, 1000 + k] : [k]));
+
+      const host = document.createElement('div');
+      const root = createElement(keyedUl(oldKeys));
+      host.appendChild(root);
+      const byKey = new Map([...root.childNodes].map((el, i) => [oldKeys[i], el]));
+      const patches = diff(keyedUl(oldKeys), keyedUl(newKeys));
+      applyPatches(root, patches);
+
+      assert.equal(root.outerHTML, createElement(keyedUl(newKeys)).outerHTML);
+      newKeys.forEach((k, i) => { if (byKey.has(k)) assert.equal(root.childNodes[i], byKey.get(k), `key ${k} 노드 재사용`); });
+      const kept = oldKeys.filter((k) => newKeys.includes(k));
+      const seq = kept.map((k) => newKeys.indexOf(k));
+      const moves = patches.filter((p) => p.type === PatchType.MOVE).length;
+      assert.ok(moves <= kept.length - longestIncreasingSubsequence(seq).length, `MOVE ${moves}회가 최소보다 많음`);
+    }
+  });
+
+  test('2만 줄 뒤집기도 빠르게 끝난다 (예전 indexOf·splice 방식은 약 0.8초)', () => {
+    const keys = Array.from({ length: 20000 }, (_, i) => i);
+    const t0 = performance.now();
+    const patches = diff(keyedUl(keys), keyedUl(keys.slice().reverse()));
+    const ms = performance.now() - t0;
+    assert.equal(patches.filter((p) => p.type === PatchType.MOVE).length, 19999);
+    assert.ok(ms < 400, `${ms.toFixed(0)}ms`);
+  });
+});

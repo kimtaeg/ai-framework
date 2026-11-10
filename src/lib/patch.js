@@ -73,8 +73,10 @@ export function applyPatch(root, p) {
     case PatchType.MOVE: {
       const parent = resolvePath(root, p.path);
       const child = parent.childNodes[p.from];
-      parent.removeChild(child);
-      parent.insertBefore(child, parent.childNodes[p.to] ?? null);
+      // insertBefore 는 이미 붙어 있는 노드를 알아서 떼어 옮긴다 → removeChild 를 따로 부르지 않는다 (DOM 호출 2번 → 1번).
+      // p.to 는 "뺀 뒤" 의 인덱스이므로, 뒤로 옮길 때(from < to)는 빼기 전 기준으로 한 칸 뒤의 노드 앞에 넣는다.
+      const ref = parent.childNodes[p.from < p.to ? p.to + 1 : p.to] ?? null;
+      if (ref !== child) parent.insertBefore(child, ref);
       return child;
     }
     default:
