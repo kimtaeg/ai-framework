@@ -25,6 +25,18 @@ const list = (keys) => h('ul', null, keys.map(row));
 const moveCount = (patches) => patches.filter((p) => p.type === 'MOVE').length;
 const minMoves = (oldKeys, newKeys) => { const idx = new Map(oldKeys.map((k, i) => [k, i])); const kept = newKeys.filter((k) => idx.has(k)); return kept.length - longestIncreasingSubsequence(kept.map((k) => idx.get(k))).length; };
 
+// node move/bench/run.js browser → browser.json 으로 브라우저 그래프만 다시 그린다 (측정은 move/ 페이지에서)
+const ONLY_BROWSER = process.argv[2] === 'browser';
+const browser = JSON.parse(readFileSync(new URL('browser.json', dir), 'utf8'));
+const browserChart = () => out('browser.svg', renderBars({
+  title: `실제 브라우저 — ${browser.rows.toLocaleString('en-US')}줄 목록, 화면에 반영되기까지`,
+  subtitle: 'diff + patch + 스타일 · 레이아웃 · 페인트 (ms, 9회 중앙값, 두 방식을 번갈아 실행) · 낮을수록 빠름',
+  yLabel: '시간 (ms)',
+  legendItems: [['앞에서부터', C.naive], ['우리 LIS', C.ours]],
+  groups: browser.ops.map((o) => ({ label: o.label, sub: o.naive / o.ours >= 1.15 ? `${(o.naive / o.ours).toFixed(1)}배` : '같음', bars: [{ key: 'naive', y: o.naive }, { key: 'ours', y: o.ours }] })),
+}));
+if (ONLY_BROWSER) { browserChart(); console.log('완료: move/bench/browser.svg'); process.exit(0); }
+
 // ---------------------------------------------------------------- 1. diff 시간
 const ALGOS = { common: diffCommon, ours: diff, naive: diffNaive };
 const SIZES = [1000, 2000, 5000, 10000, 20000, 50000];
@@ -94,8 +106,7 @@ const BINS = [
 const noLoss = { trials: TRIALS, equalMin, oursMoreThanNaive, totalNaive, totalOurs, bins: BINS.map(([label, f]) => ({ label: label.replace('\n', ' '), count: diffs.filter(f).length })) };
 console.log('손해 없음', noLoss);
 
-// ---------------------------------------------------------------- 4. 브라우저 (move/ 페이지에서 잰 값)
-const browser = JSON.parse(readFileSync(new URL('browser.json', dir), 'utf8'));
+// ---------------------------------------------------------------- 4. 브라우저 (move/ 페이지에서 잰 값 — browser.json)
 
 writeFileSync(new URL('results.json', dir), JSON.stringify({ when: new Date().toISOString(), node: process.version, timing, moves, noLoss, browser }, null, 2));
 
@@ -130,11 +141,6 @@ out('noloss.svg', renderHistogram({
   yLabel: '횟수', bins: BINS.map(([label, f, color], i) => ({ label: label.replace('\n', ' '), count: noLoss.bins[i].count, color })),
   note: `전체 이동 합계: 앞에서부터 ${totalNaive.toLocaleString('en-US')}번 · 우리 ${totalOurs.toLocaleString('en-US')}번 (${Math.round((1 - totalOurs / totalNaive) * 100)}% 적음)`,
 }));
-out('browser.svg', renderBars({
-  title: `실제 브라우저 — ${browser.rows.toLocaleString('en-US')}줄 목록`,
-  subtitle: 'diff + patch + 레이아웃 (ms, 9회 중앙값, 두 방식을 번갈아 실행) · 낮을수록 빠름',
-  yLabel: '시간 (ms)',
-  legendItems: [['앞에서부터', C.naive], ['우리 LIS', C.ours]],
-  groups: browser.ops.map((o) => ({ label: o.label, sub: o.naive / o.ours >= 1.15 ? `${(o.naive / o.ours).toFixed(1)}배` : '같음', bars: [{ key: 'naive', y: o.naive }, { key: 'ours', y: o.ours }] })),
-}));
+browserChart();
+
 console.log('완료: move/bench/results.json, complexity.svg, moves.svg, noloss.svg, browser.svg');

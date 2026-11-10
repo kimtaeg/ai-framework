@@ -114,7 +114,9 @@ function update(p, nextItems) {
       $('input', li).value = '';
     }
     res.ok = mark(p, fresh);
-    if (moved.size <= 400) moved.forEach(flash); // 너무 많으면 번쩍임은 생략 (숫자로 충분)
+    // 너무 많으면 번쩍임은 생략 (숫자로 충분). 규모별 측정 중에는 끈다 — 번쩍임 애니메이션(1.2초)이
+    // 다음 측정 프레임의 페인트에 섞여, 번쩍임이 켜진 쪽(대개 LIS)만 느리게 나오는 문제가 있었다.
+    if (!document.body.classList.contains('measuring') && moved.size <= 400) moved.forEach(flash);
     render(p, res);
   };
   return res;
@@ -291,6 +293,7 @@ function renderScale() {
 const med = (a) => a.slice().sort((p, q) => p - q)[a.length >> 1];
 async function measureScale() {
   if (busy) return;
+  document.body.classList.add('measuring');
   const sizes = [250, 500, 1000, 2000];
   const reps = 3;
   const keepN = nInput.value;
@@ -307,6 +310,7 @@ async function measureScale() {
     rows.push({ n, A, B });
     renderDomTable(rows);
   }
+  document.body.classList.remove('measuring');
   $('#scaleStatus').textContent = '완료';
   nInput.value = keepN;
   reset();
