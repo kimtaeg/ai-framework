@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mini React · Virtual DOM</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="src/phase1/style.css">
+  <script type="module" src="src/phase1/main.js"></script>
+</head>
+<body>
+  <header class="page-header">
+    <div class="wrap">
+      <p class="eyebrow">Mini React</p>
+      <h1>Virtual DOM · Diff · Patch</h1>
+      <nav class="tabs" role="tablist" aria-label="페이지">
+        <button type="button" class="tab is-active" role="tab" id="tab-phase1" aria-selected="true" aria-controls="panel-phase1">Phase 1 검증</button>
+        <button type="button" class="tab" role="tab" id="tab-dashboard" aria-selected="false" aria-controls="panel-dashboard">대시보드 <span class="tab__badge">다음 단계</span></button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- ── Phase 1 검증 ───────────────────────────── -->
+    <section id="panel-phase1" role="tabpanel" aria-labelledby="tab-phase1" class="phase1">
+      <p class="lead">
+        테스트 영역을 고치고 <b>Patch</b>를 누르면, 이전 VNode와 <b>diff</b>해서 <b>바뀐 부분만</b> 실제 영역에 반영합니다.
+        리스트 항목의 <code>data-key</code>가 key 역할을 해서, 순서를 바꾸면 <b>MOVE</b>로 처리돼요.
+      </p>
+
+      <div class="areas">
+        <section class="panel" aria-labelledby="actual-title">
+          <div class="panel__head">
+            <h2 id="actual-title" class="panel__title"><span class="dot dot--live" aria-hidden="true"></span>실제 영역</h2>
+            <span class="panel__hint">patch가 적용되는 진짜 DOM</span>
+          </div>
+          <!-- 페이지 로드 시 이 샘플 HTML을 VNode로 읽어 첫 기록으로 삼는다 -->
+          <div class="stage" id="actual">
+            <section class="card" id="profile">
+              <h3 class="card__title">오늘의 할 일</h3>
+              <p class="card__text">Virtual DOM을 <strong>직접</strong> 만들고 있어요.</p>
+              <ul class="todo">
+                <li class="todo__item" data-key="vdom">VNode 설계</li>
+                <li class="todo__item" data-key="diff">diff 구현</li>
+                <li class="todo__item" data-key="patch">patch 구현</li>
+                <li class="todo__item" data-key="test">테스트</li>
+              </ul>
+              <div class="card__foot">
+                <label class="check"><input type="checkbox" checked> 테스트 통과</label>
+                <a class="link" href="#" title="저장소" style="color: #4f46e5;">GitHub</a>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="test-title">
+          <div class="panel__head">
+            <h2 id="test-title" class="panel__title"><span class="dot dot--edit" aria-hidden="true"></span>테스트 영역</h2>
+            <span class="panel__hint">둘 중 어디를 고쳐도 서로 맞춰짐</span>
+          </div>
+          <p class="sub-label">화면에서 바로 고치기 <span class="sub-hint">(contenteditable — 글자 수정)</span></p>
+          <div class="stage stage--editable" id="editable" contenteditable="true" spellcheck="false"></div>
+          <p class="sub-label">HTML로 고치기 <span class="sub-hint">(태그·속성 추가, data-key 순서 바꾸기)</span></p>
+          <textarea id="source" class="editor" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="테스트 영역 HTML"></textarea>
+          <p class="notice" id="source-error" role="alert" hidden></p>
+        </section>
+      </div>
+
+      <div class="toolbar" role="group" aria-label="Patch와 기록 이동">
+        <button type="button" class="btn btn--primary" id="btn-patch">Patch</button>
+        <div class="history">
+          <button type="button" class="btn" id="btn-back" disabled>← 뒤로가기</button>
+          <output class="history__pos" id="history-pos">1 / 1</output>
+          <button type="button" class="btn" id="btn-forward" disabled>앞으로가기 →</button>
+        </div>
+      </div>
+
+      <div class="logs">
+        <section class="panel" aria-labelledby="patches-title">
+          <div class="panel__head">
+            <h2 id="patches-title" class="panel__title">이번 patch 목록 <span class="panel__sub" id="patch-source"></span></h2>
+            <span class="count" id="patch-count">0</span>
+          </div>
+          <ol class="list" id="patch-list"></ol>
+          <p class="empty" id="patch-empty">아직 Patch를 실행하지 않았습니다.</p>
+        </section>
+
+        <section class="panel" aria-labelledby="counts-title">
+          <div class="panel__head">
+            <h2 id="counts-title" class="panel__title">변경 횟수</h2>
+            <span class="panel__hint">diff 결과 vs 실제 DOM 변경</span>
+          </div>
+          <table class="counts">
+            <thead><tr><th scope="col">applyPatches (diff 결과)</th><th scope="col">횟수</th></tr></thead>
+            <tbody id="apply-counts"></tbody>
+          </table>
+          <table class="counts">
+            <thead><tr><th scope="col">MutationObserver (실제로 바뀐 노드)</th><th scope="col">수</th></tr></thead>
+            <tbody id="mutation-counts"></tbody>
+          </table>
+          <p class="counts__note">MOVE는 노드를 떼었다 다시 붙이므로 MutationObserver에는 "삭제 + 추가"로 보입니다.</p>
+        </section>
+
+        <section class="panel panel--wide" aria-labelledby="log-title">
+          <div class="panel__head">
+            <h2 id="log-title" class="panel__title">기록</h2>
+            <span class="count" id="log-count">0</span>
+          </div>
+          <ol class="list list--log" id="change-log"></ol>
+        </section>
+      </div>
+    </section>
+
+    <!-- ── 대시보드 (다음 단계) ────────────────────── -->
+    <section id="panel-dashboard" role="tabpanel" aria-labelledby="tab-dashboard" class="dashboard" hidden>
+      <div class="panel empty-state">
+        <h2>대시보드는 다음 단계에서 만듭니다</h2>
+        <p>Phase 1의 Virtual DOM 코어(<code>src/core</code>) 위에 Component와 Hooks를 올리고, 그 위에 대시보드 앱을 만들 예정이에요.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="page-footer"><div class="wrap">외부 라이브러리 없이 만든 Virtual DOM</div></footer>
+</body>
+</html>

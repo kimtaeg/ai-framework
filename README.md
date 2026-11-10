@@ -10,17 +10,40 @@
 **필요 환경**: Node.js `^22.13.0 || ^24.0.0 || >=26.0.0` (jsdom 29와 Vitest 5가 함께 지원하는 범위, 23·25는 제외), Python 3 (`npm run serve`용)
 
 ```bash
-npm install        # 테스트 도구(vitest, jsdom) 설치
-npm test           # 단위 테스트 전체 실행 (282개)
-npm run test:watch # 파일 저장 시마다 테스트
+npm install        # 테스트 도구(jsdom, vitest) 설치
+npm test           # 전체: 새 코어 node:test(60개) + 기존 vitest(282개)
+npm run test:core  # 새 코어만 (node --test, tests/)
+npm run test:watch # 기존 vitest를 파일 저장 시마다
 
-npm run serve      # http://localhost:8000/phase1/ (Phase 1 검증 페이지)
+npm run serve      # http://localhost:8000/          ← 새 Phase 1 검증 페이지 (탭: Phase 1 검증 / 대시보드)
+                   # http://localhost:8000/phase1/ (이전 Phase 1 검증 페이지)
                    # http://localhost:8000/phase2/ (Phase 2 할 일 앱 + 디버그 패널)
                    # http://localhost:8000/phase2-learn/ (Phase 2 개념 학습: 엔진을 한 단계씩 재생)
 ```
 
 > ES 모듈(`import`)은 `file://`로 열면 브라우저가 막습니다. 반드시 HTTP 서버로 여세요.
 > `npm run serve`는 `127.0.0.1`에만 열립니다. 모든 네트워크에 열면 같은 네트워크의 누구나 `/.git/` 같은 저장소 파일을 받아 갈 수 있습니다.
+> `npx serve`로 열어도 됩니다.
+
+## 새 코어 (src/core) — 다음 단계(Component·Hooks·대시보드)의 기반
+
+```
+index.html              # 상단 탭: [Phase 1 검증] / [대시보드 (다음 단계)]
+src/core/
+  vdom.js               # h(), createElement(VNode → DOM), domToVNode(DOM → VNode)
+  diff.js               # diff(old, new) → patch 목록 (CREATE·REMOVE·REPLACE·UPDATE_PROPS·UPDATE_TEXT·MOVE)
+  patch.js              # applyPatches(container, patches) → { created, removed, replaced, propsUpdated, textUpdated, moved }
+  props.js              # 속성·class·style·value·checked·이벤트 핸들러 반영 (vdom·patch가 같이 씀)
+src/phase1/             # 검증 페이지: main.js · history.js(뒤로/앞으로) · html.js(textarea ↔ VNode) · style.css
+tests/                  # node:test + jsdom: vdom · diff · patch · history
+```
+
+- VNode: `{ type, key, props, children }`, 텍스트는 문자열. key는 props에서 빼서 따로 두고 DOM에 그리지 않는다.
+- HTML에서는 `data-key="a"`가 key가 된다 (`domToVNode`가 읽음). 줄바꿈 섞인 공백 텍스트와 주석은 버린다.
+- patch의 경로는 모두 **이전 트리 기준**이고, `applyPatches`는 DOM을 바꾸기 전에 모든 경로를 노드 참조로 먼저 찾아 둔다.
+- key 리스트는 **최장 증가 부분 수열(LIS)** 로 "그대로 둘 수 있는 항목"을 최대한 남기고 나머지만 MOVE한다
+  (맨 뒤 항목을 맨 앞으로 → MOVE 1개).
+- 기존 `src/*.js`(Phase 1·2 코어), `phase1/`, `phase2/`, `phase2-learn/`, `test/`는 그대로 두었다. 다음 단계에서 새 코어로 옮기며 정리한다.
 
 ## 폴더 구조
 

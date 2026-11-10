@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "vitest run",
+    "test": "npm run test:core && npm run test:legacy",
+    "test:core": "node --test \"tests/**/*.test.js\"",
+    "test:legacy": "vitest run",
     "test:watch": "vitest",
     "serve": "python3 -m http.server --bind 127.0.0.1 8000"
   },

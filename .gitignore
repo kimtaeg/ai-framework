@@ -19,8 +19,8 @@
 **/bin/
 **/obj/
 **/output/
-# core dump
-core
+# core dump (루트의 파일만. 그냥 core라고 쓰면 src/core/ 폴더까지 무시된다)
+/core
 
 # 임시 파일
 *~
