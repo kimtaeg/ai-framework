@@ -28,12 +28,53 @@ export function resolvePath(root, path) {
  */
 export function applyPatches(root, patches, options = {}) {
   const { onApply } = options;
-  for (const p of patches) {
+  for (let i = 0; i < patches.length; i++) {
+    const p = patches[i];
+    // 같은 부모에 MOVE · INSERT 가 여러 개 이어지면 한꺼번에 처리한다 (섞기 · 뒤집기)
+    if (p.type === PatchType.MOVE || p.type === PatchType.INSERT) {
+      let j = i + 1;
+      while (j < patches.length && (patches[j].type === PatchType.MOVE || patches[j].type === PatchType.INSERT) && samePath(patches[j].path, p.path)) j++;
+      if (j - i >= RUN_MIN) {
+        applyRun(root, patches, i, j, onApply);
+        i = j - 1;
+        continue;
+      }
+    }
     const node = applyPatch(root, p);
     if (p.path.length === 0 && p.type === PatchType.REPLACE) root = node;
     onApply?.(p, node);
   }
   return root;
+}
+
+const RUN_MIN = 8;
+const samePath = (a, b) => a === b || (a.length === b.length && a.every((v, k) => v === b[k]));
+
+/**
+ * 같은 부모에 이어진 MOVE · INSERT 묶음 적용.
+ *  parent.childNodes[i] 는 DOM 이 바뀔 때마다 브라우저 내부 캐시가 무효가 되어, 무작위 위치를 찾을 때마다 앞에서부터 세게 된다
+ *  (섞기처럼 이동이 많으면 이동 수 × 형제 수). 형제 목록을 JS 배열로 한 번만 만들어 두고 배열에서 찾는다.
+ *  패치의 인덱스 의미는 하나씩 적용할 때와 같다 (MOVE 의 to 는 뺀 뒤 기준).
+ */
+function applyRun(root, patches, i, j, onApply) {
+  const parent = resolvePath(root, patches[i].path);
+  const kids = Array.from(parent.childNodes);
+  for (let k = i; k < j; k++) {
+    const p = patches[k];
+    let node;
+    if (p.type === PatchType.MOVE) {
+      node = kids[p.from];
+      kids.splice(p.from, 1);
+      const ref = kids[p.to] ?? null;
+      kids.splice(p.to, 0, node);
+      parent.insertBefore(node, ref);
+    } else {
+      node = createElement(p.node, childNamespace(parent));
+      parent.insertBefore(node, kids[p.index] ?? null);
+      kids.splice(p.index, 0, node);
+    }
+    onApply?.(p, node);
+  }
 }
 
 export function applyPatch(root, p) {

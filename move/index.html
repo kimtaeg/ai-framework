@@ -227,11 +227,12 @@
             <tr><td>입력값 · 노드 보존</td><td class="lose">밀림</td><td>보존</td><td class="win">보존</td></tr>
             <tr><td>맨 아래 → 맨 위 (n줄) 이동</td><td>— (n줄 글자 고침)</td><td class="lose">n − 1번</td><td class="win">1번</td></tr>
             <tr><td>이동 횟수가 최소인가</td><td>—</td><td class="lose">아니오</td><td class="win">예 (증명 + 테스트)</td></tr>
-            <tr><td>이동 위치 계산 비용</td><td>—</td><td>O(n)</td><td class="win">O(n log n) <span class="sub">(우리: 예전 O(n²) → 2만 줄 뒤집기 819ms → 31ms)</span></td></tr>
+            <tr><td>이동 위치 계산 비용</td><td>—</td><td>O(n log n) <span class="sub">(이 페이지의 비교 구현 · 우리와 같은 기법)</span></td><td class="win">O(n log n) <span class="sub">(예전 O(n²) → 2만 줄 뒤집기 819ms → 21ms)</span></td></tr>
+            <tr><td>섞기 · 뒤집기 (거의 다 움직임)</td><td>가장 빠름</td><td>기준</td><td class="win">같은 속도 (±2%) · 이동은 5% 적음</td></tr>
             <tr><td>몇 줄만 바뀐 경우</td><td>빠름</td><td>—</td><td class="win">빠른 길 (Map · 좌표 계산 생략)</td></tr>
           </tbody>
         </table></div>
-        <p class="note">검증: 예전 구현과 무작위 2만 3천 건 패치 대조 일치 · 무작위 재배치 600번에서 DOM 결과 · 노드 재사용 · 최소 이동 확인 · 2만 줄 뒤집기 400ms 이내 (tests/diff-patch.test.js).<br>한계: 섞기처럼 거의 모든 줄이 움직이면 두 방식 모두 약 n번 옮겨서 차이가 작고, 노드를 옮기는 브라우저 비용 때문에 key 없이 글자를 고치는 쪽이 더 빠를 수 있습니다.</p>
+        <p class="note">검증: 예전 구현과 무작위 2만 3천 건 패치 대조 일치 · 무작위 재배치 600번에서 DOM 결과 · 노드 재사용 · 최소 이동 확인 · 2만 줄 뒤집기 400ms 이내 (tests/diff-patch.test.js).<br>한계: 섞기처럼 거의 모든 줄이 움직이면 두 방식 모두 약 n번 옮겨서 속도가 같습니다 (1000 · 2000줄 섞기 · 뒤집기에서 ±2%). 이때는 노드를 옮기는 브라우저 비용 때문에 key 없이 글자를 고치는 쪽이 더 빠를 수 있습니다.</p>
       </div>
     </section>
   </main>

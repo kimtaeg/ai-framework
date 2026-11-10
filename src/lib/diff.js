@@ -107,50 +107,50 @@ export function diffChildren(oldCh, newCh, parentPath, patches) {
   // (두 줄 바꾸기, 바뀐 게 없는 다시 그리기 같은 흔한 경우. Map · Set · 좌표 계산 없이 끝낸다)
   if (oldCh.length === newCh.length && diffMostlyInPlace(oldCh, newCh, parentPath, patches)) return;
 
-  // ---- 1. 매칭 ----
-  const keyed = new Map();
-  const unkeyed = [];
-  for (const c of oldCh) {
+  // ---- 1. 매칭 ----  (노드 대신 old 인덱스로 다뤄 Map · Set 을 줄인다)
+  const oldLen = oldCh.length;
+  const newLen = newCh.length;
+  const keyed = new Map(); // key → old 인덱스
+  const unkeyed = []; // key 없는 old 인덱스
+  for (let i = 0; i < oldLen; i++) {
+    const c = oldCh[i];
     if (c.key != null) {
-      if (!keyed.has(c.key)) keyed.set(c.key, c);
+      if (!keyed.has(c.key)) keyed.set(c.key, i);
       // 중복 key: 첫 노드만 매칭 대상, 나머지는 자연스럽게 삭제됨
       else warn(`형제 사이에 같은 key "${c.key}" 가 여러 개 있습니다. key 는 형제 안에서 고유해야 합니다.`);
-    } else unkeyed.push(c);
+    } else unkeyed.push(i);
   }
-  const used = new Set();
-  const matchOf = new Array(newCh.length).fill(null);
+  const used = new Uint8Array(oldLen);
+  const matchIdx = new Int32Array(newLen).fill(-1); // 새 인덱스 → 짝이 된 old 인덱스 (없으면 -1)
   let u = 0;
-  newCh.forEach((c, i) => {
-    let m = null;
+  for (let i = 0; i < newLen; i++) {
+    const c = newCh[i];
+    let m = -1;
     if (c.key != null) {
       const o = keyed.get(c.key);
-      if (o && !used.has(o)) m = o;
+      if (o !== undefined && !used[o]) m = o;
     } else if (u < unkeyed.length) {
       m = unkeyed[u++];
     }
-    if (m) {
-      used.add(m);
-      matchOf[i] = m;
+    if (m >= 0) {
+      used[m] = 1;
+      matchIdx[i] = m;
     }
-  });
+  }
 
   // ---- 2. 삭제 (뒤에서부터) ----
   // 뒤에서부터 지우면 앞쪽 인덱스는 밀리지 않으므로, 패치 인덱스는 원래 인덱스 그대로다.
-  // (예전에는 지울 때마다 배열을 splice 해서 많이 지우면 O(n²) 이었다)
-  for (let i = oldCh.length - 1; i >= 0; i--) {
-    if (!used.has(oldCh[i])) patches.push({ type: PatchType.REMOVE, path: parentPath, index: i, node: oldCh[i] });
+  for (let i = oldLen - 1; i >= 0; i--) {
+    if (!used[i]) patches.push({ type: PatchType.REMOVE, path: parentPath, index: i, node: oldCh[i] });
   }
-  const live = oldCh.filter((c) => used.has(c)); // 삭제 뒤 실제 DOM 형제 순서
 
   // ---- 3. 이동 / 삽입 ----
-  // 같은 VNode 객체가 live 에 두 번 들어 있으면 위치가 하나로 정해지지 않으므로 예전 방식(배열 시뮬레이션)으로 처리한다.
-  if (new Set(live).size === live.length) placeFast(live, matchOf, newCh, parentPath, patches);
-  else placeBySimulation(live, matchOf, newCh, parentPath, patches);
+  place(oldCh, newCh, used, matchIdx, parentPath, patches);
 
-  // ---- 4. 재귀 diff (이제 live 순서 == newCh 순서) ----
-  for (let i = 0; i < newCh.length; i++) {
-    const m = matchOf[i];
-    if (m) diff(m, newCh[i], parentPath.concat(i), patches);
+  // ---- 4. 재귀 diff (이제 DOM 순서 == newCh 순서) ----
+  for (let i = 0; i < newLen; i++) {
+    const m = matchIdx[i];
+    if (m >= 0) diff(oldCh[m], newCh[i], parentPath.concat(i), patches);
   }
 }
 
@@ -237,46 +237,53 @@ function diffMostlyInPlace(oldCh, newCh, parentPath, patches) {
  *  예전에는 매번 배열에서 indexOf · splice 로 위치를 찾아 O(n²) 이었다 (2만 줄 섞기 593ms).
  *
  *  아이디어: 모든 노드가 "언젠가 있게 될 자리" 를 미리 한 줄로 세워 둘 수 있다.
- *   - 움직이지 않는 노드와 아직 안 옮긴 노드: 원래 자리 p           → 좌표 (p, ∞)
+ *   - 움직이지 않는 노드와 아직 안 옮긴 노드: 삭제 뒤 원래 자리 p   → 좌표 (p, ∞)
  *   - 옮기거나 새로 넣는 새 인덱스 i 의 노드: 오른쪽에서 가장 가까운 안 움직이는 노드 s 바로 앞
  *                                               → 좌표 (s 의 자리, i)   (s 가 없으면 맨 끝)
  *   같은 s 앞에 붙는 노드들은 i 가 작을수록 왼쪽이고, 모두 s 바로 앞에 붙는다.
  *  그러면 "지금 몇 번째인가" = 내 좌표보다 앞에 있는, 현재 DOM 에 있는 좌표의 개수 → Fenwick 트리로 O(log n).
- *  결과 패치는 예전 방식과 똑같다 (tests/diff-patch.test.js 의 대조 테스트).
+ *  결과 패치는 예전 방식과 똑같다 (무작위 대조). 배열은 모두 타입 배열이라 Map · Set 을 새로 만들지 않는다.
  */
-function placeFast(live, matchOf, newCh, parentPath, patches) {
-  const L = live.length;
+function place(oldCh, newCh, used, matchIdx, parentPath, patches) {
+  const oldLen = oldCh.length;
   const n = newCh.length;
-  const posOf = new Map();
-  live.forEach((m, p) => posOf.set(m, p));
-  const newIndexOf = new Map();
-  matchOf.forEach((m, i) => m && newIndexOf.set(m, i));
-  const seq = live.map((m) => newIndexOf.get(m));
+  // 삭제 뒤 자리
+  const livePos = new Int32Array(oldLen);
+  let L = 0;
+  for (let i = 0; i < oldLen; i++) if (used[i]) livePos[i] = L++;
+  // 삭제 뒤 자리 p 의 노드가 가야 할 새 인덱스 → LIS
+  const seq = new Int32Array(L);
+  for (let i = 0; i < n; i++) if (matchIdx[i] >= 0) seq[livePos[matchIdx[i]]] = i;
   const stablePos = new Uint8Array(L);
   for (const k of longestIncreasingSubsequence(seq)) stablePos[k] = 1;
 
-  // 새 인덱스마다: 움직이는 노드인가, 붙을 자리(base)는 어디인가
+  // 새 인덱스마다: 움직이는가, 붙을 자리(base)는 어디인가
   const moving = new Uint8Array(n);
   const base = new Int32Array(n);
+  const count = new Int32Array(L + 1); // 자리 b 앞에 붙는 노드 수
   let nextStable = L; // 오른쪽에서 가장 가까운 안 움직이는 노드의 자리 (없으면 맨 끝 = L)
+  let movers = 0;
   for (let i = n - 1; i >= 0; i--) {
-    const m = matchOf[i];
-    const p = m ? posOf.get(m) : -1;
-    if (m && stablePos[p]) { nextStable = p; continue; }
+    const m = matchIdx[i];
+    if (m >= 0 && stablePos[livePos[m]]) { nextStable = livePos[m]; continue; }
     moving[i] = 1;
     base[i] = nextStable;
+    count[nextStable]++;
+    movers++;
   }
+  if (movers === 0) return;
 
-  // 좌표 → 순위: 자리 b 마다 [b 앞에 붙는 노드들(i 오름차순)] 다음에 [원래 자리 b] 순서
-  const before = Array.from({ length: L + 1 }, () => []);
-  for (let i = 0; i < n; i++) if (moving[i]) before[base[i]].push(i);
+  // 좌표 → 순위: 자리 b 마다 [b 앞에 붙는 노드들(i 오름차순)] 다음에 [원래 자리 b]
+  const start = new Int32Array(L + 1);
   const rankOrig = new Int32Array(L);
-  const rankNew = new Int32Array(n);
   let r = 0;
   for (let b = 0; b <= L; b++) {
-    for (const i of before[b]) rankNew[i] = r++;
+    start[b] = r;
+    r += count[b];
     if (b < L) rankOrig[b] = r++;
   }
+  const rankNew = new Int32Array(n);
+  for (let i = 0; i < n; i++) if (moving[i]) rankNew[i] = start[base[i]]++;
 
   // Fenwick 트리: 현재 DOM 에 있는 좌표를 1 로 표시
   const tree = new Int32Array(r + 1);
@@ -286,47 +293,18 @@ function placeFast(live, matchOf, newCh, parentPath, patches) {
 
   for (let i = n - 1; i >= 0; i--) {
     if (!moving[i]) continue;
-    const m = matchOf[i];
-    if (m) {
-      const ro = rankOrig[posOf.get(m)];
+    const m = matchIdx[i];
+    if (m >= 0) {
+      const ro = rankOrig[livePos[m]];
       const from = countBefore(ro);
       add(ro, -1);
       const to = countBefore(rankNew[i]);
       add(rankNew[i], 1);
-      if (from !== to) patches.push({ type: PatchType.MOVE, path: parentPath, from, to, key: m.key });
+      if (from !== to) patches.push({ type: PatchType.MOVE, path: parentPath, from, to, key: oldCh[m].key });
     } else {
       const index = countBefore(rankNew[i]);
       add(rankNew[i], 1);
       patches.push({ type: PatchType.INSERT, path: parentPath, index, node: newCh[i] });
-    }
-  }
-}
-
-/** 예전 방식: live 배열을 실제로 옮기며 위치를 센다 (같은 VNode 객체가 두 번 들어 있을 때만 쓴다) */
-function placeBySimulation(live, matchOf, newCh, parentPath, patches) {
-  live = live.slice();
-  const newIndexOf = new Map();
-  matchOf.forEach((m, i) => m && newIndexOf.set(m, i));
-  const seq = live.map((m) => newIndexOf.get(m));
-  const stable = new Set(longestIncreasingSubsequence(seq).map((k) => live[k]));
-  const placed = new Array(newCh.length);
-  for (let i = newCh.length - 1; i >= 0; i--) {
-    const anchor = i + 1 < newCh.length ? placed[i + 1] : null;
-    const at = anchor ? live.indexOf(anchor) : live.length;
-    const m = matchOf[i];
-    if (m && stable.has(m)) { placed[i] = m; continue; }
-    if (m) {
-      const from = live.indexOf(m);
-      live.splice(from, 1);
-      const to = anchor ? live.indexOf(anchor) : live.length;
-      live.splice(to, 0, m);
-      if (from !== to) patches.push({ type: PatchType.MOVE, path: parentPath, from, to, key: m.key });
-      placed[i] = m;
-    } else {
-      const marker = { inserted: newCh[i] };
-      live.splice(at, 0, marker);
-      patches.push({ type: PatchType.INSERT, path: parentPath, index: at, node: newCh[i] });
-      placed[i] = marker;
     }
   }
 }

@@ -17,35 +17,58 @@ export function diffNaive(oldV, newV) {
   for (let i = oldCh.length - 1; i >= 0; i--) {
     if (!newKeys.has(oldCh[i].key)) patches.push({ type: PatchType.REMOVE, path: [], index: i, node: oldCh[i] });
   }
-  const live = oldCh.filter((c) => newKeys.has(c.key));
+  // 삭제 뒤 자리
+  const livePos = new Int32Array(oldCh.length).fill(-1);
+  let L = 0;
+  oldCh.forEach((c, i) => { if (newKeys.has(c.key)) livePos[i] = L++; });
 
-  // 2. 앞에서부터 배치
-  let lastPlaced = -1;
-  let prev = null;
-  let decisions = 0; // 이 방식이 "옮겨야 한다" 고 판단한 횟수
-  newCh.forEach((c) => {
+  // 2. 앞에서부터: 옛 위치가 "지금까지 제자리에 둔 줄의 옛 위치 최댓값" 보다 앞이면 옮긴다
+  const n = newCh.length;
+  const moving = new Uint8Array(n); // 옮기거나 새로 넣는 줄
+  const base = new Int32Array(n); // 왼쪽에서 가장 가까운 제자리 줄의 자리 (없으면 -1) — 그 바로 뒤에 붙는다
+  let lastPlaced = -1, prevStable = -1, decisions = 0;
+  for (let i = 0; i < n; i++) {
+    const oi = oldIndex.get(newCh[i].key);
+    if (oi !== undefined && oi >= lastPlaced) { lastPlaced = oi; prevStable = livePos[oi]; continue; }
+    if (oi !== undefined) decisions++;
+    moving[i] = 1;
+    base[i] = prevStable;
+  }
+  // 위치 계산은 우리 diff 와 같은 좌표 + Fenwick 트리 (O(n log n)) — 비교가 공정하도록 같은 기법을 쓴다
+  //  좌표 순서: 자리 b 마다 [원래 자리 b] 다음에 [b 뒤에 붙는 줄들(i 오름차순)], b = -1 은 맨 앞
+  const count = new Int32Array(L + 1); // count[b + 1]
+  for (let i = 0; i < n; i++) if (moving[i]) count[base[i] + 1]++;
+  const start = new Int32Array(L + 1);
+  const rankOrig = new Int32Array(L);
+  let r = 0;
+  for (let b = -1; b < L; b++) {
+    if (b >= 0) rankOrig[b] = r++;
+    start[b + 1] = r;
+    r += count[b + 1];
+  }
+  const rankNew = new Int32Array(n);
+  for (let i = 0; i < n; i++) if (moving[i]) rankNew[i] = start[base[i] + 1]++;
+  const tree = new Int32Array(r + 1);
+  const add = (k, v) => { for (k++; k <= r; k += k & -k) tree[k] += v; };
+  const countBefore = (k) => { let s = 0; for (; k > 0; k -= k & -k) s += tree[k]; return s; };
+  for (let p = 0; p < L; p++) add(rankOrig[p], 1);
+  for (let i = 0; i < n; i++) {
+    if (!moving[i]) continue;
+    const c = newCh[i];
     const oi = oldIndex.get(c.key);
-    if (oi === undefined) {
-      const at = prev ? live.indexOf(prev) + 1 : 0;
-      const marker = { inserted: c };
-      live.splice(at, 0, marker);
-      patches.push({ type: PatchType.INSERT, path: [], index: at, node: c });
-      prev = marker;
-      return;
-    }
-    const o = oldCh[oi];
-    if (oi < lastPlaced) {
-      decisions++;
-      const from = live.indexOf(o);
-      live.splice(from, 1);
-      const to = prev ? live.indexOf(prev) + 1 : 0;
-      live.splice(to, 0, o);
+    if (oi !== undefined) {
+      const ro = rankOrig[livePos[oi]];
+      const from = countBefore(ro);
+      add(ro, -1);
+      const to = countBefore(rankNew[i]);
+      add(rankNew[i], 1);
       if (from !== to) patches.push({ type: PatchType.MOVE, path: [], from, to, key: c.key });
     } else {
-      lastPlaced = oi;
+      const index = countBefore(rankNew[i]);
+      add(rankNew[i], 1);
+      patches.push({ type: PatchType.INSERT, path: [], index, node: c });
     }
-    prev = o;
-  });
+  }
 
   // 3. 각 줄 안쪽 비교
   newCh.forEach((c, i) => {
