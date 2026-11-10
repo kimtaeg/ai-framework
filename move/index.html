@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MOVE 있을 때와 없을 때</title>
+  <link rel="stylesheet" href="../styles/base.css">
+  <style>
+    main { max-width: 1180px; }
+    .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 16px; margin-bottom: 16px; }
+    .bar .group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+    .bar .sep { width: 1px; align-self: stretch; background: var(--border); margin: 0 4px; }
+    .bar label { font-size: 13px; color: var(--muted); }
+    .bar input[type=number] { width: 72px; }
+    .hint { font-size: 13px; color: var(--muted); margin: 0 0 14px; }
+
+    .panes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+    @media (max-width: 860px) { .panes { grid-template-columns: minmax(0, 1fr); } }
+    .pane h2 { font-size: 16px; margin: 0; }
+    .pane .sub { font-size: 12px; color: var(--muted); }
+    .pane.a { border-top: 3px solid var(--c-move); }
+    .pane.b { border-top: 3px solid var(--c-text); }
+
+    .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+    .stat { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; }
+    .stat b { display: block; font-size: 20px; font-variant-numeric: tabular-nums; }
+    .stat span { font-size: 11px; color: var(--muted); }
+    .stat.good b { color: var(--ok); }
+    .stat.bad b { color: var(--danger); }
+
+    .types { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; min-height: 22px; }
+    .chip { font-size: 12px; font-family: var(--mono); padding: 2px 8px; border-radius: 999px; color: #fff; }
+    .chip.MOVE { background: var(--c-move); } .chip.TEXT { background: var(--c-text); }
+    .chip.INSERT { background: var(--c-insert); } .chip.REMOVE { background: var(--c-remove); }
+    .chip.PROPS { background: var(--c-props); } .chip.REPLACE { background: var(--c-replace); }
+    .chip.none { background: var(--muted); }
+
+    .stage { max-height: 420px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+    .stage ul { list-style: none; margin: 0; padding: 4px; }
+    .stage li { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 6px; font-size: 13px; position: relative; }
+    .stage li + li { margin-top: 2px; }
+    .stage .sw { width: 14px; height: 14px; border-radius: 4px; flex: none; }
+    .stage .id { font-family: var(--mono); width: 34px; color: var(--muted); }
+    .stage .label { flex: 1; min-width: 0; }
+    .stage input { width: 110px; font-size: 12px; padding: 3px 6px; }
+    .stage .tag { font-size: 11px; font-weight: 600; width: 64px; text-align: right; }
+    .stage li.wrong { background: color-mix(in srgb, var(--danger) 14%, transparent); }
+    .stage li.wrong .tag { color: var(--danger); }
+    .stage li.fresh .tag { color: var(--c-insert); }
+    .stage li.fl-move { animation: fl-move 1.1s ease-out; }
+    .stage li.fl-text { animation: fl-text 1.1s ease-out; }
+    @keyframes fl-move { from { box-shadow: inset 0 0 0 2px var(--c-move); background: color-mix(in srgb, var(--c-move) 22%, transparent); } }
+    @keyframes fl-text { from { box-shadow: inset 0 0 0 2px var(--c-text); background: color-mix(in srgb, var(--c-text) 22%, transparent); } }
+
+    details.log { margin-top: 10px; font-size: 12px; }
+    details.log summary { cursor: pointer; color: var(--muted); }
+    details.log ol { font-family: var(--mono); max-height: 180px; overflow: auto; margin: 6px 0 0; padding-left: 28px; }
+
+    .compare { margin-top: 16px; }
+    .compare table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    .compare th, .compare td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
+    .compare th:first-child, .compare td:first-child { text-align: left; white-space: normal; }
+    .compare th { color: var(--muted); font-weight: 600; }
+    .compare .win { color: var(--ok); font-weight: 700; }
+    .table-wrap { overflow-x: auto; }
+    .note { font-size: 13px; color: var(--muted); margin: 10px 0 0; }
+    .err { color: var(--danger); font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/index.html">mini<span>React</span></a>
+    <nav>
+      <a href="/index.html">홈</a>
+      <a href="/phase1/index.html">Phase 1 · Diff</a>
+      <a href="/move/index.html" aria-current="page">MOVE 비교</a>
+    </nav>
+  </header>
+  <main>
+    <h1>diff 의 MOVE — 있을 때와 없을 때</h1>
+    <p class="lead">같은 목록을 두 방식으로 동시에 바꿉니다. 왼쪽은 key 로 같은 줄을 찾아 <b>DOM 노드를 옮기고(MOVE)</b>, 오른쪽은 key 없이 <b>같은 자리의 글자만 바꿔 씁니다</b>. 각 줄의 입력칸에 아무 글자나 적은 뒤 버튼을 눌러 보세요.</p>
+
+    <div class="card bar">
+      <div class="group">
+        <button data-op="lastToFirst" class="primary">맨 뒤 → 맨 앞</button>
+        <button data-op="firstToLast">맨 앞 → 맨 뒤</button>
+        <button data-op="swap">두 줄 바꾸기</button>
+        <button data-op="reverse">뒤집기</button>
+        <button data-op="shuffle">섞기</button>
+        <button data-op="prepend">맨 앞에 추가</button>
+        <button data-op="removeMid">가운데 삭제</button>
+      </div>
+      <span class="sep"></span>
+      <div class="group">
+        <label for="n">줄 수</label>
+        <input id="n" type="number" min="2" max="2000" value="8">
+        <button id="reset">처음 상태로</button>
+      </div>
+    </div>
+    <p class="hint">빨간 줄 = 입력칸 글자가 <b>다른 줄의 것</b>이 된 줄 (DOM 노드는 그대로인데 내용만 바뀜). 분홍 번쩍 = 옮겨진 줄, 노랑 번쩍 = 글자가 바뀐 줄.</p>
+
+    <div class="panes">
+      <section class="card pane a" id="paneA">
+        <div class="card-head"><h2>MOVE 있음 <span class="sub">key + LIS (우리 diff)</span></h2></div>
+        <div class="card-body">
+          <div class="stats"></div>
+          <div class="types"></div>
+          <div class="stage"></div>
+          <details class="log"><summary>패치 목록</summary><ol></ol></details>
+        </div>
+      </section>
+      <section class="card pane b" id="paneB">
+        <div class="card-head"><h2>MOVE 없음 <span class="sub">key 없이 순서대로 비교</span></h2></div>
+        <div class="card-body">
+          <div class="stats"></div>
+          <div class="types"></div>
+          <div class="stage"></div>
+          <details class="log"><summary>패치 목록</summary><ol></ol></details>
+        </div>
+      </section>
+    </div>
+
+    <section class="card compare">
+      <div class="card-head">방금 한 조작 비교 <span class="sub">MOVE 횟수는 같은 key 매칭에서 옮기는 방법만 바꿔 센 값</span></div>
+      <div class="card-body">
+        <div class="table-wrap"><table id="cmp"><tbody><tr><td>버튼을 눌러 보세요.</td></tr></tbody></table></div>
+        <p class="note"><b>앞에서부터 방식</b>: 새 순서대로 보면서, 옛 위치가 지금까지 본 최댓값보다 앞이면 옮깁니다 (React 의 재조정 방식). <b>LIS</b>: 이미 상대 순서가 맞는 가장 긴 줄들은 두고 나머지만 옮깁니다. 이동 횟수 = 줄 수 − LIS 길이이며, 이보다 적게 옮길 수는 없습니다.</p>
+      </div>
+    </section>
+  </main>
+  <script>
+    if (location.protocol === 'file:') document.querySelector('.lead').insertAdjacentHTML('afterend', '<p class="err">서버로 열어야 합니다: npm start 후 http://localhost:5200/move/</p>');
+  </script>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
