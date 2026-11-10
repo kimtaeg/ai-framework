@@ -1,0 +1,312 @@
+{
+  "when": "2026-11-10T12:50:29.505Z",
+  "node": "v24.20.0",
+  "timing": [
+    {
+      "n": 1000,
+      "op": "shuffle",
+      "common": 1.9,
+      "commonMoves": 942,
+      "ours": 1.63,
+      "oursMoves": 942,
+      "naive": 1.32,
+      "naiveMoves": 995
+    },
+    {
+      "n": 1000,
+      "op": "reverse",
+      "common": 1.42,
+      "commonMoves": 999,
+      "ours": 0.96,
+      "oursMoves": 999,
+      "naive": 1.08,
+      "naiveMoves": 999
+    },
+    {
+      "n": 2000,
+      "op": "shuffle",
+      "common": 8.31,
+      "commonMoves": 1910,
+      "ours": 3.22,
+      "oursMoves": 1910,
+      "naive": 2.92,
+      "naiveMoves": 1994
+    },
+    {
+      "n": 2000,
+      "op": "reverse",
+      "common": 10.37,
+      "commonMoves": 1999,
+      "ours": 2.43,
+      "oursMoves": 1999,
+      "naive": 2.51,
+      "naiveMoves": 1999
+    },
+    {
+      "n": 5000,
+      "op": "shuffle",
+      "common": 41.37,
+      "commonMoves": 4863,
+      "ours": 8.04,
+      "oursMoves": 4863,
+      "naive": 8.25,
+      "naiveMoves": 4994
+    },
+    {
+      "n": 5000,
+      "op": "reverse",
+      "common": 55.76,
+      "commonMoves": 4999,
+      "ours": 6.55,
+      "oursMoves": 4999,
+      "naive": 6.17,
+      "naiveMoves": 4999
+    },
+    {
+      "n": 10000,
+      "op": "shuffle",
+      "common": 151.16,
+      "commonMoves": 9810,
+      "ours": 19.99,
+      "oursMoves": 9810,
+      "naive": 18.62,
+      "naiveMoves": 9989
+    },
+    {
+      "n": 10000,
+      "op": "reverse",
+      "common": 210.64,
+      "commonMoves": 9999,
+      "ours": 11.7,
+      "oursMoves": 9999,
+      "naive": 11.91,
+      "naiveMoves": 9999
+    },
+    {
+      "n": 20000,
+      "op": "shuffle",
+      "common": 565.3,
+      "commonMoves": 19725,
+      "ours": 40.1,
+      "oursMoves": 19725,
+      "naive": 43.67,
+      "naiveMoves": 19993
+    },
+    {
+      "n": 20000,
+      "op": "reverse",
+      "common": 804.31,
+      "commonMoves": 19999,
+      "ours": 24.22,
+      "oursMoves": 19999,
+      "naive": 26.3,
+      "naiveMoves": 19999
+    },
+    {
+      "n": 50000,
+      "op": "shuffle",
+      "common": 3398.93,
+      "commonMoves": 49567,
+      "ours": 108.81,
+      "oursMoves": 49567,
+      "naive": 123.8,
+      "naiveMoves": 49993
+    },
+    {
+      "n": 50000,
+      "op": "reverse",
+      "common": 5042.14,
+      "commonMoves": 49999,
+      "ours": 61.66,
+      "oursMoves": 49999,
+      "naive": 75.13,
+      "naiveMoves": 49999
+    }
+  ],
+  "moves": [
+    {
+      "n": 10,
+      "lastNaive": 9,
+      "lastOurs": 1,
+      "lastOursDiff": 1
+    },
+    {
+      "n": 100,
+      "lastNaive": 99,
+      "lastOurs": 1,
+      "lastOursDiff": 1
+    },
+    {
+      "n": 1000,
+      "lastNaive": 999,
+      "lastOurs": 1,
+      "lastOursDiff": 1
+    },
+    {
+      "n": 10000,
+      "lastNaive": 9999,
+      "lastOurs": 1,
+      "lastOursDiff": 1
+    },
+    {
+      "n": 100000,
+      "lastNaive": 99999,
+      "lastOurs": 1
+    }
+  ],
+  "noLoss": {
+    "trials": 10000,
+    "equalMin": 10000,
+    "oursMoreThanNaive": 0,
+    "totalNaive": 751913,
+    "totalOurs": 395833,
+    "bins": [
+      {
+        "label": "우리가 더 많이 옮김",
+        "count": 0
+      },
+      {
+        "label": "같음 (0)",
+        "count": 3561
+      },
+      {
+        "label": "1 ~ 9번 적게",
+        "count": 978
+      },
+      {
+        "label": "10 ~ 49번 적게",
+        "count": 2874
+      },
+      {
+        "label": "50 ~ 99번 적게",
+        "count": 1438
+      },
+      {
+        "label": "100번 이상 적게",
+        "count": 1149
+      }
+    ]
+  },
+  "browser": {
+    "note": "move/ 페이지 코드로 Chrome 에서 잰 값 (2026-11-10). 한 줄 = 색 · 글자 2개 · 입력칸. diff + patch + 강제 레이아웃까지 ms, 9회 중앙값, 두 방식을 번갈아 먼저 실행. 브라우저 창이 가려진 상태라 페인트는 포함하지 않음.",
+    "rows": 1000,
+    "ops": [
+      {
+        "label": "맨 아래 → 맨 위",
+        "naive": 28.4,
+        "ours": 4.9
+      },
+      {
+        "label": "두 줄 바꾸기",
+        "naive": 29.6,
+        "ours": 4.9
+      },
+      {
+        "label": "아래 10% → 맨 위",
+        "naive": 42.6,
+        "ours": 10.6
+      },
+      {
+        "label": "섞기",
+        "naive": 35.3,
+        "ours": 31.9
+      },
+      {
+        "label": "뒤집기",
+        "naive": 36.6,
+        "ours": 35
+      }
+    ],
+    "all": {
+      "250": {
+        "lastToFirst": [
+          15.8,
+          2.9
+        ],
+        "tail10": [
+          6.6,
+          2.2
+        ],
+        "swap": [
+          7.4,
+          1.6
+        ],
+        "shuffle": [
+          8,
+          6.9
+        ],
+        "reverse": [
+          6.6,
+          8.6
+        ]
+      },
+      "500": {
+        "lastToFirst": [
+          16.6,
+          2.5
+        ],
+        "tail10": [
+          14.5,
+          4.9
+        ],
+        "swap": [
+          16.3,
+          2.6
+        ],
+        "shuffle": [
+          14.4,
+          14.3
+        ],
+        "reverse": [
+          13.7,
+          15.4
+        ]
+      },
+      "1000": {
+        "lastToFirst": [
+          28.4,
+          4.9
+        ],
+        "tail10": [
+          42.6,
+          10.6
+        ],
+        "swap": [
+          29.6,
+          4.9
+        ],
+        "shuffle": [
+          35.3,
+          31.9
+        ],
+        "reverse": [
+          36.6,
+          35
+        ]
+      },
+      "2000": {
+        "lastToFirst": [
+          65.8,
+          18.4
+        ],
+        "tail10": [
+          59.1,
+          19
+        ],
+        "swap": [
+          93.2,
+          11.3
+        ],
+        "shuffle": [
+          74.8,
+          85.2
+        ],
+        "reverse": [
+          70.9,
+          66.1
+        ]
+      }
+    },
+    "allNote": "all 의 값은 [앞에서부터, 우리 LIS] (ms)"
+  }
+}
