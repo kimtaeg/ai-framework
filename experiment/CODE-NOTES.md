@@ -1,6 +1,6 @@
 # 코드 이해 노트 — QnA 대비
 
-> 실험 코드는 AI 와 함께 작성했습니다. 아래 일곱 가지는 "이 코드가 하는 일 → 핵심 줄 → 왜 이렇게 했는지" 순서로, 발표자가 직접 설명할 수 있어야 하는 부분입니다.
+> 실험 코드는 AI 와 함께 작성했습니다. 아래 여덟 가지는 "이 코드가 하는 일 → 핵심 줄 → 왜 이렇게 했는지" 순서로, 발표자가 직접 설명할 수 있어야 하는 부분입니다.
 
 ---
 
@@ -128,3 +128,44 @@ const raw = decodeRow(line);   // 맞는 줄만
 **왜 결과가 같나:** 따옴표가 없는 줄은 해석 중에 오류가 날 수 없어서 일부만 봐도 됩니다. 따옴표가 있는 줄은 예전처럼 처음부터 전체를 해석합니다 (형식 오류를 놓치지 않게). 그리고 이전 코드와 새 코드에 무작위 줄 25만 개 · 무작위 SELECT 8,000개를 넣어 **결과와 에러가 완전히 같은지** 대조했습니다.
 
 **결과:** 전체 읽기 82ms → 27ms (3배), DB 처리량 22.8 → 68.8 req/s. 처리량 공식 $X_{db} \div (1 - h)$ 는 DB 가 빨라진 뒤에도 그대로 맞았습니다.
+
+---
+
+## 8. 확장 실험 세 가지 — 통신 방식 · 네트워크 지연 · 요청당 CPU
+
+### 8-1. 미니 레디스 RESP/TCP 모드 (`experiment/resp.js` 의 `startRespServer` · `experiment/miniredis-server.js`)
+
+**하는 일:** 미니 레디스 프로세스 하나가 포트 두 개로 말합니다. `:6380` 은 원래의 HTTP + JSON, `:6381` 은 실제 Redis 와 같은 RESP. **두 포트가 같은 저장소(같은 해시 테이블)를 씁니다.** 그래서 `mini` 와 `miniresp` 의 차이는 오직 "말하는 방식" 입니다.
+
+```js
+const handler = (args) => s.redis.command(args);          // 저장소 코드는 한 줄도 안 바꿈
+await startRespServer({ handler, port: 6381 });
+// 서버: 한 번에 도착한 명령들(파이프라이닝)을 순서대로 실행하고, 응답을 모아 한 번에 쓴다
+for (;;) { const r = parseRequest(buf, off); if (!r) break; out += encodeReply(handler(r.args), name); }
+sock.write(out);
+```
+
+**왜:** "미니 레디스가 Redis 보다 느린 건 저장소 때문인가, HTTP + JSON 때문인가?" 를 가르려면 저장소는 그대로 두고 통신만 바꿔야 합니다. `+OK` 같은 상태 응답과 `$2\r\nOK` 같은 값 응답을 구분하는 것까지 Redis 와 같게 했고, 무작위 명령을 RESP 서버를 거쳐 실행한 결과와 저장소에 직접 실행한 결과가 같은지(조각난 바이트 · 잘못된 요청 포함) 테스트로 대조합니다.
+
+### 8-2. 네트워크 지연 주입 (`experiment/netem.js`)
+
+**하는 일:** 리눅스 `tc netem` 으로 **앱 컨테이너에서 캐시 컨테이너로 나가는 패킷만** 1ms(± 0.2ms) 늦춥니다.
+
+```sh
+tc qdisc add dev eth0 root handle 1: prio bands 3 priomap 2 2 2 …   # 기본은 지연 없는 칸
+tc qdisc add dev eth0 parent 1:1 handle 10: netem delay 1000us 200us distribution normal
+tc qdisc add dev eth0 parent 10:1 pfifo limit 10000                  # 지터가 있어도 패킷 순서 유지
+tc filter add dev eth0 parent 1: protocol ip u32 match ip dst <캐시 IP>/32 flowid 1:1
+```
+
+**왜 이렇게:**
+- **나가는 쪽에만** 걸면 요청 하나가 그 구간을 한 번 지나므로 왕복이 정확히 +1ms 입니다 (측정: Redis PING 0.06ms → 1.2ms).
+- **목적지 필터**로 k6 → 앱 구간은 건드리지 않습니다. 그래서 "캐시 없음" 은 지연 조건에서도 같아야 하고, 이게 대조군 역할을 합니다.
+- 지터가 있으면 netem 이 패킷 순서를 바꿔 TCP 재전송이 생길 수 있어서, 안쪽 큐를 `pfifo` 로 바꿨습니다 (netem 공식 문서의 방법).
+- **한계:** 미니 DBMS 는 앱 서버 안(워커 스레드)에 있어서 DB 구간에는 네트워크가 없습니다. 즉 지연이 캐시에만 붙는, **캐시에 가장 불리한 경우**입니다. 실제 클라우드에서는 DB 도 원격이라 MISS 가 더 비쌉니다.
+
+### 8-3. 요청당 CPU 측정 (`experiment/k6/cache.js` 의 `cpuMark` · `experiment/app.js` 의 `/admin/cpu`)
+
+**하는 일:** k6 가 측정 시작 순간과 끝 순간에 `/admin/cpu` 를 한 번씩 부릅니다. 앱 서버는 자기 프로세스의 누적 CPU 시간(`process.cpuUsage()`, 워커 스레드 포함), 미니 레디스의 누적 CPU(RESP 실험용 명령 `XCPU`), Redis 의 누적 CPU(`INFO cpu`)를 돌려줍니다. 두 값의 차이 ÷ 그 구간의 요청 수 = **요청 하나당 CPU 시간(ms)** 입니다.
+
+**왜:** 처리량만 보면 "느리다" 는 것만 알지 어디서 느린지 모릅니다. 요청당 CPU 를 부르는 쪽(앱 서버)과 응답하는 쪽(캐시 서버)으로 나누면, HTTP + JSON 비용이 어느 쪽에서 드는지 숫자로 보입니다. 워밍업 · 캐시 데우기 구간은 빠지도록 측정 구간의 시작 · 끝에서만 잽니다.
