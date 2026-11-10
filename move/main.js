@@ -18,13 +18,29 @@ let last = null; // 방금 한 조작의 결과 (비교 표)
 
 // ---------------------------------------------------------------- 목록 VNode
 const color = (id) => `hsl(${(id * 47) % 360} 65% 55%)`;
-const row = (it, keyed) =>
-  h('li', keyed ? { key: it.id } : null,
-    h('span', { class: 'sw', style: { background: color(it.id) } }),
-    h('span', { class: 'id' }, `#${it.id}`),
-    h('span', { class: 'label' }, it.label),
-    h('input', { placeholder: '메모' }),
-    h('span', { class: 'tag' }));
+// 줄 무게: light = 글자 2개 · 색 1개 / heavy = + 작은 요소 24개 / image = heavy + 이미지 1장
+const weightSel = $('#weight');
+const imgCache = new Map();
+function imgFor(id) {
+  if (imgCache.has(id)) return imgCache.get(id);
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = color(id); g.fillRect(0, 0, 64, 64);
+  g.fillStyle = '#fff'; g.font = 'bold 22px sans-serif'; g.textAlign = 'center'; g.fillText(String(id), 32, 40);
+  const url = c.toDataURL('image/png');
+  imgCache.set(id, url);
+  return url;
+}
+const row = (it, keyed) => {
+  const w = weightSel.value;
+  const kids = [h('span', { class: 'sw', style: { background: color(it.id) } })];
+  if (w === 'image') kids.push(h('img', { class: 'pic', src: imgFor(it.id), width: 24, height: 24, alt: '' }));
+  kids.push(h('span', { class: 'id' }, `#${it.id}`), h('span', { class: 'label' }, it.label));
+  if (w !== 'light') kids.push(h('span', { class: 'extra' }, ...Array.from({ length: 12 }, (_, j) => h('b', { title: `${it.id}-${j}` }, String((it.id * 7 + j) % 10)))));
+  kids.push(h('input', { placeholder: '메모' }), h('span', { class: 'tag' }));
+  return h('li', keyed ? { key: it.id } : null, ...kids);
+};
 const listV = (list, keyed) => h('ul', null, list.map((it) => row(it, keyed)));
 
 // ---------------------------------------------------------------- 두 패널
@@ -98,27 +114,38 @@ function update(p, nextItems) {
   const records = p.observer.takeRecords();
   p.prev = next;
 
-  items = nextItems; // mark 가 새 순서를 쓰도록 (두 패널 모두 같은 nextItems)
-  for (const li of fresh) {
-    p.born.set(li, nextItems[[...p.root.children].indexOf(li)].id);
-    $('input', li).value = '';
-  }
-  const ok = mark(p, fresh);
-  touched.forEach((cls, li) => flash(li, cls));
-
   const types = {};
   for (const x of patches) types[x.type] = (types[x.type] || 0) + 1;
-  const res = { ms, parts, patches: patches.length, types, dom: records.length, ok, rows: nextItems.length, list: patches };
-  render(p, res);
+  const res = { t0, ms, parts, patches: patches.length, types, dom: records.length, ok: 0, rows: nextItems.length, list: patches };
+  // 표시(빨간 줄 · 번쩍임)는 화면 반영 시간을 잰 뒤에 한다 — 측정에 섞이지 않게
+  res.finish = () => {
+    items = nextItems; // mark 가 새 순서를 쓰도록 (두 패널 모두 같은 nextItems)
+    for (const li of fresh) {
+      p.born.set(li, nextItems[[...p.root.children].indexOf(li)].id);
+      $('input', li).value = '';
+    }
+    res.ok = mark(p, fresh);
+    touched.forEach((cls, li) => flash(li, cls));
+    render(p, res);
+  };
   return res;
 }
+
+/**
+ * 브라우저가 다음 화면을 그릴 때까지 기다린다 (스타일 · 레이아웃 · 페인트 포함) → true.
+ * 탭이 가려져 있으면 화면을 그리지 않아 requestAnimationFrame 이 멈추므로 0.3초 뒤 false (그때는 강제 레이아웃까지 잰 값으로 대신한다).
+ */
+const nextPaint = () => new Promise((r) => {
+  const done = setTimeout(() => r(false), 300);
+  requestAnimationFrame(() => setTimeout(() => { clearTimeout(done); r(true); }, 0));
+});
 
 // ---------------------------------------------------------------- 표시
 function render(p, r) {
   const ratio = r.rows ? r.ok / r.rows : 1;
   $('.stats', p.el).innerHTML = [
     ['', (r.parts ? r.parts.diff + r.parts.patch : 0).toFixed(1), 'diff + patch (ms)'],
-    ['', r.patches, '패치 수'],
+    ['', r.frame != null ? r.frame.toFixed(1) : '—', r.painted === false ? '레이아웃까지 (ms) · 탭 가려짐' : '화면 반영까지 (ms)'],
     ['', r.dom, '실제 DOM 조작'],
     [ratio === 1 ? 'good' : 'bad', `${r.ok}/${r.rows}`, '입력칸 제자리'],
   ].map(([c, v, l]) => `<div class="stat ${c}"><b>${v}</b><span>${l}</span></div>`).join('');
@@ -165,9 +192,10 @@ function renderCompare(name, a, b, lp) {
   rows.push(`<tr><td>패치 수</td>${cell(a.patches, x)}${cell('—')}${cell(b.patches, y)}</tr>`);
   [x, y] = win(a.dom, b.dom);
   rows.push(`<tr><td>실제 DOM 조작 (MutationObserver)</td>${cell(a.dom, x)}${cell('—')}${cell(b.dom, y)}</tr>`);
-  for (const [k, label] of [['diff', 'diff 계산 (ms)'], ['patch', 'patch 적용 = DOM 조작 (ms)'], ['layout', '브라우저 레이아웃 (ms, 참고)']]) {
-    [x, y] = win(+a.parts[k].toFixed(1), +b.parts[k].toFixed(1));
-    rows.push(`<tr><td>${label}</td>${cell(a.parts[k].toFixed(1), x)}${cell('—')}${cell(b.parts[k].toFixed(1), y)}</tr>`);
+  for (const [k, label] of [['diff', 'diff 계산 (ms)'], ['patch', 'patch 적용 = DOM 조작 (ms)'], ['frame', '화면 반영까지 (ms, 스타일·레이아웃·페인트 포함)']]) {
+    const va = k === 'frame' ? a.frame : a.parts[k], vb = k === 'frame' ? b.frame : b.parts[k];
+    [x, y] = win(+va.toFixed(1), +vb.toFixed(1));
+    rows.push(`<tr><td>${label}</td>${cell(va.toFixed(1), x)}${cell('—')}${cell(vb.toFixed(1), y)}</tr>`);
   }
   [x, y] = win(a.ok, b.ok, false);
   rows.push(`<tr><td>입력칸 글자가 제자리인 줄</td>${cell(`${a.ok}/${a.rows}`, x)}${cell('같음 (key 매칭)')}${cell(`${b.ok}/${b.rows}`, y)}</tr>`);
@@ -194,15 +222,39 @@ const OPS = {
   removeMid: ['가운데 삭제', (a) => (a.length ? a.filter((_, i) => i !== a.length >> 1) : a)],
 };
 
-function run(op) {
-  const [name, fn] = OPS[op];
-  const before = items;
-  const nextItems = fn(before);
-  const [a, b] = panes.map((p) => update(p, nextItems));
-  const lp = lastPlacedMoves(before, nextItems);
-  last = { op: name, a, b, lp };
-  window.__move = last;
-  renderCompare(name, a, b, lp);
+let busy = false;
+let flip = false;
+async function run(op) {
+  if (busy) return;
+  busy = true;
+  document.body.classList.add('busy');
+  try {
+    const [name, fn] = OPS[op];
+    const before = items;
+    const nextItems = fn(before);
+    // 두 패널을 서로 다른 프레임에서 바꿔 화면 반영 시간을 따로 잰다. 먼저 하는 쪽이 유리하지 않게 순서를 번갈아 바꾼다.
+    flip = !flip;
+    const order = flip ? [0, 1] : [1, 0];
+    const res = [];
+    await nextPaint();
+    for (const k of order) {
+      const r = update(panes[k], nextItems);
+      const painted = await nextPaint();
+      r.frame = painted ? performance.now() - r.t0 : r.ms;
+      r.painted = painted;
+      res[k] = r;
+      await nextPaint();
+    }
+    res.forEach((r) => r.finish());
+    const [a, b] = res;
+    const lp = lastPlacedMoves(before, nextItems);
+    last = { op: name, a, b, lp };
+    window.__move = last;
+    renderCompare(name, a, b, lp);
+  } finally {
+    busy = false;
+    document.body.classList.remove('busy');
+  }
 }
 
 function reset() {
@@ -211,7 +263,7 @@ function reset() {
   nextId = n;
   items = Array.from({ length: n }, (_, i) => ({ id: i, label: `항목 ${i}` }));
   panes.forEach(mountPane);
-  const empty = { ms: 0, parts: { diff: 0, patch: 0, layout: 0 }, patches: 0, types: {}, dom: 0, ok: n, rows: n, list: [] };
+  const empty = { ms: 0, frame: null, parts: { diff: 0, patch: 0, layout: 0 }, patches: 0, types: {}, dom: 0, ok: n, rows: n, list: [] };
   panes.forEach((p) => render(p, empty));
   $('#cmp').innerHTML = '<tbody><tr><td>버튼을 눌러 보세요. 입력칸에 글자를 적어 두면 차이가 더 잘 보입니다.</td></tr></tbody>';
 }
@@ -219,4 +271,5 @@ function reset() {
 document.querySelectorAll('[data-op]').forEach((btn) => btn.addEventListener('click', () => run(btn.dataset.op)));
 $('#reset').addEventListener('click', reset);
 nInput.addEventListener('change', reset);
+weightSel.addEventListener('change', reset);
 reset();

@@ -267,6 +267,32 @@ describe('diff — 긴 목록의 이동 계산 (O(n log n) 배치)', () => {
     }
   });
 
+  test('빠른 길 (같은 길이, 몇 자리만 바뀜) 무작위 300번: DOM 결과 · 노드 재사용 · 최소 MOVE', () => {
+    for (let t = 0; t < 300; t++) {
+      const n = 1 + Math.floor(rand() * 80);
+      const oldKeys = Array.from({ length: n }, (_, i) => i);
+      const newKeys = oldKeys.slice();
+      for (let s = Math.floor(rand() * 4); s > 0; s--) { const i = Math.floor(rand() * n), j = Math.floor(rand() * n); [newKeys[i], newKeys[j]] = [newKeys[j], newKeys[i]]; }
+      const host = document.createElement('div');
+      const root = createElement(keyedUl(oldKeys));
+      host.appendChild(root);
+      const byKey = new Map([...root.childNodes].map((el, i) => [oldKeys[i], el]));
+      const patches = diff(keyedUl(oldKeys), keyedUl(newKeys));
+      applyPatches(root, patches);
+      assert.equal(root.outerHTML, createElement(keyedUl(newKeys)).outerHTML);
+      newKeys.forEach((k, i) => assert.equal(root.childNodes[i], byKey.get(k)));
+      const seq = oldKeys.map((k) => newKeys.indexOf(k));
+      assert.equal(patches.filter((p) => p.type === PatchType.MOVE).length, n - longestIncreasingSubsequence(seq).length);
+    }
+  });
+
+  test('두 줄 바꾸기는 MOVE 2번, 바뀐 게 없으면 패치 0개', () => {
+    const keys = Array.from({ length: 1000 }, (_, i) => i);
+    const sw = keys.slice(); [sw[1], sw[998]] = [sw[998], sw[1]];
+    assert.deepEqual(types(diff(keyedUl(keys), keyedUl(sw))), [PatchType.MOVE, PatchType.MOVE]);
+    assert.equal(diff(keyedUl(keys), keyedUl(keys)).length, 0);
+  });
+
   test('2만 줄 뒤집기도 빠르게 끝난다 (예전 indexOf·splice 방식은 약 0.8초)', () => {
     const keys = Array.from({ length: 20000 }, (_, i) => i);
     const t0 = performance.now();

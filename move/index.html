@@ -43,6 +43,10 @@
     .stage .id { font-family: var(--mono); width: 34px; color: var(--muted); }
     .stage .label { flex: 1; min-width: 0; }
     .stage input { width: 110px; font-size: 12px; padding: 3px 6px; }
+    .stage .pic { width: 24px; height: 24px; border-radius: 4px; flex: none; }
+    .stage .extra { display: flex; gap: 2px; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+    .stage .extra b { font-weight: 400; padding: 0 3px; border: 1px solid var(--border); border-radius: 3px; }
+    body.busy [data-op] { opacity: .5; pointer-events: none; }
     .stage .tag { font-size: 11px; font-weight: 600; width: 64px; text-align: right; }
     .stage li.wrong { background: color-mix(in srgb, var(--danger) 14%, transparent); }
     .stage li.wrong .tag { color: var(--danger); }
@@ -94,10 +98,16 @@
       <div class="group">
         <label for="n">줄 수</label>
         <input id="n" type="number" min="2" max="2000" value="8">
+        <label for="weight">줄 무게</label>
+        <select id="weight">
+          <option value="light">가벼움 (글자 2 · 색 1)</option>
+          <option value="heavy">무거움 (+ 작은 요소 12개)</option>
+          <option value="image">이미지 (+ 요소 12개 + 그림 1장)</option>
+        </select>
         <button id="reset">처음 상태로</button>
       </div>
     </div>
-    <p class="hint">빨간 줄 = 입력칸 글자가 <b>다른 줄의 것</b>이 된 줄 (DOM 노드는 그대로인데 내용만 바뀜). 분홍 번쩍 = 옮겨진 줄, 노랑 번쩍 = 글자가 바뀐 줄.</p>
+    <p class="hint">두 패널은 서로 다른 프레임에서 바꾸고 순서도 번갈아 바꿔, "화면 반영까지" 시간을 따로 잽니다. 빨간 줄 = 입력칸 글자가 <b>다른 줄의 것</b>이 된 줄 (DOM 노드는 그대로인데 내용만 바뀜). 분홍 번쩍 = 옮겨진 줄, 노랑 번쩍 = 글자가 바뀐 줄.</p>
 
     <div class="panes">
       <section class="card pane a" id="paneA">

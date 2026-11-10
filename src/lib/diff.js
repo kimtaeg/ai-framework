@@ -103,6 +103,10 @@ export function diffChildren(oldCh, newCh, parentPath, patches) {
     return;
   }
 
+  // ---- 빠른 길 2: 개수가 같고 거의 모든 줄이 같은 자리에 같은 key → 어긋난 몇 자리만 처리 ----
+  // (두 줄 바꾸기, 바뀐 게 없는 다시 그리기 같은 흔한 경우. Map · Set · 좌표 계산 없이 끝낸다)
+  if (oldCh.length === newCh.length && diffMostlyInPlace(oldCh, newCh, parentPath, patches)) return;
+
   // ---- 1. 매칭 ----
   const keyed = new Map();
   const unkeyed = [];
@@ -173,6 +177,58 @@ export function longestIncreasingSubsequence(arr) {
   const result = [];
   for (let k = tails[tails.length - 1]; k !== -1; k = prev[k]) result.push(k);
   return result.reverse();
+}
+
+/**
+ * 빠른 길 2 — 개수가 같고, key 가 다른 자리가 MAX_MISPLACED 개 이하이며, 그 자리들끼리 key 만 서로 바뀐 경우.
+ *  같은 자리에 같은 key 가 있는 줄은 key 로 찾아도 그 자리의 노드와 짝이 되므로, 어긋난 몇 자리만 짝을 찾으면 된다.
+ *  LIS 는 일반 과정과 같은 수열로 구하므로 MOVE 패치도 일반 과정과 똑같다 (중복 key 가 없을 때).
+ *  하나라도 조건이 안 맞으면 false 를 돌려주고 일반 과정으로 간다.
+ *  비용: key 비교 n 번 + LIS(n log n) + 옮기는 줄 수 × n.  (예전 일반 과정은 Map · Set · 배열을 n 크기로 여러 개 만들었다)
+ */
+const MAX_MISPLACED = 8;
+function diffMostlyInPlace(oldCh, newCh, parentPath, patches) {
+  const n = oldCh.length;
+  const mis = [];
+  for (let i = 0; i < n; i++) {
+    const a = oldCh[i].key ?? null;
+    const b = newCh[i].key ?? null;
+    if (a === b) continue;
+    if (a === null || b === null || mis.length === MAX_MISPLACED) return false;
+    mis.push(i);
+  }
+  const k = mis.length;
+  const matchOf = newCh.length ? oldCh.slice() : []; // 새 인덱스 i 와 짝이 되는 old 노드 (어긋나지 않은 자리는 그대로)
+  if (k > 0) {
+    // 어긋난 자리끼리 key 가 1:1 로 짝지어지는가
+    const taken = new Uint8Array(k);
+    const seq = new Array(n);
+    for (let i = 0; i < n; i++) seq[i] = i;
+    for (let x = 0; x < k; x++) {
+      const key = oldCh[mis[x]].key;
+      let found = -1;
+      for (let y = 0; y < k; y++) if (newCh[mis[y]].key === key) { found = y; break; }
+      if (found === -1 || taken[found]) return false;
+      taken[found] = 1;
+      seq[mis[x]] = mis[found];
+      matchOf[mis[found]] = oldCh[mis[x]];
+    }
+    // 이동: 일반 과정과 같은 규칙 (뒤에서부터, LIS 가 아닌 노드를 오른쪽 이웃 앞으로). 옮기는 줄은 많아야 k 개.
+    const stable = new Uint8Array(n);
+    for (const p of longestIncreasingSubsequence(seq)) stable[seq[p]] = 1; // 새 인덱스 기준
+    const live = oldCh.slice();
+    for (let i = n - 1; i >= 0; i--) {
+      if (stable[i]) continue;
+      const m = matchOf[i];
+      const from = live.indexOf(m);
+      live.splice(from, 1);
+      const to = i + 1 < n ? live.indexOf(matchOf[i + 1]) : live.length;
+      live.splice(to, 0, m);
+      if (from !== to) patches.push({ type: PatchType.MOVE, path: parentPath, from, to, key: m.key });
+    }
+  }
+  for (let i = 0; i < n; i++) diff(matchOf[i], newCh[i], parentPath.concat(i), patches);
+  return true;
 }
 
 /**
