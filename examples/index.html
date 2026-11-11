@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>miniReact 예제 모음</title>
+  <link rel="stylesheet" href="../styles/base.css" />
+  <link rel="stylesheet" href="./examples.css" />
+  <!-- chat:css --><link rel="stylesheet" href="../tools/chat.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">mini<span>React</span></a>
+    <nav>
+      <a href="../index.html">홈</a>
+      <a href="../guide/index.html">학습 가이드</a>
+      <a href="../phase1/index.html">Phase 1 · Diff</a>
+      <a href="../phase2/index.html">Phase 2 · Hooks</a>
+      <a href="./index.html" aria-current="page">예제</a>
+      <a href="../sandbox/index.html">샌드박스</a>
+      <a href="../walkthrough/index.html">코드 해설</a>
+      <a href="../theory/index.html">React 이론</a>
+      <a href="../deepdive/index.html">개념 더 파고들기</a>
+      <a href="../cheatsheet/index.html">한 장 요약</a>
+      <a href="../docs/index.html">설명서</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>miniReact 예제 모음</h1>
+    <p class="lead">직접 만든 miniReact 로 만든 작은 앱 5개입니다. 각 앱은 독립된 루트 컴포넌트이고, 아래 막대에 <b>렌더 횟수 · 이번 패치 종류 · 실제 DOM 변경 수</b>가 실시간으로 표시됩니다.</p>
+
+    <nav class="jump">
+      <a href="#ex-cart">🛒 장바구니</a>
+      <a href="#ex-form">📝 회원가입 폼</a>
+      <a href="#ex-kanban">📋 칸반 보드</a>
+      <a href="#ex-list">📊 1,000행 리스트</a>
+      <a href="#ex-stopwatch">⏱ 스톱워치</a>
+      <a href="#ex-effect">⏳ Effect 타이밍</a>
+      <a href="#ex-context">🎨 Context</a>
+    </nav>
+
+    <div class="lab-intro card">
+      <div>
+        <b>🧪 실험실</b>
+        <p>각 예제 위의 <b>망가뜨리기</b> 버튼을 누르면 그 앱만 "잘못 짠 코드"로 다시 마운트됩니다. 같은 버튼을 한 번 더 누르면 복구돼요. 코드를 직접 고칠 필요가 없습니다.</p>
+        <p class="muted">추천 순서: 정상 상태에서 한 번 해보기 → 망가뜨리기 → 같은 동작을 다시 해보고 아래 막대 비교 → "왜 그럴까?" 열어보기 → 복구</p>
+      </div>
+      <div class="lab-intro-side">
+        <span id="lab-count" class="lab-count">모두 정상</span>
+        <button type="button" id="lab-reset-all">↩ 모두 복구</button>
+      </div>
+    </div>
+
+    <section class="ex card" id="ex-cart">
+      <div class="ex-head">
+        <h2>🛒 장바구니</h2>
+        <div class="tags"><span>useState</span><span>useMemo</span><span>TEXT 패치</span><span>조건부 렌더링</span></div>
+      </div>
+      <div class="lab" id="lab-cart"></div>
+      <div class="ex-body">
+        <div class="ex-app" id="app-cart"></div>
+        <aside class="ex-guide">
+          <b>이 예제에서 볼 것</b>
+          <ul>
+            <li>수량을 바꾸면 <b>숫자 텍스트만</b> 바뀝니다 (TEXT). 행 전체를 다시 그리지 않아요.</li>
+            <li>합계·할인·배송비는 state 가 아니라 <code>useMemo</code> 로 계산한 값입니다. 같은 정보를 두 번 저장하지 않기.</li>
+            <li>쿠폰 <code>JUNGLE10</code> 을 넣으면 할인 줄이 새로 생깁니다 (INSERT).</li>
+          </ul>
+          <b>해보기</b>
+          <ul><li>상품을 모두 삭제 → 목록이 "비었습니다" 문구로 교체(REPLACE)</li></ul>
+        </aside>
+      </div>
+      <div class="ex-stat" id="stat-cart"></div>
+    </section>
+
+    <section class="ex card" id="ex-form">
+      <div class="ex-head">
+        <h2>📝 회원가입 폼 검증</h2>
+        <div class="tags"><span>제어 컴포넌트</span><span>useMemo</span><span>PROPS 패치</span><span>style 객체</span></div>
+      </div>
+      <div class="lab" id="lab-form"></div>
+      <div class="ex-body">
+        <div class="ex-app" id="app-form"></div>
+        <aside class="ex-guide">
+          <b>이 예제에서 볼 것</b>
+          <ul>
+            <li>모든 입력값이 state 에 있는 <b>제어 컴포넌트</b>입니다. 타이핑해도 입력창 노드는 그대로라 포커스가 유지돼요.</li>
+            <li>검증 결과는 <code>useMemo(() =&gt; validate(values), [values])</code> 로 계산합니다.</li>
+            <li>칸을 벗어나면(blur) 빨강/초록 테두리가 <b>class 속성만</b> 바뀌어 표시됩니다 (PROPS).</li>
+            <li>비밀번호 강도 막대는 <code>style.width</code> 만 바뀝니다.</li>
+          </ul>
+          <b>해보기</b>
+          <ul><li>다 채우고 가입하기 → 폼 전체가 환영 화면으로 교체(REPLACE)</li></ul>
+        </aside>
+      </div>
+      <div class="ex-stat" id="stat-form"></div>
+    </section>
+
+    <section class="ex card" id="ex-kanban">
+      <div class="ex-head">
+        <h2>📋 칸반 보드</h2>
+        <div class="tags"><span>useReducer</span><span>key</span><span>MOVE 패치</span><span>REMOVE + INSERT</span></div>
+      </div>
+      <div class="lab" id="lab-kanban"></div>
+      <div class="ex-body">
+        <div class="ex-app" id="app-kanban"></div>
+        <aside class="ex-guide">
+          <b>이 예제에서 볼 것</b>
+          <ul>
+            <li>▲▼ 로 <b>같은 열 안에서</b> 옮기면 key 덕분에 카드 노드를 그대로 옮깁니다 (MOVE).</li>
+            <li>◀▶ 로 <b>다른 열로</b> 옮기면 REMOVE + INSERT 가 됩니다. Diff 는 같은 부모 안에서만 비교하기 때문이에요.</li>
+            <li>상태 변경 규칙은 <code>kanbanReducer</code> 한 곳에 모여 있고, 자식은 <code>dispatch({ type })</code> 만 호출합니다.</li>
+          </ul>
+          <b>해보기</b>
+          <ul><li>한 열의 카드를 모두 옮기기 → 목록이 "비어 있음"으로 교체</li></ul>
+        </aside>
+      </div>
+      <div class="ex-stat" id="stat-kanban"></div>
+    </section>
+
+    <section class="ex card" id="ex-list">
+      <div class="ex-head">
+        <h2>📊 1,000행 리스트</h2>
+        <div class="tags"><span>성능</span><span>useMemo</span><span>useRef</span><span>대량 key 리스트</span></div>
+      </div>
+      <div class="lab" id="lab-list"></div>
+      <div class="ex-body">
+        <div class="ex-app" id="app-list"></div>
+        <aside class="ex-guide">
+          <b>이 예제에서 볼 것</b>
+          <ul>
+            <li>노드가 약 9,000개인 표에서 <b>"한 명 점수 +1"</b>을 누르면 DOM 변경은 단 몇 건입니다. 전체를 다시 그리지 않는다는 증거예요.</li>
+            <li>"점수 높은 순"으로 정렬한 상태에서 점수를 올리면 그 행이 위로 올라갑니다 (MOVE).</li>
+            <li>검색하면 맞지 않는 행이 REMOVE 되고, 지우면 다시 INSERT 됩니다.</li>
+            <li>렌더 + diff + patch 에 걸린 시간(ms)도 확인해 보세요.</li>
+            <li><b>관계없는 리렌더</b>: 화면에 안 쓰는 state 만 바꿔서 렌더링만 다시 일으킵니다. "필터·정렬 계산" 횟수가 그대로인 건 useMemo 덕분입니다.</li>
+          </ul>
+          <div class="cmp" id="cmp-list">
+            <b>⚖️ Virtual DOM vs 전체 다시 그리기</b>
+            <p class="muted">"한 명 점수 +1" 과 같은 변경을 두 방식으로 각각 5번씩 해서 비교합니다. 시간에는 브라우저 레이아웃 계산까지 포함됩니다.</p>
+            <button type="button" class="primary small" id="cmp-run">비교 실행</button>
+            <div class="cmp-out" id="cmp-out"></div>
+          </div>
+        </aside>
+      </div>
+      <div class="ex-stat" id="stat-list"></div>
+    </section>
+
+    <section class="ex card" id="ex-stopwatch">
+      <div class="ex-head">
+        <h2>⏱ 스톱워치</h2>
+        <div class="tags"><span>useEffect</span><span>cleanup</span><span>useRef</span><span>INSERT</span></div>
+      </div>
+      <div class="lab" id="lab-stopwatch"></div>
+      <div class="ex-body">
+        <div class="ex-app" id="app-stopwatch"></div>
+        <aside class="ex-guide">
+          <b>이 예제에서 볼 것</b>
+          <ul>
+            <li><code>useEffect(…, [running])</code>: 시작하면 interval 을 등록하고, 정지하면 <b>cleanup</b> 에서 <code>clearInterval</code> 합니다.</li>
+            <li>누적 시간은 화면과 무관한 값이라 <code>useRef</code> 에 둡니다. 바꿔도 리렌더링되지 않아요.</li>
+            <li>초당 30번 넘게 렌더링되지만 매번 <b>시간 텍스트 하나만</b> 바뀝니다 (TEXT 1).</li>
+            <li>랩을 누르면 맨 위에 새 행이 추가됩니다. 기존 행은 key 로 재사용 (INSERT 1).</li>
+          </ul>
+        </aside>
+      </div>
+      <div class="ex-stat" id="stat-stopwatch"></div>
+    </section>
+    <section class="ex card" id="ex-effect">
+      <div class="ex-head">
+        <h2>⏳ Effect 타이밍</h2>
+        <div class="tags"><span>useEffect</span><span>useLayoutEffect</span><span>브라우저 그리기</span></div>
+      </div>
+      <div class="ex-body">
+        <div class="ex-app" id="app-effect"></div>
+        <aside class="ex-guide">
+          <b>이 예제에서 볼 것</b>
+          <ul>
+            <li><b>데모 1</b>: useLayoutEffect 는 DOM 반영 직후 <b>그리기 전</b>, useEffect 는 화면을 <b>그린 뒤</b>에 실행됩니다. 기록된 ①②③ 순서를 확인하세요.</li>
+            <li><b>데모 2</b>: 툴팁 위치를 재서 옮기는 코드입니다. <b>useEffect</b> 로 하면 잘못된 자리에 있는 툴팁이 잠깐 <b>보였다가</b> 옮겨집니다 (깜빡임).</li>
+            <li><b>useLayoutEffect</b> 로 바꾸면 위치를 다 잡은 뒤에야 그리므로 잘못된 자리가 <b>보이지 않습니다</b>. 대신 측정하는 동안 화면이 잠깐 멈춥니다.</li>
+          </ul>
+          <b>결론</b>
+          <ul><li>대부분은 useEffect. 사용자에게 중간 상태가 보이면 안 될 때만 useLayoutEffect.</li></ul>
+        </aside>
+      </div>
+      <div class="ex-stat" id="stat-effect"></div>
+    </section>
+
+    <section class="ex card" id="ex-context">
+      <div class="ex-head">
+        <h2>🎨 Context vs Props Drilling</h2>
+        <div class="tags"><span>createContext</span><span>useContext</span><span>Props Drilling</span></div>
+      </div>
+      <div class="ex-body">
+        <div class="ex-app" id="app-context"></div>
+        <aside class="ex-guide">
+          <b>이 예제에서 볼 것</b>
+          <ul>
+            <li>왼쪽은 <b>Page → Section → Card</b> 가 쓰지도 않는 theme, user 를 계속 받아서 넘깁니다 (Props Drilling).</li>
+            <li>오른쪽은 Provider 로 감싸 두고, 맨 아래에서 <code>useContext</code> 로 바로 꺼냅니다. 중간 컴포넌트는 아무것도 몰라요.</li>
+            <li>화면 결과는 똑같습니다. 차이는 <b>코드</b>입니다. 전달할 값이 늘어나거나 단계가 깊어질수록 왼쪽은 고칠 곳이 많아집니다.</li>
+            <li>miniReact 의 <code>useContext</code> 는 상태를 만들지 않는 "읽기" 라서 자식 컴포넌트에서도 쓸 수 있게 했습니다.</li>
+          </ul>
+        </aside>
+      </div>
+      <div class="ex-stat" id="stat-context"></div>
+    </section>
+  </main>
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+
+  <!-- 서버(http)면 ES Module, 파일 더블클릭(file://)이면 합쳐 둔 bundle.js (node build.js) -->
+  <script>
+    (function () {
+      var s = document.createElement("script");
+      if (location.protocol === "file:") {
+        s.src = "./bundle.js";
+      } else {
+        s.type = "module";
+        s.src = "./main.js";
+      }
+      document.body.appendChild(s);
+    })();
+  </script>
+  <!-- chat:js --><script src="../tools/chat.js"></script>
+</body>
+</html>
