@@ -1,0 +1,18 @@
+{
+  "name": "mini-react",
+  "version": "1.0.0",
+  "description": "정글 과제: 미니 리액트(Virtual DOM·Diff·Patch·Hooks)",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "node build.js",
+    "prestart": "node build.js",
+    "start": "node server.js",
+    "pretest": "node build.js",
+    "test": "node --test --test-timeout=20000 \"tests/**/*.test.js\"",
+    "test:fuzz": "node tests/fuzz-400.js"
+  },
+  "devDependencies": {
+    "jsdom": "^31.0.0"
+  }
+}

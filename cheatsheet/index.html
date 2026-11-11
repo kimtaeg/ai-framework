@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>한 장 요약</title>
+  <link rel="stylesheet" href="../styles/base.css" />
+  <style>
+    main { max-width: 1200px; }
+    .cs-top { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+    .cs-top h1 { margin: 0; }
+    .cs-top p { margin: 4px 0 0; color: var(--muted); }
+    .cs { columns: 3 300px; column-gap: 14px; }
+    .cs > div { break-inside: avoid; margin-bottom: 14px; border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--surface); font-size: 13px; line-height: 1.6; }
+    .cs h2 { font-size: 14px; margin: 0 0 6px; color: var(--accent); }
+    .cs ul, .cs ol { margin: 0; padding-left: 18px; }
+    .cs li + li { margin-top: 2px; }
+    .cs code { font-family: var(--mono); font-size: 11.5px; background: var(--surface-2); padding: 0 4px; border-radius: 4px; }
+    .cs table { border-collapse: collapse; width: 100%; font-size: 12px; }
+    .cs th, .cs td { border: 1px solid var(--border); padding: 3px 6px; text-align: left; vertical-align: top; }
+    .cs th { background: var(--surface-2); }
+    .cs .flow { font: 12px/1.7 var(--mono); background: var(--surface-2); border-radius: 6px; padding: 6px 8px; }
+    .cs .qa dt { font-weight: 700; margin-top: 6px; }
+    .cs .qa dt:first-child { margin-top: 0; }
+    .cs .qa dd { margin: 0 0 0 10px; color: var(--muted); }
+    .cs .bad { color: var(--danger); }
+    .cs .good { color: var(--ok); }
+    @media print {
+      @page { size: A4; margin: 10mm; }
+      .topbar, .no-print { display: none !important; }
+      body { background: #fff; color: #000; font-size: 11px; }
+      main { padding: 0; max-width: none; }
+      .cs { columns: 3; column-gap: 8px; }
+      .cs > div { padding: 6px 8px; margin-bottom: 6px; border-color: #bbb; font-size: 10px; line-height: 1.45; box-shadow: none; }
+      .cs h2 { font-size: 11px; margin-bottom: 3px; color: #000; }
+      .cs code, .cs .flow, .cs th { background: #f2f2f2; }
+      .cs table { font-size: 9.5px; }
+      .cs .qa dd { color: #333; }
+      .cs-top h1 { font-size: 16px; }
+      .cs-top p { display: none; }
+    }
+  </style>
+  <!-- chat:css --><link rel="stylesheet" href="../tools/chat.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">mini<span>React</span></a>
+    <nav>
+      <a href="../index.html">홈</a>
+      <a href="../guide/index.html">학습 가이드</a>
+      <a href="../phase1/index.html">Phase 1 · Diff</a>
+      <a href="../phase2/index.html">Phase 2 · Hooks</a>
+      <a href="../examples/index.html">예제</a>
+      <a href="../sandbox/index.html">샌드박스</a>
+      <a href="../walkthrough/index.html">코드 해설</a>
+      <a href="../theory/index.html">React 이론</a>
+      <a href="../deepdive/index.html">개념 더 파고들기</a>
+      <a href="./index.html" aria-current="page">한 장 요약</a>
+      <a href="../docs/index.html">설명서</a>
+    </nav>
+  </header>
+
+  <main>
+    <div class="cs-top">
+      <div>
+        <h1>miniReact 한 장 요약</h1>
+        <p>발표 직전에 훑어보는 핵심 정리. 인쇄하면 A4 한 장에 맞춰집니다.</p>
+      </div>
+      <button class="primary no-print" onclick="window.print()">🖨 인쇄 / PDF 저장</button>
+    </div>
+
+    <div class="cs">
+      <div>
+        <h2>① 전체 흐름</h2>
+        <div class="flow">클릭 → setState → (microtask 예약)<br>→ render: 함수 실행 → 새 VDOM<br>→ diff(이전, 새) → patches<br>→ patch: 바뀐 곳만 DOM 반영<br>→ useLayoutEffect → 화면 그림 → useEffect</div>
+        <p style="margin:6px 0 0"><b>UI = f(state)</b>: 화면은 상태의 결과. 무엇을 바꿀지는 diff 가 계산.</p>
+      </div>
+
+      <div>
+        <h2>② 실제 DOM 이 느린 이유</h2>
+        <ul>
+          <li><b>Reflow</b>: 크기·위치 다시 계산 (부모·형제까지 연쇄) — 가장 비쌈</li>
+          <li><b>Repaint</b>: 색만 다시 칠함</li>
+          <li><b>Composite</b>: transform, opacity — 제일 쌈</li>
+          <li>문제는 조작 한 번이 아니라 <b>불필요하게 자주</b> 조작하는 것</li>
+          <li>감지 API: <code>MutationObserver</code> (DOM 변경 기록)</li>
+        </ul>
+      </div>
+
+      <div>
+        <h2>③ Virtual DOM</h2>
+        <ul>
+          <li>구조: <code>{ type, props, key, children }</code> 평범한 객체</li>
+          <li>왜: 선언적으로 쓰면서도 바뀐 곳만 DOM 반영</li>
+          <li><span class="bad">"DOM 보다 빠르다" ✕</span> — 직접 정확히 고치는 게 제일 빠름. VDOM 은 관리 비용을 줄이는 절충안</li>
+          <li><code>h()</code> 코드→VNode, <code>domToVNode()</code> DOM→VNode, <code>createElement()</code> VNode→DOM</li>
+        </ul>
+      </div>
+
+      <div>
+        <h2>④ Diff 의 두 가정 → O(n)</h2>
+        <ol>
+          <li>타입(태그)이 다르면 하위 비교 없이 통째로 교체</li>
+          <li>형제 리스트는 <b>key</b> 로 같은 노드를 찾음</li>
+        </ol>
+        <p style="margin:4px 0 0">+ 같은 레벨끼리만 비교. 완벽한 비교는 O(n³).</p>
+      </div>
+
+      <div>
+        <h2>⑤ 최소 변경 5가지 케이스</h2>
+        <table>
+          <tr><th>케이스</th><th>조건</th><th>DOM API</th></tr>
+          <tr><td>INSERT</td><td>새 노드</td><td>insertBefore</td></tr>
+          <tr><td>REMOVE</td><td>없어진 노드</td><td>removeChild</td></tr>
+          <tr><td>REPLACE</td><td>태그/key 다름</td><td>replaceChild</td></tr>
+          <tr><td>TEXT</td><td>글자만 다름</td><td>nodeValue</td></tr>
+          <tr><td>PROPS</td><td>속성만 다름</td><td>setAttribute</td></tr>
+          <tr><td>+ MOVE</td><td>key 같고 위치만</td><td>insertBefore (이동)</td></tr>
+        </table>
+      </div>
+
+      <div>
+        <h2>⑥ key</h2>
+        <ul>
+          <li>리스트에서 "아까 그 항목" 을 알아보는 이름표</li>
+          <li><span class="bad">index 를 key 로 ✕</span>: 앞에 추가하면 전부 수정 + 입력값이 엉뚱한 항목에</li>
+          <li>형제 사이에서만 고유하면 됨. <code>Math.random()</code> ✕</li>
+          <li>miniReact 는 LIS 로 이동 최소화: <code>[A,B,C,D]→[B,C,D,A]</code> 이동 1번</li>
+        </ul>
+      </div>
+
+      <div>
+        <h2>⑦ Patch 순서 (주소가 안 틀어지게)</h2>
+        <ol>
+          <li>삭제는 <b>뒤에서부터</b></li>
+          <li>이동·추가로 자리 확정</li>
+          <li>그다음 자식 안으로 들어가 비교</li>
+        </ol>
+        <p style="margin:4px 0 0">path <code>[0,2,1]</code> = 루트 → 0번 → 2번 → 1번 자식</p>
+      </div>
+
+      <div>
+        <h2>⑧ Hooks 원리</h2>
+        <ul>
+          <li>상태는 함수 <b>밖</b>, 컴포넌트의 <code>hooks</code> 배열에</li>
+          <li>렌더 전: <code>currentComponent = this; hookIndex = 0</code></li>
+          <li>Hook 호출마다 <code>hooks[hookIndex++]</code> → <b>호출 순서가 곧 이름</b></li>
+          <li>규칙: 최상위에서만 (조건문·반복문 ✕), React 함수 안에서만</li>
+          <li>과제 제약: Hook 은 루트에서만, 자식은 props 만 (miniReact 가 에러로 강제)</li>
+        </ul>
+      </div>
+
+      <div>
+        <h2>⑨ setState 가 하는 4가지</h2>
+        <ol>
+          <li>새 값 계산 (함수면 이전 값 넣어 실행)</li>
+          <li>같으면(<code>Object.is</code>) 멈춤</li>
+          <li>칸에 저장</li>
+          <li>다시 그리기 <b>예약</b> (바로 안 그림)</li>
+        </ol>
+        <p style="margin:4px 0 0"><b>Batching</b>: 여러 setState → 렌더 1번. React 18+ 는 어디서든 자동. miniReact 는 <code>queueMicrotask</code> 한 번만 예약.</p>
+        <p style="margin:4px 0 0"><code>setN(n+1)</code>×3 = +1 (스냅샷) · <code>setN(p=&gt;p+1)</code>×3 = +3</p>
+      </div>
+
+      <div>
+        <h2>⑩ useEffect · useLayoutEffect</h2>
+        <ul>
+          <li>deps 생략: 매 렌더 · <code>[]</code>: 처음 1번 · <code>[a]</code>: a 바뀔 때</li>
+          <li>cleanup: 다음 실행 직전 + 사라질 때</li>
+          <li><b>useEffect</b>: 화면 그린 <b>뒤</b> (대부분 이것)</li>
+          <li><b>useLayoutEffect</b>: DOM 반영 직후 그리기 <b>전</b> (깜빡임 방지)</li>
+          <li>렌더 중에는 실행하지 않고 예약만 (렌더는 순수해야)</li>
+        </ul>
+      </div>
+
+      <div>
+        <h2>⑪ useMemo · useCallback · memo · useRef</h2>
+        <ul>
+          <li><code>useMemo</code>: 계산 결과 기억 (deps 같으면 재사용)</li>
+          <li><code>useCallback</code>: 함수 기억 = <code>useMemo(() =&gt; fn)</code></li>
+          <li><code>React.memo</code>: props 같으면 렌더 건너뜀</li>
+          <li>측정 후 필요한 곳만. 남용하면 손해</li>
+          <li><code>useRef</code>: 렌더 간 유지, 바꿔도 다시 안 그림</li>
+        </ul>
+      </div>
+
+      <div>
+        <h2>⑫ State 는 어디에?</h2>
+        <ul>
+          <li>쓰는 컴포넌트들의 <b>가장 가까운 공통 부모</b> (Lifting State Up)</li>
+          <li>데이터는 아래로(props), 요청은 위로(콜백) — 단방향</li>
+          <li>계산 가능한 값은 state ✕ (Single Source of Truth)</li>
+          <li><b>불변성</b>: <code>push</code> ✕ → <code>[...list, x]</code> ✓ (참조 비교라서)</li>
+          <li>깊은 전달은 Context (<code>createContext</code>, <code>useContext</code>)</li>
+        </ul>
+      </div>
+
+      <div>
+        <h2>⑬ React 의 Render / Commit, Fiber</h2>
+        <ul>
+          <li>Render: 계산 (중단·재시작 가능, 순수해야)</li>
+          <li>Commit: DOM 반영 (한 번에, 중단 불가)</li>
+          <li>Fiber(16+): 작업을 쪼개 멈췄다 이어감 → 동시성, Suspense 기반</li>
+          <li>이벤트: 루트 하나에 위임 + SyntheticEvent</li>
+        </ul>
+      </div>
+
+      <div>
+        <h2>⑭ miniReact vs React</h2>
+        <table>
+          <tr><th></th><th>miniReact</th><th>React</th></tr>
+          <tr><td>비교</td><td>재귀, 못 멈춤</td><td>Fiber, 멈춤 가능</td></tr>
+          <tr><td>Hook 저장</td><td>배열</td><td>연결 리스트</td></tr>
+          <tr><td>상태 위치</td><td>루트만</td><td>모든 컴포넌트</td></tr>
+          <tr><td>Batching</td><td>microtask</td><td>Lane 우선순위</td></tr>
+          <tr><td>이벤트</td><td>요소별</td><td>루트 위임</td></tr>
+          <tr><td>리스트 이동</td><td>LIS</td><td>한 번 훑기</td></tr>
+        </table>
+      </div>
+
+      <div>
+        <h2>⑮ 예상 질문 한 줄 답</h2>
+        <dl class="qa">
+          <dt>VDOM 이 왜 필요?</dt><dd>바꿀 곳을 관리하지 않고도 바뀐 곳만 반영하려고</dd>
+          <dt>Diff 가 O(n) 인 이유?</dt><dd>타입 다르면 교체, key 로 형제 식별</dd>
+          <dt>Hook 상태 유지?</dt><dd>함수 밖 배열에 호출 순서로 저장</dd>
+          <dt>setState 직후 값이 그대로?</dt><dd>예약만 하고, 지금 값은 스냅샷</dd>
+          <dt>Phase 1↔2 연결?</dt><dd>update() 가 같은 diff·patch 를 사용</dd>
+          <dt>테스트는?</dt><dd>단위·기능 테스트 + 무작위 트리 퍼즈 400쌍 (<code>npm test</code>)</dd>
+        </dl>
+      </div>
+    </div>
+  </main>
+  <!-- chat:js --><script src="../tools/chat.js"></script>
+</body>
+</html>

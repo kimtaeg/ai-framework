@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>miniReact 학습 가이드</title>
+  <link rel="stylesheet" href="../styles/base.css" />
+  <link rel="stylesheet" href="./guide.css" />
+  <!-- chat:css --><link rel="stylesheet" href="../tools/chat.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">mini<span>React</span></a>
+    <nav>
+      <a href="../index.html">홈</a>
+      <a href="./index.html" aria-current="page">학습 가이드</a>
+      <a href="../phase1/index.html">Phase 1 · Diff</a>
+      <a href="../phase2/index.html">Phase 2 · Hooks</a>
+      <a href="../examples/index.html">예제</a>
+      <a href="../sandbox/index.html">샌드박스</a>
+      <a href="../walkthrough/index.html">코드 해설</a>
+      <a href="../theory/index.html">React 이론</a>
+      <a href="../deepdive/index.html">개념 더 파고들기</a>
+      <a href="../cheatsheet/index.html">한 장 요약</a>
+      <a href="../docs/index.html">설명서</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>학습 가이드</h1>
+    <p class="lead">예제를 "그냥 눌러보기"로 끝내지 않고 개념으로 남기는 방법과, 이론 · Phase 1 · Phase 2 · 예제를 어떤 순서로 보면 좋은지 정리했습니다.</p>
+
+    <div class="tldr card">
+      <div><span class="k">언제</span>이론 한 묶음을 읽은 <b>직후</b>에 짝이 되는 예제를 본다</div>
+      <div><span class="k">어떻게</span>누르기 전에 <b>예측</b>하고, 아래 막대의 <b>숫자로 확인</b>하고, 틀린 부분을 이론으로 <b>설명</b>한다</div>
+      <div><span class="k">질문</span>막히면 오른쪽 아래 <b>🤖 학습 도우미</b>에게 물어보세요. 체크한 진행 상황을 보고 다음 단계를 추천하고, 내 설명을 채점해 줍니다.</div>
+      <div><span class="k">마무리</span>발표 전, 예상 질문마다 <b>"말로 답하기 + 화면으로 보여주기"</b>를 짝지어 연습한다</div>
+    </div>
+
+    <!-- ============================================================ 1 -->
+    <section class="card" id="method">
+      <h2><span class="num">1</span> 보는 방법: 예측 → 실행 → 확인 → 설명</h2>
+      <p>예제 하나를 볼 때 이 4단계를 거치세요. 그냥 눌러보기만 하면 "잘 되네"로 끝나서 개념이 남지 않습니다.</p>
+
+      <div class="cycle">
+        <div class="cy"><b>① 예측</b><span>누르기 전에 결과를 먼저 말해본다</span></div>
+        <i>→</i>
+        <div class="cy"><b>② 실행</b><span>버튼을 누른다</span></div>
+        <i>→</i>
+        <div class="cy"><b>③ 확인</b><span>아래 막대의 숫자와 패치 종류를 본다</span></div>
+        <i>→</i>
+        <div class="cy"><b>④ 설명</b><span>예측과 다른 부분을 이론으로 설명한다</span></div>
+      </div>
+
+      <h3>예시: 📊 1,000행 리스트에서 "한 명 점수 +1"</h3>
+      <div class="table-wrap"><table>
+        <tr><th>단계</th><th>내용</th></tr>
+        <tr><td>① 예측</td><td>"점수 숫자 하나만 바뀌니까 TEXT 패치 1개, DOM 변경 1건일 것 같다."</td></tr>
+        <tr><td>② 실행</td><td>버튼 클릭</td></tr>
+        <tr><td>③ 확인</td><td>"TEXT 1, <b>PROPS 1</b>, DOM 변경 2건이네? 예측보다 하나 많다."</td></tr>
+        <tr><td>④ 설명</td><td>"PROPS 는 그 행에 강조 표시용 <code>class="hot"</code> 이 붙은 것이구나. 다음에 <b>다른 행</b>을 올리면 이전 행의 class 가 빠지는 것까지 PROPS 가 2개가 되겠다." → 다시 눌러서 확인</td></tr>
+      </table></div>
+      <div class="tip"><b>예측이 틀린 지점이 가장 많이 배우는 지점입니다.</b> 틀리면 이론 페이지의 해당 섹션으로 돌아가 다시 읽으세요.</div>
+    </section>
+
+    <!-- ============================================================ 2 -->
+    <section class="card" id="roadmap">
+      <h2><span class="num">2</span> 보는 순서: 이론 → 화면을 짝지어서</h2>
+      <p>한 번에 다 보지 말고, 이론 한 묶음을 읽을 때마다 짝이 되는 화면을 바로 보세요. 다 본 단계는 체크해 두면 이 브라우저에 저장됩니다.</p>
+      <div class="progress-wrap"><div class="pbar"><div class="pfill" id="pfill"></div></div><span id="ptext" class="muted">0 / 12 완료</span><button class="small ghost" id="preset">체크 초기화</button></div>
+
+      <ol class="road" id="road">
+        <li data-step="1">
+          <label class="chk"><input type="checkbox" /><span class="st">1. 큰 그림</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#what">React 란?</a>, <a href="../theory/index.html#flow">전체 흐름 한눈에</a></div>
+            <div><span class="lbl">보기</span><a href="../phase2/index.html">Phase 2</a> 를 그냥 써보기</div>
+          </div>
+          <p class="q">버튼을 누르면 왜 화면이 저절로 바뀔까?</p>
+        </li>
+        <li data-step="2">
+          <label class="chk"><input type="checkbox" /><span class="st">2. Virtual DOM</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#dom">DOM</a>, <a href="../theory/index.html#browser">Reflow/Repaint</a> (예제도 눌러보기), <a href="../theory/index.html#vdom">Virtual DOM</a></div>
+            <div><span class="lbl">보기</span><a href="../phase1/index.html">Phase 1</a> 아래 "Virtual DOM 트리" 패널의 <b>객체로 보기</b> 탭</div>
+          </div>
+          <p class="q">실제 영역 HTML 이 어떤 객체로 바뀌었나?</p>
+        </li>
+        <li data-step="3">
+          <label class="chk"><input type="checkbox" /><span class="st">3. Diff 5가지 케이스</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#diff">Diff 동작 방식</a>, <a href="../theory/index.html#cases">5가지 케이스</a></div>
+            <div><span class="lbl">보기</span><a href="../phase1/index.html">Phase 1</a> 예시 케이스를 <b>예측 퀴즈</b> 모드로 하나씩</div>
+          </div>
+          <p class="q">버튼마다 어떤 패치가 몇 개 생기나? (누르기 전에 먼저 맞혀보기)</p>
+        </li>
+        <li data-step="4">
+          <label class="chk"><input type="checkbox" /><span class="st">4. key</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#key">key 의 역할</a> (index vs id 예제)</div>
+            <div><span class="lbl">보기</span>Phase 1 "순서 섞기" → <a href="../examples/index.html#ex-kanban">📋 칸반</a></div>
+          </div>
+          <p class="q">같은 열 안 이동과 다른 열로 이동은 왜 결과가 다를까?</p>
+        </li>
+        <li data-step="5">
+          <label class="chk"><input type="checkbox" /><span class="st">5. Patch</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#patch">실제 DOM 반영</a>, <a href="../theory/index.html#phases">Render / Commit</a></div>
+            <div><span class="lbl">보기</span>Phase 1 <b>단계별 Patch</b> 로 패치를 하나씩 적용하며 "이전 ↔ 새" 트리 비교</div>
+          </div>
+          <p class="q">이 경로는 어느 노드를 가리키나? 실제 영역에서 손으로 찾아보기</p>
+        </li>
+        <li data-step="6">
+          <label class="chk"><input type="checkbox" /><span class="st">6. Hooks 원리</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#hooks-how">Hooks 동작 원리</a> (사물함 예제), <a href="../theory/index.html#hooks-rules">Hooks 규칙</a></div>
+            <div><span class="lbl">보기</span><a href="../phase2/index.html">Phase 2</a> Inspector 의 <b>Hook 저장소</b> 칸 → <a href="../walkthrough/index.html#render">코드 해설</a></div>
+          </div>
+          <p class="q">할 일을 추가하면 hooks 배열의 몇 번째 칸이 바뀌나?</p>
+        </li>
+        <li data-step="7">
+          <label class="chk"><input type="checkbox" /><span class="st">7. setState 와 Batching</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#batching">setState 와 Batching</a> (3번 연속 예제)</div>
+            <div><span class="lbl">보기</span>Phase 2 Batching 데모 (Inspector 의 <b>이번 렌더의 원인</b>) → <a href="../examples/index.html#ex-cart">🛒 장바구니</a></div>
+          </div>
+          <p class="q">장바구니 합계는 왜 state 가 아닐까?</p>
+        </li>
+        <li data-step="8">
+          <label class="chk"><input type="checkbox" /><span class="st">8. useEffect, useRef</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#useeffect">useEffect</a>, <a href="../theory/index.html#useref">useRef</a></div>
+            <div><span class="lbl">보기</span><a href="../examples/index.html#ex-stopwatch">⏱ 스톱워치</a> → <a href="../examples/index.html#ex-effect">⏳ Effect 타이밍</a></div>
+          </div>
+          <p class="q">정지하면 왜 렌더링이 멈출까?</p>
+        </li>
+        <li data-step="9">
+          <label class="chk"><input type="checkbox" /><span class="st">9. 제어 컴포넌트</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#controlled">제어 / 비제어 컴포넌트</a></div>
+            <div><span class="lbl">보기</span><a href="../examples/index.html#ex-form">📝 회원가입</a></div>
+          </div>
+          <p class="q">타이핑할 때 왜 입력창 포커스가 안 풀릴까?</p>
+        </li>
+        <li data-step="10">
+          <label class="chk"><input type="checkbox" /><span class="st">10. 성능</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#perf">성능 최적화</a>, <a href="../theory/index.html#usememo">useMemo</a></div>
+            <div><span class="lbl">보기</span><a href="../examples/index.html#ex-list">📊 1,000행 리스트</a> 의 <b>⚖️ 비교 실행</b></div>
+          </div>
+          <p class="q">노드 약 9,000개 중 왜 2개만 바뀔까?</p>
+        </li>
+        <li data-step="sandbox">
+          <label class="chk"><input type="checkbox" /><span class="st">11. 직접 만들어 보기</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span>샌드박스 아래 <b>h() 사용법과 규칙</b></div>
+            <div><span class="lbl">보기</span><a href="../sandbox/index.html">샌드박스</a> 에서 틀 고르기 → 조각 넣기 → 실행</div>
+          </div>
+          <p class="q">"할 일 목록" 틀에 완료 체크 기능을 직접 추가할 수 있나?</p>
+        </li>
+        <li data-step="11">
+          <label class="chk"><input type="checkbox" /><span class="st">12. 발표 준비</span></label>
+          <div class="cols">
+            <div><span class="lbl">읽기</span><a href="../theory/index.html#interview">예상 질문</a></div>
+            <div><span class="lbl">보기</span><a href="../walkthrough/index.html">코드 해설</a> 설명 연습 → <a href="../cheatsheet/index.html">한 장 요약</a> → 시연 짝짓기 (<a href="#demo-map">아래 표</a>)</div>
+          </div>
+          <p class="q">말로 답하고, 화면으로 바로 보여줄 수 있나?</p>
+        </li>
+      </ol>
+    </section>
+
+    <!-- ============================================================ 3 -->
+    <section class="card" id="questions">
+      <h2><span class="num">3</span> 예제별로 꼭 답해볼 질문</h2>
+      <p>답을 먼저 말해본 뒤 "힌트"를 열어 확인하세요.</p>
+
+      <div class="qgrid">
+        <div class="qcard">
+          <h3>🛒 장바구니</h3>
+          <details><summary>수량을 바꾸면 행 전체가 아니라 숫자만 바뀌는 이유는?</summary><p>같은 key 의 같은 <code>&lt;li&gt;</code> 라서 노드를 재사용하고, 바뀐 텍스트 노드만 TEXT 패치로 고칩니다. 수량 버튼의 <code>disabled</code> 가 바뀌면 PROPS 도 생깁니다.</p></details>
+          <details><summary>합계를 useState 로 따로 두면 어떤 버그가 생길까?</summary><p>수량을 바꿀 때마다 합계도 따로 갱신해야 하고, 한 곳이라도 빠뜨리면 목록과 합계가 서로 다른 값을 보여줍니다. 계산 가능한 값은 state 가 아니라 계산값(useMemo)으로 둡니다. (Single Source of Truth)</p></details>
+        </div>
+        <div class="qcard">
+          <h3>📝 회원가입 폼</h3>
+          <details><summary>칸을 벗어날 때 테두리 색이 바뀌는 건 어떤 패치?</summary><p>PROPS 입니다. <code>&lt;label&gt;</code> 의 <code>class</code> 가 <code>field</code> → <code>field invalid</code> 로 바뀌고, 안내 문구는 TEXT 로 바뀝니다.</p></details>
+          <details><summary>가입하면 왜 REPLACE 가 될까?</summary><p>루트가 <code>&lt;form&gt;</code> 에서 <code>&lt;div class="form-done"&gt;</code> 으로, 태그 종류가 바뀌기 때문입니다. 타입이 다르면 하위를 비교하지 않고 통째로 새로 만듭니다.</p></details>
+        </div>
+        <div class="qcard">
+          <h3>📋 칸반 보드</h3>
+          <details><summary>▲▼ 는 MOVE 인데 ◀▶ 는 왜 REMOVE + INSERT?</summary><p>Diff 는 <b>같은 부모 안에서만</b> 비교합니다. 같은 열 안의 이동은 같은 <code>&lt;ul&gt;</code> 안이라 key 로 찾아 옮기지만, 다른 열은 다른 <code>&lt;ul&gt;</code> 이라 한쪽에서 지우고 다른 쪽에 새로 만듭니다.</p></details>
+          <details><summary>카드에 key 가 없었다면 ▲▼ 결과는?</summary><p>순서(위치)로 짝을 지어서, 두 카드의 노드는 제자리에 두고 안의 제목 텍스트와 <code>data-id</code> 를 서로 바꿔 씁니다. MOVE 대신 TEXT 와 PROPS 가 여러 개 생깁니다.</p></details>
+        </div>
+        <div class="qcard">
+          <h3>📊 1,000행 리스트</h3>
+          <details><summary>검색어를 지우면 왜 INSERT 가 수백 개 생길까?</summary><p>검색 중에 맞지 않아 REMOVE 됐던 행들이 다시 목록에 돌아오기 때문입니다. 남아 있던 행은 key 로 재사용됩니다.</p></details>
+          <details><summary>"점수 높은 순"에서 점수를 올리면 왜 MOVE 가 생길까?</summary><p>점수가 바뀌면 정렬 순서가 바뀌어 그 행이 위로 올라갑니다. key 가 같으니 새로 만들지 않고 기존 <code>&lt;tr&gt;</code> 을 옮깁니다.</p></details>
+        </div>
+        <div class="qcard">
+          <h3>⏱ 스톱워치</h3>
+          <details><summary>초당 30번 넘게 렌더링되는데 왜 버벅이지 않을까?</summary><p>렌더링(함수 실행 + 비교)은 가벼운 JS 계산이고, 실제 DOM 은 시간 텍스트 하나만 바뀌기 때문입니다. 렌더링 ≠ DOM 다시 그리기.</p></details>
+          <details><summary>누적 시간을 useRef 에 둔 이유는?</summary><p>화면에 직접 보여주는 값이 아니라 계산용 값이라, 바꿀 때마다 다시 그릴 필요가 없습니다. useRef 는 렌더 간에 유지되지만 바꿔도 리렌더링을 일으키지 않습니다.</p></details>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ 4 -->
+    <section class="card" id="break">
+      <h2><span class="num">4</span> 한 단계 더: 일부러 망가뜨려 보기</h2>
+      <p>개념을 확실히 잡으려면 일부러 잘못된 코드를 넣어보고 결과가 어떻게 달라지는지 보는 게 가장 좋습니다.</p>
+
+      <div class="labbox">
+        <div>
+          <b>🧪 버튼 하나로 해보기 (추천)</b>
+          <p><a href="../examples/index.html">예제 페이지</a>의 각 앱 위에 <b>망가뜨리기</b> 버튼이 있습니다. 누르면 그 앱만 잘못된 코드로 다시 마운트되고, 한 번 더 누르면 복구됩니다. 코드를 고칠 필요가 없어요.</p>
+        </div>
+        <a class="labbtn" href="../examples/index.html">실험실 열기 →</a>
+      </div>
+      <div class="table-wrap"><table>
+        <tr><th>예제</th><th>망가뜨리기 버튼</th><th>배우는 개념</th></tr>
+        <tr><td><a href="../examples/index.html#ex-cart">🛒 장바구니</a></td><td>불변성 깨기</td><td>setState 는 참조로 비교한다 (State 와 불변성)</td></tr>
+        <tr><td><a href="../examples/index.html#ex-cart">🛒 장바구니</a></td><td>자식 컴포넌트에서 Hook 호출</td><td>Hook 은 루트에서만 (과제 제약)</td></tr>
+        <tr><td><a href="../examples/index.html#ex-form">📝 회원가입</a></td><td>조건문 안에서 Hook 호출</td><td>Hooks 는 호출 순서로 구분</td></tr>
+        <tr><td><a href="../examples/index.html#ex-kanban">📋 칸반</a></td><td>key 지우기</td><td>key 의 역할</td></tr>
+        <tr><td><a href="../examples/index.html#ex-list">📊 1,000행</a></td><td>useMemo 끄기</td><td>useMemo 와 의존성</td></tr>
+        <tr><td><a href="../examples/index.html#ex-stopwatch">⏱ 스톱워치</a></td><td>cleanup 지우기</td><td>useEffect cleanup</td></tr>
+        <tr><td><a href="../examples/index.html#ex-stopwatch">⏱ 스톱워치</a></td><td>랩 key 를 index 로</td><td>index 를 key 로 쓰면 안 되는 이유</td></tr>
+      </table></div>
+
+      <details class="codeway"><summary>직접 코드를 고쳐서 해보기</summary>
+      <div class="warnbox"><b>준비</b><code>npm start</code> 로 서버를 띄워 둔 상태에서 고치고 새로고침하세요. 파일을 더블클릭해서 보는 중이라면 고친 뒤 <code>npm run build</code> 를 먼저 실행해야 반영됩니다. 다 해본 뒤에는 <b>꼭 원래대로 되돌려 두세요.</b> 예제 코드(<code>examples/apps.js</code>)에서 <code>flags.</code> 로 검색하면 버튼이 바꾸는 지점을 바로 찾을 수 있습니다.</div>
+      <div class="table-wrap"><table>
+        <tr><th>파일 · 위치</th><th>바꾸는 방법</th><th>관찰할 것</th><th>배우는 개념</th></tr>
+        <tr><td><code>examples/apps.js</code><br><code>KanbanColumn</code></td><td><code>key: c.id</code> 지우기</td><td>▲▼ 를 누르면 MOVE 대신 TEXT · PROPS 가 여러 개</td><td>key 의 역할</td></tr>
+        <tr><td><code>examples/apps.js</code><br><code>CartRow</code></td><td>함수 첫 줄에 <code>useState(0);</code> 넣기</td><td>장바구니 칸에 "최상위(루트) 컴포넌트에서만" 에러가 표시됨 (다른 예제는 정상)</td><td>Hook 은 루트에서만 (과제 제약)</td></tr>
+        <tr><td><code>examples/apps.js</code><br><code>StopwatchApp</code></td><td>useEffect 의 <code>return () =&gt; { … }</code> 지우기</td><td>정지를 눌러도 시간이 계속 흐름</td><td>cleanup 의 필요성</td></tr>
+        <tr><td><code>phase2/app.js</code><br><code>visible</code> 의 useMemo</td><td>계산 함수 안에 <code>console.log('재계산')</code> 넣고 타이머 시작</td><td>매초 렌더링돼도 로그는 안 찍힘. 이번엔 useMemo 를 빼고 그냥 계산하면 매초 찍힘</td><td>useMemo 가 계산을 건너뛰는 조건</td></tr>
+        <tr><td><code>phase2/app.js</code><br><code>App</code></td><td><code>if (filter === 'done')</code> 안에서 <code>useState</code> 호출</td><td>"완료" 필터를 누르면 화면이 안 바뀌고 콘솔에 "Hook 호출 개수" 또는 "Hook 호출 순서" 에러 (넣은 위치에 따라 다름)</td><td>Hooks 는 호출 순서로 구분</td></tr>
+      </table></div>
+      </details>
+    </section>
+
+    <!-- ============================================================ 5 -->
+    <section class="card" id="tools">
+      <h2><span class="num">5</span> 함께 쓰면 좋은 도구</h2>
+      <div class="tools">
+        <div class="tool">
+          <h3>Elements 탭 (F12)</h3>
+          <p>바뀐 DOM 노드가 잠깐 색깔로 깜빡입니다. 예제 아래 막대의 숫자와 같은 결과를 브라우저가 직접 보여주는 거라 <b>교차 확인</b>하기 좋아요.</p>
+        </div>
+        <div class="tool">
+          <h3>Console 탭 (F12)</h3>
+          <p>Hook 저장소를 직접 볼 수 있습니다.</p>
+          <ul>
+            <li>Phase 2: <code>__app.hooks</code></li>
+            <li>예제: <code>__examples.cart.hooks</code><br><span class="muted small"><code>cart</code> 대신 <code>form</code>, <code>kanban</code>, <code>list</code>, <code>stopwatch</code></span></li>
+            <li>Phase 1: <code>__playground.pg.history.entries</code> (히스토리 전체)</li>
+          </ul>
+        </div>
+        <div class="tool">
+          <h3>페이지 소스 보기 (Ctrl+U)</h3>
+          <p>Phase 2 와 예제는 <code>&lt;div id="root"&gt;&lt;/div&gt;</code> 처럼 <b>빈 칸</b>만 있습니다. 화면은 JS 가 채운 것 = CSR. Phase 1 의 실제 영역은 HTML 에 처음부터 들어 있다는 점과 비교해 보세요.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ 6 -->
+    <section class="card" id="demo-map">
+      <h2><span class="num">6</span> 발표용: 질문 → 시연 화면 짝짓기</h2>
+      <p>예상 질문에 말로 답한 뒤 바로 화면으로 보여줄 수 있게 미리 짝을 지어 두세요.</p>
+      <div class="table-wrap"><table>
+        <tr><th>예상 질문</th><th>보여줄 화면</th><th>보여줄 것</th></tr>
+        <tr><td>Virtual DOM 이 왜 필요한가요?</td><td><a href="../examples/index.html#ex-list">1,000행 리스트</a></td><td>노드 약 9,000개 중 DOM 변경 2건</td></tr>
+        <tr><td>Diff 의 5가지 케이스는?</td><td><a href="../phase1/index.html">Phase 1 예시 케이스</a></td><td>버튼 하나에 케이스 하나, 패치 로그 색깔</td></tr>
+        <tr><td>key 는 왜 필요한가요?</td><td><a href="../theory/index.html#key">이론 key 예제</a> → <a href="../examples/index.html#ex-kanban">칸반</a></td><td>index key 일 때 메모가 엉뚱한 항목에 붙는 모습, ▲▼ 의 MOVE</td></tr>
+        <tr><td>뒤로가기는 어떻게 구현했나요?</td><td><a href="../phase1/index.html">Phase 1</a></td><td>State History 클릭 → 실제 영역과 테스트 영역이 함께 바뀜</td></tr>
+        <tr><td>Hooks 는 상태를 어떻게 유지하나요?</td><td><a href="../theory/index.html#hooks-how">이론 사물함 예제</a> → Phase 2 콘솔</td><td><code>__app.hooks</code> 배열</td></tr>
+        <tr><td>여러 상태 변경을 한 번에 처리하는 방법은?</td><td><a href="../phase2/index.html">Phase 2 Batching 데모</a></td><td>setState × 3 → 카운트 +3, 렌더 +1</td></tr>
+        <tr><td>useEffect cleanup 은 언제 필요한가요?</td><td><a href="../examples/index.html#ex-stopwatch">스톱워치</a></td><td>정지하면 렌더 횟수가 더 이상 안 늘어남</td></tr>
+        <tr><td>State 는 어디에 두나요?</td><td><a href="../phase2/index.html">Phase 2</a> 코드 (<code>phase2/app.js</code>)</td><td>모든 useState 가 App 에만, 자식은 props 만</td></tr>
+        <tr><td>제어 컴포넌트란?</td><td><a href="../examples/index.html#ex-form">회원가입 폼</a></td><td>타이핑해도 포커스 유지, 검증 메시지 실시간 갱신</td></tr>
+        <tr><td>테스트는 어떻게 했나요?</td><td>터미널 <code>npm test</code></td><td>200개 통과, 퍼즈 테스트 400쌍</td></tr>
+      </table></div>
+    </section>
+  </main>
+
+  <script>
+    // 진행 체크: 이 브라우저에만 저장 (저장이 막힌 환경에서도 페이지는 정상 동작)
+    (function () {
+      var KEY = 'mini-react-guide:v1';
+      var boxes = Array.prototype.slice.call(document.querySelectorAll('#road input[type=checkbox]'));
+      var saved = {};
+      try { saved = JSON.parse(localStorage.getItem(KEY)) || {}; } catch (e) { saved = {}; }
+      function update() {
+        var done = 0;
+        boxes.forEach(function (b) {
+          var li = b.closest('li');
+          li.classList.toggle('done', b.checked);
+          if (b.checked) done++;
+        });
+        document.getElementById('pfill').style.width = (done / boxes.length) * 100 + '%';
+        document.getElementById('ptext').textContent = done + ' / ' + boxes.length + ' 완료';
+      }
+      function save() {
+        var data = {};
+        boxes.forEach(function (b) { data[b.closest('li').dataset.step] = b.checked; });
+        try { localStorage.setItem(KEY, JSON.stringify(data)); } catch (e) { /* 저장 불가 환경 */ }
+      }
+      boxes.forEach(function (b) {
+        b.checked = !!saved[b.closest('li').dataset.step];
+        b.addEventListener('change', function () { update(); save(); });
+      });
+      document.getElementById('preset').addEventListener('click', function () {
+        boxes.forEach(function (b) { b.checked = false; });
+        update(); save();
+      });
+      update();
+    })();
+  </script>
+  <!-- chat:js --><script src="../tools/chat.js"></script>
+</body>
+</html>
