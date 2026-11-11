@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>miniReact 샌드박스</title>
+  <link rel="stylesheet" href="../styles/base.css" />
+  <link rel="stylesheet" href="../tools/inspector.css" />
+  <link rel="stylesheet" href="./sandbox.css" />
+  <!-- chat:css --><link rel="stylesheet" href="../tools/chat.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">mini<span>React</span></a>
+    <nav>
+      <a href="../index.html">홈</a>
+      <a href="../guide/index.html">학습 가이드</a>
+      <a href="../phase1/index.html">Phase 1 · Diff</a>
+      <a href="../phase2/index.html">Phase 2 · Hooks</a>
+      <a href="../examples/index.html">예제</a>
+      <a href="./index.html" aria-current="page">샌드박스</a>
+      <a href="../walkthrough/index.html">코드 해설</a>
+      <a href="../theory/index.html">React 이론</a>
+      <a href="../deepdive/index.html">개념 더 파고들기</a>
+      <a href="../cheatsheet/index.html">한 장 요약</a>
+      <a href="../docs/index.html">설명서</a>
+    </nav>
+  </header>
+
+  <main>
+    <h1>샌드박스</h1>
+    <p class="lead">직접 만든 miniReact 로 원하는 기능을 바로 만들어 보는 곳입니다. <b>틀</b>을 고르고, <b>조각</b>을 끼워 넣고, 직접 타이핑해서 고친 뒤 <b>실행</b>하세요. 코드는 이 브라우저에 자동 저장됩니다.</p>
+
+    <div class="sb-bar card">
+      <span class="sb-label">틀</span>
+      <div class="tpl-list" id="tpl-list"></div>
+    </div>
+
+    <div class="sb-grid">
+      <section class="card sb-edit">
+        <div class="card-head">
+          코드
+          <span class="sub" id="saved">자동 저장됨</span>
+          <span class="spacer"></span>
+          <label class="toggle"><input type="checkbox" id="auto" /> 타이핑 멈추면 자동 실행</label>
+          <button id="reset" class="ghost small" title="지금 틀의 처음 코드로">되돌리기</button>
+          <button id="run" class="primary small" title="Ctrl+Enter">▶ 실행</button>
+        </div>
+        <div class="snip-list" id="snip-list"></div>
+        <div class="editor-wrap">
+          <div class="gutter mono" id="gutter" aria-hidden="true"></div>
+          <textarea id="code" class="mono" spellcheck="false" aria-label="코드 편집기"></textarea>
+        </div>
+        <div class="sb-foot muted">
+          <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 실행 · <kbd>Tab</kbd> 들여쓰기 · 조각 버튼은 <b>커서 위치</b>에 들어갑니다
+        </div>
+      </section>
+
+      <section class="sb-side">
+        <div class="card sb-preview">
+          <div class="card-head">미리보기 <span class="sub">App 컴포넌트</span></div>
+          <div class="error" id="error" hidden></div>
+          <div class="preview" id="preview"></div>
+        </div>
+
+        <div class="card sb-tip">
+          <div class="card-head">지금 틀 <span class="sub" id="tpl-desc"></span></div>
+          <div class="card-body"><b>해볼 것</b><ul id="tpl-try"></ul></div>
+        </div>
+
+        <div class="card sb-console">
+          <div class="card-head">콘솔 <span class="sub"><span id="console-count">0</span>줄 · console.log 와 miniReact 경고</span><span class="spacer"></span><button id="clear-console" class="ghost small">지우기</button></div>
+          <ol class="console mono" id="console"></ol>
+        </div>
+      </section>
+
+      <aside class="card sb-insp" id="inspector"></aside>
+    </div>
+
+    <details class="card sb-help">
+      <summary>h() 사용법과 규칙</summary>
+      <div class="help-grid">
+        <div>
+          <b>h(태그, 속성, ...자식)</b>
+<pre><code>h('div', { class: 'box', id: 'a' },
+  '텍스트',
+  h('b', null, '굵게'),
+)</code></pre>
+          <ul>
+            <li>속성이 없으면 <code>null</code></li>
+            <li>이벤트: <code>onClick</code>, <code>onInput</code>, <code>onChange</code>, <code>onSubmit</code></li>
+            <li>style 은 객체: <code>{ color: 'red' }</code></li>
+            <li>리스트는 <code>items.map(...)</code> + 각 항목에 <code>key</code></li>
+            <li>컴포넌트: <code>h(Child, { label: 'x' })</code></li>
+          </ul>
+        </div>
+        <div>
+          <b>규칙</b>
+          <ul>
+            <li><code>function App()</code> 이 루트 컴포넌트입니다.</li>
+            <li>useState 같은 Hook 은 <b>App 안에서만</b>, 조건문 없이 호출하세요. (자식 컴포넌트에서 호출하면 에러)</li>
+            <li>예외: <code>useContext</code> 는 자식에서도 됩니다.</li>
+            <li>state 는 고치지 말고 새로 만들어서 바꾸세요: <code>setList([...list, x])</code></li>
+            <li>무한 반복문(<code>while (true)</code>)을 쓰면 페이지가 멈춥니다. 그럴 땐 새로고침하세요.</li>
+          </ul>
+        </div>
+      </div>
+    </details>
+  </main>
+
+  <script>
+    (function () {
+      var s = document.createElement("script");
+      if (location.protocol === "file:") {
+        s.src = "./bundle.js";
+      } else {
+        s.type = "module";
+        s.src = "./main.js";
+      }
+      document.body.appendChild(s);
+    })();
+  </script>
+  <!-- chat:js --><script src="../tools/chat.js"></script>
+</body>
+</html>

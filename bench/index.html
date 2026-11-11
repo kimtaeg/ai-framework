@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>miniReact 렌더링 벤치마크</title>
+  <link rel="stylesheet" href="../styles/base.css">
+  <style>
+    :root {
+      --s1: #2a78d6;  /* patch / key 있음 */
+      --s2: #eb6834;  /* innerHTML / key 없음 */
+      --grid: #e6e7ec;
+      --ref: #6b7288;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) { --s1: #3987e5; --s2: #d95926; --grid: #2d3244; --ref: #9aa0b4; }
+    }
+    :root[data-theme="dark"] { --s1: #3987e5; --s2: #d95926; --grid: #2d3244; --ref: #9aa0b4; }
+    main { max-width: 1100px; }
+    .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 16px; margin-bottom: 16px; }
+    .bar .spacer { flex: 1; }
+    #status { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+    .exp { margin-bottom: 18px; }
+    .exp h2 { font-size: 17px; margin: 0; }
+    .finding { margin: 0 0 12px; font-size: 15px; }
+    .finding b { color: var(--text); }
+    .grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+    @media (max-width: 860px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+    table.t { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.t th, table.t td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: right; white-space: nowrap; }
+    table.t th:first-child, table.t td:first-child { text-align: left; }
+    table.t th { color: var(--muted); font-weight: 600; }
+    .table-wrap { overflow-x: auto; }
+    .chart svg { width: 100%; height: auto; display: block; }
+    .chart text { fill: var(--muted); font-size: 11px; font-family: inherit; }
+    .chart .lab { fill: var(--text); font-size: 12px; }
+    .legend { display: flex; gap: 14px; font-size: 13px; color: var(--muted); margin: 4px 0 8px; }
+    .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; }
+    .ok { color: var(--ok); font-weight: 600; }
+    .bad { color: var(--danger); font-weight: 600; }
+    #stage { height: 160px; overflow: auto; border: 1px dashed var(--border); border-radius: 8px; font-size: 12px; }
+    #stage ul { margin: 0; padding: 0 12px; list-style: none; }
+    #stage li { display: flex; gap: 8px; padding: 1px 0; }
+    #stage input { width: 70px; font-size: 11px; }
+    .env { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+    .tip { position: fixed; pointer-events: none; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font-size: 12px; box-shadow: var(--shadow); display: none; z-index: 10; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/index.html">mini<span>Lab</span></a>
+    <nav>
+      <a href="/index.html">사이트 홈</a>
+      <a href="/bench/index.html" aria-current="page">브라우저 벤치마크</a>
+    </nav>
+  </header>
+  <main>
+    <h1>miniReact 렌더링 벤치마크</h1>
+    <p class="lead">실제 브라우저에서 1주차 미니 리액트의 Virtual DOM · diff · patch 를 측정합니다. 측정마다 워밍업 뒤 여러 번 반복하고 중앙값을 씁니다. 시간에는 브라우저의 스타일 계산과 레이아웃까지 포함합니다.</p>
+
+    <div class="card bar">
+      <button id="run" class="primary">전체 실행</button>
+      <span id="status">대기 중</span>
+      <span class="spacer"></span>
+      <span class="env" id="env"></span>
+    </div>
+
+    <div id="results"></div>
+
+    <section class="card exp">
+      <div class="card-head">작업 영역 <span class="sub">측정에 쓰는 실제 DOM (레이아웃이 계산되도록 화면에 둠)</span></div>
+      <div class="card-body"><div id="stage"></div></div>
+    </section>
+  </main>
+  <div class="tip" id="tip"></div>
+  <script>
+    if (location.protocol === 'file:') document.querySelector('#status').innerHTML = '서버로 열어야 합니다: <code>npm start</code> 후 <a href="http://localhost:5200/bench/index.html">http://localhost:5200/bench/</a>';
+  </script>
+  <script type="module" src="./bench.js"></script>
+</body>
+</html>

@@ -31,3 +31,12 @@ core
 # Claude Code 개인 설정 (Jev 훅)
 .claude/settings.local.json
 .claude/hooks/
+
+# miniReact
+node_modules/
+# 비밀 값 (Gemini API 키) — .env.example 을 복사해서 쓰기
+.env
+# 로컬 설정
+.claude/
+# 빌드 산출물 (npm start / npm test / npm run build 가 다시 만든다)
+bundle.js
