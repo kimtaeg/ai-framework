@@ -1,6 +1,6 @@
 /**
  * 히스토리 비교 — 스냅샷(StateHistory) vs 키프레임 + 델타(DeltaHistory)
- *   node move/bench/history.js      → move/bench/history.json
+ *   node move/bench/history.js      → move/bench/history.json · history.svg
  *
  *  1,000줄 목록(한 줄 = 요소 5개 · 클래스 · 스타일 · 클릭 핸들러)을 100번 고친 기록을 쌓는다.
  *  고칠 때마다 컴포넌트처럼 트리 전체를 새로 만든다 (70% 한 줄 글자 · 15% 한 줄 맨 위로 · 10% 추가 · 5% 삭제).
@@ -23,6 +23,7 @@ if (typeof globalThis.gc !== 'function') {
 
 const { h, diff, devConfig } = await import('../../src/lib/index.js');
 const { StateHistory, DeltaHistory } = await import('../../src/lib/history.js');
+const { renderBars, C } = await import('./charts.js');
 devConfig.warnings = false;
 
 const N = 1000, EDITS = 100;
@@ -120,4 +121,18 @@ for (const [name, make] of VARIANTS) {
 }
 }
 writeFileSync(new URL('history.json', import.meta.url), JSON.stringify({ when: new Date().toISOString(), node: process.version, rows: N, edits: EDITS, results: rows }, null, 2));
-console.log('완료: move/bench/history.json');
+const SHORT = ['스냅샷', '키프레임 1칸', '5칸', '10칸', '25칸', '처음만'];
+const stable = rows.filter((r) => r.mode === 'stable');
+const inline = rows.filter((r) => r.mode === 'inline');
+writeFileSync(new URL('history.svg', import.meta.url), renderBars({
+  title: `히스토리 메모리 — ${N.toLocaleString('en-US')}줄 화면을 ${EDITS}번 고친 기록`,
+  subtitle: '스냅샷 = 기록마다 화면 트리 전체 · 델타 = 키프레임 사이는 패치만 · GC 뒤 늘어난 힙 (MB) · 낮을수록 적게 씀',
+  yLabel: '메모리 (MB)',
+  legendItems: [['스냅샷 (이전)', C.v0], ['키프레임 + 델타', C.v2], ['핸들러를 매번 새로 만들 때', C.naive]],
+  groups: stable.map((r, i) => ({
+    label: SHORT[i],
+    sub: i === 0 ? '' : stable[0].memMB / r.memMB < 1.1 ? '같음' : `${(stable[0].memMB / r.memMB).toFixed(1)}배 적음`,
+    bars: [{ key: i === 0 ? 'v0' : 'v2', y: r.memMB }, { key: 'naive', y: inline[i].memMB }],
+  })),
+}));
+console.log('완료: move/bench/history.json · history.svg');

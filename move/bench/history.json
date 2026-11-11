@@ -1,5 +1,5 @@
 {
-  "when": "2026-11-11T04:25:01.431Z",
+  "when": "2026-11-11T05:23:19.368Z",
   "node": "v24.20.0",
   "rows": 1000,
   "edits": 100,
@@ -8,97 +8,97 @@
       "mode": "inline",
       "name": "스냅샷 (지금까지)",
       "memMB": 213.09,
-      "pushMs": 1,
-      "backMs": 0.939,
-      "jumpMs": 1.031
+      "pushMs": 0.932,
+      "backMs": 0.978,
+      "jumpMs": 1.019
     },
     {
       "mode": "inline",
       "name": "델타 · 키프레임 1칸마다",
       "memMB": 280.14,
-      "pushMs": 1.789,
-      "backMs": 0.299,
-      "jumpMs": 1.6
+      "pushMs": 1.815,
+      "backMs": 0.389,
+      "jumpMs": 1.49
     },
     {
       "mode": "inline",
       "name": "델타 · 키프레임 5칸마다",
       "memMB": 116.12,
-      "pushMs": 1.702,
-      "backMs": 0.443,
-      "jumpMs": 2.308
+      "pushMs": 1.758,
+      "backMs": 0.248,
+      "jumpMs": 1.558
     },
     {
       "mode": "inline",
       "name": "델타 · 키프레임 10칸마다",
       "memMB": 95.63,
-      "pushMs": 1.801,
-      "backMs": 0.248,
-      "jumpMs": 1.671
+      "pushMs": 1.862,
+      "backMs": 0.211,
+      "jumpMs": 1.455
     },
     {
       "mode": "inline",
       "name": "델타 · 키프레임 25칸마다",
       "memMB": 83.31,
-      "pushMs": 3.284,
-      "backMs": 0.358,
-      "jumpMs": 2.3
+      "pushMs": 1.676,
+      "backMs": 0.204,
+      "jumpMs": 1.55
     },
     {
       "mode": "inline",
       "name": "델타 · 키프레임 없음 (처음만)",
       "memMB": 77.18,
-      "pushMs": 1.732,
-      "backMs": 0.287,
-      "jumpMs": 11.63
+      "pushMs": 1.656,
+      "backMs": 0.263,
+      "jumpMs": 10.734
     },
     {
       "mode": "stable",
       "name": "스냅샷 (지금까지)",
       "memMB": 206.86,
-      "pushMs": 0.904,
-      "backMs": 0.874,
-      "jumpMs": 0.873
+      "pushMs": 0.835,
+      "backMs": 1.764,
+      "jumpMs": 2.103
     },
     {
       "mode": "stable",
       "name": "델타 · 키프레임 1칸마다",
       "memMB": 207.13,
-      "pushMs": 1.617,
-      "backMs": 0.008,
-      "jumpMs": 1.297
+      "pushMs": 2.115,
+      "backMs": 0.015,
+      "jumpMs": 2.157
     },
     {
       "mode": "stable",
       "name": "델타 · 키프레임 5칸마다",
       "memMB": 43.14,
-      "pushMs": 1.596,
-      "backMs": 0.005,
-      "jumpMs": 0.938
+      "pushMs": 1.982,
+      "backMs": 0.013,
+      "jumpMs": 1.591
     },
     {
       "mode": "stable",
       "name": "델타 · 키프레임 10칸마다",
       "memMB": 22.65,
-      "pushMs": 1.603,
+      "pushMs": 2.314,
       "backMs": 0.003,
-      "jumpMs": 0.733
+      "jumpMs": 0.754
     },
     {
       "mode": "stable",
       "name": "델타 · 키프레임 25칸마다",
       "memMB": 10.37,
-      "pushMs": 1.582,
+      "pushMs": 1.695,
       "backMs": 0.003,
-      "jumpMs": 0.713
+      "jumpMs": 0.719
     },
     {
       "mode": "stable",
       "name": "델타 · 키프레임 없음 (처음만)",
       "memMB": 4.23,
-      "pushMs": 1.588,
-      "backMs": 0.002,
-      "jumpMs": 0.173
+      "pushMs": 1.732,
+      "backMs": 0.001,
+      "jumpMs": 0.148
     }
   ]
 }
