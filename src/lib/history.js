@@ -99,7 +99,9 @@ function invertOne(p) {
  *  branching: true 이면 분기 히스토리(Undo Tree): 뒤로 간 다음 새로 기록해도 원래의 "미래" 를 버리지 않고 갈래로 남긴다.
  *   - 기록은 만든 순서대로 entries 에 쌓이고, 각 기록은 부모(parent)를 가진다.
  *   - 뒤로가기 = 부모로, 앞으로가기 = 마지막으로 다녀온 자식으로.
- *   - 분기 모드에서는 limit 으로 기록을 버리지 않는다 (어느 갈래를 버릴지 정하기 어려워서).
+ *   - limit 을 넘으면: 지금 위치로 오는 길에 없는 갈래 끝(잎) 중 가장 오래된 것부터 버린다.
+ *     그런 잎이 없으면(기록이 일직선이면) 가장 오래된 첫 기록을 버린다 — 분기 없는 모드와 같다.
+ *     지금 위치와 그 조상(뒤로가기로 갈 수 있는 길)은 버리지 않는다.
  *
  *  API 는 StateHistory 와 같다 (current · canBack · canForward · push · back · forward · go · entries · index).
  *  이동할 때 쓸 패치는 travel(target) 로 받는다.
@@ -143,22 +145,57 @@ export class DeltaHistory {
     this.entries[parent].lastChild = i;
     this.index = i;
     this.cur = vnode;
-    if (!this.branching && this.entries.length > this.limit) this.#dropOldest();
+    while (this.entries.length > this.limit && this.#prune());
     return vnode;
   }
 
-  /** (분기 없는 모드) 가장 오래된 기록을 버린다. 새 첫 기록은 반드시 키프레임이어야 하므로 그 트리를 만들어 둔다. */
-  #dropOldest() {
-    const [first, second] = this.entries;
-    if (!second.keyframe) second.keyframe = applyPatchesToVNode(first.keyframe, second.fwd);
-    second.fwd = second.bwd = null;
-    this.entries.shift();
-    for (const e of this.entries) {
-      e.parent--;
-      if (e.lastChild !== -1) e.lastChild--;
+  /**
+   * 기록 하나를 버린다 → 버렸으면 true.
+   *  1) 지금 위치로 오는 길에 없는 잎(자식이 없는 기록) 중 가장 오래된 것
+   *  2) 없으면 첫 기록 (자식이 하나뿐이고 지금 위치가 아닐 때) — 그 자식이 새 첫 기록이 되므로 키프레임을 만들어 둔다
+   */
+  #prune() {
+    const E = this.entries;
+    const onPath = new Set(this.#ancestors(this.index));
+    const children = new Int32Array(E.length);
+    for (const e of E) if (e.parent !== -1) children[e.parent]++;
+    for (let k = 0; k < E.length; k++) {
+      if (children[k] === 0 && !onPath.has(k)) {
+        this.#remove(k);
+        return true;
+      }
     }
-    this.entries[0].parent = -1;
-    this.index--;
+    if (E.length > 1 && children[0] === 1 && this.index !== 0) {
+      const child = E.findIndex((e) => e.parent === 0);
+      const c = E[child];
+      if (!c.keyframe) c.keyframe = applyPatchesToVNode(E[0].keyframe, c.fwd);
+      c.fwd = c.bwd = null;
+      c.parent = -1;
+      this.#remove(0);
+      return true;
+    }
+    return false; // 버릴 수 있는 기록이 없다 (모두 지금 위치로 오는 길)
+  }
+
+  /** 기록 k 를 배열에서 빼고, 뒤쪽 번호들을 한 칸씩 당긴다 */
+  #remove(k) {
+    const E = this.entries;
+    const parent = E[k].parent;
+    E.splice(k, 1);
+    const fix = (i) => (i > k ? i - 1 : i);
+    for (const e of E) {
+      if (e.parent !== -1) e.parent = fix(e.parent);
+      if (e.lastChild === k) e.lastChild = -1;
+      else if (e.lastChild !== -1) e.lastChild = fix(e.lastChild);
+    }
+    this.index = fix(this.index);
+    // 버린 기록이 앞으로가기의 목적지였다면, 남은 자식 중 가장 최근 것을 따라가게 한다
+    if (parent !== -1) {
+      const p = fix(parent);
+      if (E[p].lastChild === -1) {
+        for (let i = E.length - 1; i >= 0; i--) if (E[i].parent === p) { E[p].lastChild = i; break; }
+      }
+    }
   }
 
   /** i 에서 루트까지의 조상 목록 (i 포함) */

@@ -246,37 +246,59 @@ describe('8 · 뒤집은 패치 (invertPatches)', () => {
 });
 
 describe('9 · 14 · 분기 히스토리', () => {
-  test('무작위 기록 · 이동 1,500번: 매번 그 기록의 화면과 같고, 실제 DOM 도 같다', () => {
-    const was = devConfig.warnings;
-    devConfig.warnings = false;
-    for (const keyframeEvery of [1, 4, 10]) {
-      const first = tree();
-      const hist = new DeltaHistory(first, { keyframeEvery, branching: true });
-      const truth = [first]; // 기록 번호 → 그 기록의 화면 (정답)
-      const host = document.createElement('div');
-      host.appendChild(createElement(first));
-      for (let t = 0; t < 500; t++) {
-        if (rand() < 0.45) {
-          const next = tree();
-          const root = applyPatches(host.firstChild, diff(hist.current, next));
-          if (root !== host.firstChild) host.replaceChildren(root);
-          hist.push(next);
-          truth.push(next);
-        } else {
-          const r = rand();
-          const e = hist.entries[hist.index];
-          const target = r < 0.3 && hist.canBack ? e.parent : r < 0.5 && hist.canForward ? e.lastChild : ri(hist.entries.length);
-          const { patches, via, steps } = hist.travel(target);
-          if (via === 'keyframe') assert.ok(steps < keyframeEvery, '키프레임은 많아야 keyframeEvery 칸 위에 있다');
-          const root = applyPatches(host.firstChild, patches);
-          if (root !== host.firstChild) host.replaceChildren(root);
+  for (const limit of [1000, 25]) {
+    test(`무작위 기록 · 이동 1,500번 (limit ${limit}): 매번 그 기록의 화면 · 실제 DOM 과 같고, 기록 수는 limit 을 넘지 않는다`, () => {
+      const was = devConfig.warnings;
+      devConfig.warnings = false;
+      for (const keyframeEvery of [1, 4, 10]) {
+        const first = tree();
+        const hist = new DeltaHistory(first, { keyframeEvery, branching: true, limit });
+        const truth = new Map([[hist.entries[0], first]]); // 기록 객체 → 그 기록의 화면 (번호는 버릴 때 바뀌므로 객체로)
+        const host = document.createElement('div');
+        host.appendChild(createElement(first));
+        for (let t = 0; t < 500; t++) {
+          if (rand() < 0.45) {
+            const next = tree();
+            const root = applyPatches(host.firstChild, diff(hist.current, next));
+            if (root !== host.firstChild) host.replaceChildren(root);
+            hist.push(next);
+            truth.set(hist.entries[hist.index], next);
+          } else {
+            const r = rand();
+            const e = hist.entries[hist.index];
+            const target = r < 0.3 && hist.canBack ? e.parent : r < 0.5 && hist.canForward ? e.lastChild : ri(hist.entries.length);
+            const { patches, via, steps } = hist.travel(target);
+            if (via === 'keyframe') assert.ok(steps < keyframeEvery, '키프레임은 많아야 keyframeEvery 칸 위에 있다');
+            const root = applyPatches(host.firstChild, patches);
+            if (root !== host.firstChild) host.replaceChildren(root);
+          }
+          assert.ok(hist.entries.length <= limit, `기록 ${hist.entries.length}개 > limit ${limit}`);
+          const want = truth.get(hist.entries[hist.index]);
+          assert.deepEqual(norm(hist.current), norm(want));
+          assert.equal(html(host.firstChild), html(createElement(want)));
+          for (const en of hist.entries) if (en.parent !== -1) assert.ok(en.parent < hist.entries.length && en.fwd, '부모 번호 · 패치가 남아 있다');
         }
-        assert.equal(hist.entries.length, truth.length, '분기 모드는 기록을 버리지 않는다');
-        assert.deepEqual(norm(hist.current), norm(truth[hist.index]));
-        assert.equal(html(host.firstChild), html(createElement(truth[hist.index])));
+        if (limit === 1000) assert.equal(hist.entries.length, truth.size, '넘지 않으면 하나도 버리지 않는다');
       }
-    }
-    devConfig.warnings = was;
+      devConfig.warnings = was;
+    });
+  }
+
+  test('limit 을 넘으면 지금 위치로 오는 길에 없는 가장 오래된 갈래 끝부터 버린다', () => {
+    const v = (n) => h('p', null, String(n));
+    const hist = new DeltaHistory(v(0), { branching: true, limit: 5 });
+    hist.push(v(1)); hist.push(v(2));          // 0 → 1 → 2
+    hist.back(); hist.push(v(3));              // 1 → 3 (갈래)
+    hist.back(); hist.push(v(4));              // 1 → 4 (갈래) — 기록 5개
+    hist.push(v(5));                           // 4 → 5 → 6개가 되므로 하나를 버린다
+    const labels = hist.entries.map((e) => e.keyframe?.children?.[0]?.text ?? (e.parent === -1 ? '0' : '?'));
+    assert.equal(hist.entries.length, 5);
+    // 가장 오래된 잎은 #2(화면 "2"). 지금 길(0 → 1 → 4 → 5)은 그대로
+    hist.go(0);
+    hist.go(hist.entries.length - 1);
+    assert.equal(norm(hist.current).children[0].t, '5');
+    const screens = hist.entries.map((_, i) => { hist.go(i); return norm(hist.current).children[0].t; });
+    assert.deepEqual(screens.sort(), ['0', '1', '3', '4', '5'], `남은 화면 (2 가 버려져야 함) — ${labels}`);
   });
 });
 
