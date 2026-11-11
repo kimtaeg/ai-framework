@@ -65,6 +65,15 @@ describe('3 · 4 · diffProps', () => {
   });
 });
 
+describe('diff 와 createElement 는 같은 규칙: 자기 속성만', () => {
+  test('손으로 Object.create(기본값) 로 만든 props: 처음 그릴 때도, 비교할 때도 물려받은 속성은 쓰지 않는다', () => {
+    const v = (title) => ({ type: 'p', props: Object.assign(Object.create({ title }), { id: 'a' }), key: null, children: [] });
+    const el = createElement(v('처음'));
+    assert.equal(el.getAttribute('title'), null, '처음 그릴 때 물려받은 title 은 없다');
+    assert.deepEqual(diff(v('처음'), v('바뀜')), [], '비교할 때도 물려받은 title 의 변화는 패치가 아니다');
+  });
+});
+
 describe('5 · 중복 key 는 리스트를 만들 때 경고한다', () => {
   test('h() 가 같은 key 를 찾아 알린다', () => {
     const got = [];

@@ -229,7 +229,7 @@ npm start                                   # http://localhost:5200/move/ — �
 
 ```bash
 npm install     # 테스트용 jsdom 설치 (런타임 의존성 0개)
-npm test        # 1주차 + 2주차 전체 931개 단위/기능/퍼즈 테스트 실행
+npm test        # 1주차 + 2주차 전체 932개 단위/기능/퍼즈 테스트 실행
 npm start       # 로컬 학습 및 시연 서버 실행 (http://localhost:5200)
 ```
 
@@ -264,7 +264,7 @@ npm run dbms                                  # 멀티스레드 풀 기반 DBMS 
 
 ---
 
-## 🧪 테스트 무결성 (112개 스위트, 931개 전수 통과)
+## 🧪 테스트 무결성 (113개 스위트, 932개 전수 통과)
 
 모든 엔진 코드는 외부 프레임워크 없이 Node.js 내장 테스트 러너(`node:test`)로 검증되며, 비결정적 요소를 제거하여 **언제 실행해도 100% 동일한 결과**를 보장합니다.
 
@@ -276,5 +276,5 @@ npm run dbms                                  # 멀티스레드 풀 기반 DBMS 
 ✔ FNV-1a 해시 충돌, 점진적 리해시, 가짜 시계를 활용한 TTL 만료 및 AOF 복원 통과
 ✔ SQL 토크나이저/AST 파서, B+ 트리 차수별 구조 검증, 다중 트랜잭션 동시성 통과
 ✔ 캐시 실험: RESP 서버 대조 · 조각난 요청 · 지연 주입 스크립트 · 분석 통계 검증 통과
-✔ 112 suites / 931 tests passed (0 failed, 100% deterministic)
+✔ 113 suites / 932 tests passed (0 failed, 100% deterministic)
 ```

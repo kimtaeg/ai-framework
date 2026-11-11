@@ -104,7 +104,7 @@ const hasOwn = Object.prototype.hasOwnProperty;
  *  항상 새 배열을 돌려준다 (호출한 쪽이 결과를 고쳐도 안전).
  */
 export function diffProps(oldProps = {}, newProps = {}) {
-  const changes = compareProps(oldProps, newProps, false, true);
+  const changes = compareProps(oldProps, newProps, false);
   return changes === NO_CHANGES ? [] : changes;
 }
 
@@ -114,22 +114,25 @@ export function diffProps(oldProps = {}, newProps = {}) {
  *  - liveHandlers 이면 이벤트 핸들러가 함수 → 다른 함수로만 바뀐 건 건너뛴다 (onClick: () => … 처럼 매번 새로 만드는 핸들러).
  *    이벤트가 일어나면 최신 VNode 에서 핸들러를 찾아 부르므로 DOM 에 새 함수를 넣어 둘 필요가 없다.
  */
-function compareProps(oldProps, newProps, liveHandlers, ownOnly = false) {
-  // ownOnly: 물려받은 속성은 비교하지 않는다. diff 안에서는 끈다 — h() 와 domToVNode 가 props 를 항상 평범한 객체로
-  // 새로 만들어 물려받은 속성이 들어올 수 없기 때문 (속성마다 확인하면 노드 수만큼 비용이 든다). 공개 API diffProps 에서만 켠다.
+function compareProps(oldProps, newProps, liveHandlers) {
+  // 자기 속성만 비교한다 — createElement 도 Object.entries 로 자기 속성만 그리므로 처음 그릴 때와 규칙이 같다.
+  // (for..in 은 물려받은 속성까지 돌아서, Object.create(기본값) 처럼 만든 props 의 기본값 변화가 패치로 나갔다)
+  // Object.keys 는 V8 이 같은 모양의 객체마다 캐시해 두어 싸다. 비용이 컸던 건 결과 배열이었으므로 그것만 만들지 않는다.
   let changes = null;
-  for (const name in newProps) {
-    if (ownOnly && !hasOwn.call(newProps, name)) continue;
-    const a = oldProps[name];
+  const nk = Object.keys(newProps);
+  for (let i = 0; i < nk.length; i++) {
+    const name = nk[i];
+    const a = hasOwn.call(oldProps, name) ? oldProps[name] : undefined; // 물려받은 옛 값은 없는 것으로
     const b = newProps[name];
     if (Object.is(a, b)) continue;
     if (liveHandlers && typeof a === 'function' && typeof b === 'function' && name.length > 2 && name[0] === 'o' && name[1] === 'n') continue;
     if (name === 'style' && isPlainObject(a) && isPlainObject(b) && shallowEqual(a, b)) continue;
     (changes ??= []).push({ name, value: b, oldValue: a });
   }
-  for (const name in oldProps) {
-    if (ownOnly && !hasOwn.call(oldProps, name)) continue;
-    if (!(ownOnly ? hasOwn.call(newProps, name) : name in newProps)) (changes ??= []).push({ name, value: undefined, oldValue: oldProps[name] });
+  const ok = Object.keys(oldProps);
+  for (let i = 0; i < ok.length; i++) {
+    const name = ok[i];
+    if (!hasOwn.call(newProps, name)) (changes ??= []).push({ name, value: undefined, oldValue: oldProps[name] });
   }
   return changes ?? NO_CHANGES;
 }

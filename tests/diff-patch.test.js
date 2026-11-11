@@ -321,8 +321,9 @@ describe('diff — 긴 목록의 이동 계산 (O(n log n) 배치)', () => {
       const a = keyedUl(keys), b = keyedUl(keys.slice().reverse());
       diff(a, b); // 워밍업
       const t = [];
-      for (let r = 0; r < 5; r++) { const t0 = performance.now(); diff(a, b); t.push(performance.now() - t0); }
-      return t.sort((x, y) => x - y)[2];
+      // 7번 중 가장 빠른 값: 다른 프로그램 · GC 때문에 한 번 튄 측정이 비율을 망치지 않게 (중앙값보다 안정적)
+      for (let r = 0; r < 7; r++) { const t0 = performance.now(); diff(a, b); t.push(performance.now() - t0); }
+      return Math.min(...t);
     };
     const small = timeOf(5000), big = timeOf(20000);
     assert.ok(big / small < 9, `5천 줄 ${small.toFixed(1)}ms → 2만 줄 ${big.toFixed(1)}ms (${(big / small).toFixed(1)}배)`);
