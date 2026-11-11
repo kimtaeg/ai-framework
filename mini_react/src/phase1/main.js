@@ -10,7 +10,8 @@ import { diff } from '../core/diff.js';
 import { applyPatches } from '../core/patch.js';
 import { History } from './history.js';
 import { parseHTML, toHTML } from './html.js';
-import { summarizeMutations, flash as flashNode } from '../utils/domStats.js';
+import { summarizeMutations, summarizeDeep, flash as flashNode } from '../utils/domStats.js';
+import { measureInnerHTML } from './compare.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -95,7 +96,8 @@ function handlePatch() {
     return;
   }
 
-  const { counts, mutations } = applyAndMeasure(patches);
+  const prev = history.current();
+  const { counts, mutations } = applyAndMeasure(prev, next, patches, 'Patch');
   history.push(next); // 과거 시점에서 Patch했다면 그 뒤 기록은 History가 지운다
   showResult('Patch', patches, counts, mutations);
   syncHistoryControls();
@@ -108,19 +110,57 @@ function handleMove(direction) {
   if (next === prev) return; // 처음·끝 (버튼이 비활성이라 보통 오지 않음)
 
   const patches = diff(prev, next);
-  const { counts, mutations } = applyAndMeasure(patches);
+  const { counts, mutations } = applyAndMeasure(prev, next, patches, direction === 'back' ? '뒤로가기' : '앞으로가기');
   showInTestArea(next); // 테스트 영역도 그 시점의 VNode로
   showResult(direction === 'back' ? '뒤로가기' : '앞으로가기', patches, counts, mutations);
   syncHistoryControls();
   addLog(direction === 'back' ? 'BACK' : 'FORWARD', `patch ${patches.length}개 적용 → 기록 ${positionText()}`);
 }
 
-// patch를 실제 영역에 적용하면서, 바뀐 노드를 깜빡이고 MutationObserver로 실제 DOM 변경을 센다
-function applyAndMeasure(patches) {
+// patch를 실제 영역에 적용하면서, 바뀐 노드를 깜빡이고 MutationObserver로 실제 DOM 변경을 센다.
+// 같은 변경을 innerHTML로 했을 때의 수도 화면 밖에서 재서 나란히 보여 준다.
+function applyAndMeasure(prev, next, patches, label) {
+  const byInnerHTML = measureInnerHTML(prev, next); // 실제 영역을 건드리기 전에 잰다
   observer.takeRecords(); // 이전에 쌓인 기록은 버린다 (이번 Patch와 섞이지 않게)
   const counts = applyPatches(actual, patches, { onApply: flash });
-  const mutations = summarizeMutations(observer.takeRecords());
+  const records = observer.takeRecords();
+  const mutations = summarizeMutations(records);
+  showComparison(summarizeDeep(records), byInnerHTML, label);
   return { counts, mutations };
+}
+
+const COMPARE_ROWS = [
+  ['노드 추가', 'added'],
+  ['노드 삭제', 'removed'],
+  ['속성 변경', 'attributes'],
+  ['텍스트 변경', 'texts'],
+];
+
+function showComparison(byPatch, byInnerHTML, label) {
+  $('compare-source').textContent = `· ${label}`;
+  const max = Math.max(byPatch.total, byInnerHTML.total, 1);
+  for (const [id, value] of [['patch', byPatch.total], ['inner', byInnerHTML.total]]) {
+    $(`bar-${id}`).style.width = `${(value / max) * 100}%`;
+    $(`value-${id}`).textContent = value;
+  }
+  $('compare-body').replaceChildren(...COMPARE_ROWS.map(([name, key]) => {
+    const tr = document.createElement('tr');
+    const th = document.createElement('th');
+    th.scope = 'row';
+    th.textContent = name;
+    const cell = (n) => Object.assign(document.createElement('td'), { textContent: n });
+    tr.append(th, cell(byPatch[key]), cell(byInnerHTML[key]));
+    return tr;
+  }));
+  $('total-patch').textContent = byPatch.total;
+  $('total-inner').textContent = byInnerHTML.total;
+
+  const b = (text) => Object.assign(document.createElement('b'), { textContent: text });
+  const ratio = byPatch.total ? byInnerHTML.total / byPatch.total : 0;
+  $('compare-summary').replaceChildren(
+    'patch는 노드 ', b(`${byPatch.total}개`), '만 바꿨고, innerHTML이었다면 ', b(`${byInnerHTML.total}개`),
+    `를 지우고 다시 만들었습니다${ratio >= 1.05 ? ` (약 ${ratio.toFixed(1)}배)` : ''}.`
+  );
 }
 
 // ── 화면 갱신 ─────────────────────────────────────────

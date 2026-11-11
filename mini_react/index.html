@@ -103,6 +103,40 @@
           <p class="counts__note">MOVE는 노드를 떼었다 다시 붙이므로 MutationObserver에는 "삭제 + 추가"로 보입니다.</p>
         </section>
 
+        <!-- DOM 변경 비교: 같은 변경을 patch와 innerHTML로 적용했을 때 MutationObserver가 센 노드 수 -->
+        <section class="panel panel--wide" aria-labelledby="compare-title">
+          <div class="panel__head">
+            <h2 id="compare-title" class="panel__title">DOM 변경 비교: patch vs innerHTML <span class="panel__sub" id="compare-source"></span></h2>
+            <span class="panel__hint">실제 DOM이 느린 이유 = 바꾸는 노드가 많을수록 다시 계산·그리기가 늘어남</span>
+          </div>
+          <p class="compare__summary" id="compare-summary">
+            Patch를 누르면 같은 변경을 <b>patch</b>(바뀐 곳만)와 <b>innerHTML 통째 교체</b>로 각각 적용했을 때 바뀐 노드 수를 비교합니다.
+          </p>
+          <div class="compare__bars">
+            <div class="bar-row bar-row--patch">
+              <span class="bar-row__label">patch <small>Virtual DOM</small></span>
+              <div class="bar-row__track"><div class="bar-row__fill" id="bar-patch"></div></div>
+              <span class="bar-row__value" id="value-patch">–</span>
+            </div>
+            <div class="bar-row bar-row--inner">
+              <span class="bar-row__label">innerHTML <small>통째 교체</small></span>
+              <div class="bar-row__track"><div class="bar-row__fill" id="bar-inner"></div></div>
+              <span class="bar-row__value" id="value-inner">–</span>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="compare__table">
+              <thead><tr><th scope="col">변경 종류 (자식 노드 포함)</th><th scope="col">patch</th><th scope="col">innerHTML</th></tr></thead>
+              <tbody id="compare-body"></tbody>
+              <tfoot><tr><th scope="row">합계</th><td id="total-patch">–</td><td id="total-inner">–</td></tr></tfoot>
+            </table>
+          </div>
+          <p class="compare__note">
+            patch 값은 실제 영역을 지켜보는 MutationObserver가 센 값이고, innerHTML 값은 같은 이전 상태를 화면 밖 복사본에 그려 놓고
+            <code>innerHTML</code>로 바꿨을 때 센 값입니다(실제 영역에는 영향 없음). 붙거나 떨어진 노드는 그 안의 자식까지 셉니다.
+          </p>
+        </section>
+
         <section class="panel panel--wide" aria-labelledby="log-title">
           <div class="panel__head">
             <h2 id="log-title" class="panel__title">기록</h2>

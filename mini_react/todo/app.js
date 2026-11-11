@@ -9,8 +9,8 @@
 //    └ TodoFooter { remaining, doneCount, onClearDone }
 // 데이터는 props로 내려가고, 변경은 App이 내려준 핸들러를 호출해 위로 올라간다.
 
-import { h } from '../src/vdom.js';
-import { useState, useMemo, useEffect } from '../src/hooks.js';
+import { h } from '../src/core/vdom.js';
+import { useState, useMemo, useEffect } from '../src/core/hooks.js';
 
 export const FILTERS = [
   { key: 'all', label: '전체', matches: () => true },
@@ -107,7 +107,8 @@ export function TodoList({ todos, emptyMessage, onToggle, onDelete }) {
   return h(
     'ul',
     { class: 'todo-list' },
-    todos.map((todo) => h(TodoItem, { todo, onToggle, onDelete }))
+    // key = 할 일 id → 중간 항목을 지워도 뒤 항목들을 고치지 않고 그 항목만 REMOVE한다
+    todos.map((todo) => h(TodoItem, { key: todo.id, todo, onToggle, onDelete }))
   );
 }
 
@@ -141,7 +142,7 @@ export function createApp({ initialTodos = [], storage } = {}) {
     }, [todos]);
 
     // 이벤트 핸들러는 useMemo([])로 한 번만 만든다.
-    // 렌더마다 새 함수를 만들면 모든 항목에 onChange·onClick PROPS patch가 생기기 때문이다.
+    // 렌더마다 새 함수를 만들면 모든 항목에 onChange·onClick UPDATE_PROPS patch가 생기기 때문이다.
     // 어느 항목인지는 클로저 대신 data-id로 전달하고, 값은 setState(prev => next)로 최신 상태를 받는다.
     const handlers = useMemo(
       () => ({

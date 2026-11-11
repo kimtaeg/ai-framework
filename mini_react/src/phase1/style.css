@@ -222,6 +222,34 @@ main.wrap { padding-top: 20px; padding-bottom: 32px; }
 .counts tfoot td, .counts tr.is-total td { font-weight: 700; }
 .counts__note { color: var(--text-3); font-size: 12px; }
 
+/* ── DOM 변경 비교: patch vs innerHTML ─────── */
+:root { --cmp-patch: #4f46e5; --cmp-inner: #c2410c; }
+@media (prefers-color-scheme: dark) { :root { --cmp-patch: #7072f0; --cmp-inner: #dc5f14; } }
+.compare__summary { margin-bottom: 16px; color: var(--text-2); }
+.compare__summary b { color: var(--text); }
+.compare__bars { display: grid; gap: 10px; margin-bottom: 16px; }
+.bar-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) 48px; align-items: center; gap: 12px; }
+.bar-row__label { font-size: 14px; font-weight: 600; }
+.bar-row__label small { display: block; color: var(--text-3); font-size: 12px; font-weight: 500; }
+/* 막대 앞에 같은 색 점을 둬서 라벨과 막대를 색으로도 묶는다 */
+.bar-row__label::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 2px; background: var(--bar-color); vertical-align: 1px; }
+.bar-row--patch { --bar-color: var(--cmp-patch); }
+.bar-row--inner { --bar-color: var(--cmp-inner); }
+.bar-row__track { height: 12px; padding: 2px 0; }
+.bar-row__fill { width: 0; height: 100%; background: var(--bar-color); border-radius: 0 4px 4px 0; transition: width 0.4s ease-out; }
+.bar-row__value { font: 700 18px/1 var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+.table-wrap { overflow-x: auto; }
+.compare__table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.compare__table th, .compare__table td { padding: 8px 12px; border-bottom: 1px solid var(--border); text-align: right; }
+.compare__table th:first-child { text-align: left; }
+.compare__table thead th { color: var(--text-3); font-size: 12px; font-weight: 600; }
+.compare__table tbody th { color: var(--text-2); font-weight: 500; }
+.compare__table td { font: 14px/1.4 var(--mono); font-variant-numeric: tabular-nums; }
+.compare__table tfoot th, .compare__table tfoot td { border-bottom: 0; font-weight: 700; }
+.compare__note { margin-top: 12px; color: var(--text-3); font-size: 13px; }
+.compare__note code { font: 12px var(--mono); }
+@media (max-width: 480px) { .bar-row { grid-template-columns: 96px minmax(0, 1fr) 40px; gap: 8px; } }
+
 /* ── 대시보드 자리 ─────────────────────────── */
 .empty-state { padding: 40px 24px; text-align: center; }
 .empty-state h2 { font-size: 18px; }

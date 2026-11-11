@@ -9,9 +9,28 @@
 const dirtyComponents = new Set();
 let isFlushScheduled = false;
 
+// 무한 렌더 방지: 한 틱 안에서 같은 컴포넌트의 update가 이만큼 이어지면 멈춘다.
+// deps 없는 useEffect 안에서 setState하면 "렌더 → effect → setState → 렌더…"가 끝없이 이어지고,
+// 마이크로태스크라 브라우저가 화면을 그릴 틈도 없이 멈춰 버리기 때문이다.
+export const MAX_CHAINED_UPDATES = 50;
+const chainedUpdates = new WeakMap(); // 컴포넌트 → 이번 틱에 이어진 update 수
+
+function allowUpdate(component) {
+  const count = (chainedUpdates.get(component) ?? 0) + 1;
+  chainedUpdates.set(component, count);
+  // 다음 매크로태스크(사용자의 다음 클릭, 다음 타이머)에서는 다시 0부터 센다
+  if (count === 1) setTimeout(() => chainedUpdates.delete(component), 0);
+  if (count <= MAX_CHAINED_UPDATES) return true;
+  if (count === MAX_CHAINED_UPDATES + 1) {
+    console.error(`[mini-react] 렌더가 쉬지 않고 ${MAX_CHAINED_UPDATES}번 넘게 이어져 멈췄습니다. deps 없는 useEffect 안에서 setState하고 있지 않은지 확인하세요.`);
+  }
+  component.pendingSetStateCount = 0;
+  return false;
+}
+
 export function scheduleUpdate(component) {
   if (!component.batching) {
-    component.update(); // 비교용: 배칭을 끄면 setState마다 바로 그린다
+    if (allowUpdate(component)) component.update(); // 비교용: 배칭을 끄면 setState마다 바로 그린다
     return;
   }
   dirtyComponents.add(component);
@@ -30,5 +49,7 @@ function flushUpdates() {
   const components = [...dirtyComponents];
   dirtyComponents.clear();
   // update 중에 effect가 다시 setState하면 큐에 새로 들어가 다음 마이크로태스크에서 처리된다
-  for (const component of components) component.update();
+  for (const component of components) {
+    if (allowUpdate(component)) component.update();
+  }
 }

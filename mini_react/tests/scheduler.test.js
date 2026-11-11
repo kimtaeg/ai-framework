@@ -3,7 +3,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { h } from '../src/core/vdom.js';
 import { FunctionComponent } from '../src/core/component.js';
-import { useState } from '../src/core/hooks.js';
+import { useState, useEffect } from '../src/core/hooks.js';
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -51,6 +51,34 @@ describe('배칭 (scheduler)', () => {
     component.hooks[0].setState(9);
     await flush();
     assert.equal(component.renderCount, 3);
+  });
+
+  test('같은 틱의 렌더가 50번 넘게 이어지면 멈추고 원인을 알린다 (deps 없는 effect 안의 setState)', async (t) => {
+    const messages = [];
+    t.mock.method(console, 'error', (message) => messages.push(String(message)));
+    for (const batching of [true, false]) {
+      let renders = 0;
+      new FunctionComponent(() => {
+        renders++;
+        const [n, setN] = useState(0);
+        useEffect(() => setN(n + 1));
+        return h('p', null, String(n));
+      }, makeContainer(), { batching }).mount();
+      await flush();
+      await flush();
+      assert.ok(renders <= 52, `배칭 ${batching}: 렌더 ${renders}번`);
+    }
+    assert.equal(messages.filter((m) => m.includes('deps 없는 useEffect 안에서 setState')).length, 2);
+  });
+
+  test('틱이 바뀌면 다시 센다 (50번 넘게 클릭해도 문제없음)', async () => {
+    const { component, container } = mountThreeSetters();
+    for (let i = 1; i <= 60; i++) {
+      component.hooks[0].setState(i);
+      await flush();
+    }
+    assert.equal(container.textContent, '6000');
+    assert.equal(component.renderCount, 61);
   });
 
   test('예약된 update가 있는 채로 unmount하면 그 update는 실행되지 않는다', async () => {

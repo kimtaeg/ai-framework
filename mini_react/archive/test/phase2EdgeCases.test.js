@@ -1,10 +1,10 @@
-// Phase 2 마무리 점검에서 찾은 엣지 케이스 회귀 테스트
+// Phase 2 마무리 점검에서 찾은 엣지 케이스 회귀 테스트 (예전 엔진)
+// 할 일 앱 관련 케이스는 앱과 함께 새 코어로 옮겼다 → tests/todo.test.js
 import { describe, it, expect } from 'vitest';
 import { flush } from './helpers.js';
 import { h } from '../src/vdom.js';
 import { FunctionComponent } from '../src/component.js';
 import { useState, useEffect, useMemo } from '../src/hooks.js';
-import { createApp, sanitizeTodos } from '../phase2/app.js';
 
 function mount(fn) {
   const container = document.createElement('div');
@@ -146,100 +146,6 @@ describe('mount 두 번', () => {
   it('이미 mount된 상태에서 다시 mount하면 에러', () => {
     const { component } = mount(() => h('p'));
     expect(() => component.mount()).toThrow('이미 mount된 컴포넌트입니다');
-  });
-});
-
-describe('할 일 앱: 빠른 연속 클릭과 빈 목록', () => {
-  const TODOS = [
-    { id: 'a', text: 'A', done: false },
-    { id: 'b', text: 'B', done: false },
-  ];
-
-  it('같은 틱에 체크를 두 번 누르면 원래대로, 렌더는 한 번', async () => {
-    const { container, component } = mount(createApp({ initialTodos: TODOS }));
-    const box = container.querySelector('input[type=checkbox]');
-    box.click();
-    box.click();
-    await flush();
-    expect(container.querySelector('.todo').className).toBe('todo');
-    expect(component.renderCount).toBe(2);
-    expect(component.lastBatchSize).toBe(2);
-  });
-
-  it('같은 틱에 같은 삭제 버튼을 두 번 눌러도 하나만 지워진다', async () => {
-    const { container } = mount(createApp({ initialTodos: TODOS }));
-    const button = container.querySelector('.todo__delete');
-    button.click();
-    button.click();
-    await flush();
-    expect([...container.querySelectorAll('.todo__text')].map((el) => el.textContent)).toEqual(['B']);
-  });
-
-  it('여러 틱에 걸쳐 빠르게 추가해도 순서대로 모두 들어간다', async () => {
-    const { container } = mount(createApp({ initialTodos: [] }));
-    for (const text of ['1', '2', '3', '4', '5']) {
-      const input = container.querySelector('.todo-input');
-      input.value = text;
-      input.dispatchEvent(new Event('input', { bubbles: true }));
-      await flush();
-      container.querySelector('.todo-form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-      await flush();
-    }
-    expect([...container.querySelectorAll('.todo__text')].map((el) => el.textContent)).toEqual(['1', '2', '3', '4', '5']);
-  });
-
-  it('빈 목록: 안내 문구, 완료 지우기 비활성, 모든 필터에서 깨지지 않음', async () => {
-    const { container } = mount(createApp({ initialTodos: [] }));
-    expect(container.querySelector('.todo-footer .btn').disabled).toBe(true);
-    for (const key of ['active', 'done', 'all']) {
-      container.querySelector(`[data-filter="${key}"]`).click();
-      await flush();
-      expect(container.querySelector('.todo-empty')).not.toBeNull();
-    }
-  });
-
-  it('마지막 하나를 지우면 목록 대신 안내 문구로 바뀐다 (ul → p REPLACE)', async () => {
-    const renders = [];
-    const container = document.createElement('div');
-    new FunctionComponent(createApp({ initialTodos: [TODOS[0]] }), container, {
-      onRender: (info) => renders.push(info),
-    }).mount();
-    container.querySelector('.todo__delete').click();
-    await flush();
-    expect(container.querySelector('.todo-list')).toBeNull();
-    expect(container.querySelector('.todo-empty')).not.toBeNull();
-    expect(renders.at(-1).patches.some((p) => p.type === 'REPLACE')).toBe(true);
-  });
-});
-
-describe('저장 데이터 정리 (sanitizeTodos)', () => {
-  it('배열이 아니면 null (샘플로 시작)', () => {
-    expect(sanitizeTodos(null)).toBeNull();
-    expect(sanitizeTodos({ a: 1 })).toBeNull();
-  });
-
-  it('깨진 항목은 버리고, 빠진 값은 채우고, 중복 id는 새로 만든다', () => {
-    const result = sanitizeTodos([
-      null,
-      'x',
-      { text: 1 },
-      { text: '   ' },
-      { id: 'a', text: '정상', done: true },
-      { id: 'a', text: '중복 id', done: 'yes' },
-      { text: 'id 없음' },
-    ]);
-    expect(result.map(({ text, done }) => ({ text, done }))).toEqual([
-      { text: '정상', done: true },
-      { text: '중복 id', done: false },
-      { text: 'id 없음', done: false },
-    ]);
-    expect(new Set(result.map((t) => t.id)).size).toBe(3);
-  });
-
-  it('정리한 데이터로 앱이 정상 시작한다', () => {
-    const initialTodos = sanitizeTodos([null, { text: '살아남음' }]);
-    const { container } = mount(createApp({ initialTodos }));
-    expect(container.querySelector('.todo__text').textContent).toBe('살아남음');
   });
 });
 

@@ -3,7 +3,8 @@
 import { JSDOM } from 'jsdom';
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>');
-const GLOBALS = ['window', 'document', 'Node', 'Text', 'Comment', 'HTMLElement', 'MutationObserver', 'Event', 'MouseEvent'];
+// FormData는 Node에도 있지만 jsdom의 <form>을 받지 못하므로 jsdom 것으로 덮어쓴다
+const GLOBALS = ['window', 'document', 'Node', 'Text', 'Comment', 'HTMLElement', 'MutationObserver', 'Event', 'MouseEvent', 'FormData'];
 
 globalThis.window = dom.window;
 for (const name of GLOBALS) {

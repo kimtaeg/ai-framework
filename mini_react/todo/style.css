@@ -18,6 +18,7 @@
   --replace: #a16207; --replace-bg: #fbf3d9;
   --text-c: #1d4ed8;  --text-bg: #e6eefc;
   --props: #7e22ce;   --props-bg: #f3e8fd;
+  --move: #0e7490;    --move-bg: #e0f5f9;
 
   --radius: 12px;
   --radius-sm: 8px;
@@ -46,6 +47,7 @@
     --replace: #facc15; --replace-bg: #352d10;
     --text-c: #60a5fa;  --text-bg: #16273f;
     --props: #c084fc;   --props-bg: #2c1a3d;
+    --move: #22d3ee;    --move-bg: #0f2e35;
 
     --shadow: none;
   }
@@ -408,6 +410,7 @@ h1, h2, h3, p { margin: 0; }
 .tag--replace { color: var(--replace); background: var(--replace-bg); }
 .tag--text    { color: var(--text-c);  background: var(--text-bg); }
 .tag--props   { color: var(--props);   background: var(--props-bg); }
+.tag--move    { color: var(--move);    background: var(--move-bg); }
 
 .render-log li {
   display: grid;

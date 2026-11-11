@@ -98,6 +98,46 @@ describe('FunctionComponent', () => {
     assert.equal(component.batching, false);
   });
 
+  test('렌더 도중 실패한 mount를 다시 시도하면 빈 사물함에서 시작해 setState가 동작한다', async () => {
+    let shouldFail = true;
+    let setN;
+    const container = makeContainer();
+    const component = new FunctionComponent(() => {
+      const [n, set] = useState(0);
+      setN = set;
+      if (shouldFail) throw new Error('첫 mount 실패');
+      return h('p', null, String(n));
+    }, container);
+    assert.throws(() => component.mount(), /첫 mount 실패/);
+    shouldFail = false;
+    component.mount();
+    setN(3);
+    await flush();
+    assert.equal(container.textContent, '3');
+  });
+
+  test('unmount → mount 뒤: 옛 setState는 무시, 새 setState는 반영', async () => {
+    const setters = [];
+    const container = makeContainer();
+    const component = new FunctionComponent(() => {
+      const [n, set] = useState(0);
+      setters.push(set);
+      return h('p', null, String(n));
+    }, container).mount();
+    setters[0](5); // 예약만 된 상태로
+    component.unmount();
+    component.mount();
+    await flush();
+    assert.equal(container.textContent, '0');
+    setters[0](99);
+    await flush();
+    assert.equal(container.textContent, '0');
+    setters.at(-1)(7);
+    await flush();
+    assert.equal(container.textContent, '7');
+    assert.equal(component.renderCount, 3);
+  });
+
   test('이미 mount된 컴포넌트를 다시 mount하면 에러, unmount 뒤 setState는 무시', async () => {
     const container = makeContainer();
     let setN;
