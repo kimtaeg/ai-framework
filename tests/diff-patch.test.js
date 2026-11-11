@@ -432,3 +432,28 @@ describe('diff 지연 — 경로를 노드마다 만들지 않아도 패치 경�
     assert.deepEqual(diffProps({ a: 1 }, { b: 2 }), [{ name: 'b', value: 2, oldValue: undefined }, { name: 'a', value: undefined, oldValue: 1 }]);
   });
 });
+
+describe('diff — <select value>', () => {
+  test('option 과 value 가 함께 바뀌면 value 를 option 패치 뒤에 적용한다', () => {
+    const v = (opts, value) => h('select', { value, class: 'c' + opts.length }, opts.map((o) => h('option', { key: o, value: o }, o)));
+    const a = v(['a'], 'a');
+    const b = v(['a', 'b'], 'b');
+    const el = createElement(a);
+    const patches = diff(a, b);
+    applyPatches(el, patches);
+    assert.equal(el.value, 'b');
+    assert.equal(el.getAttribute('class'), 'c2');
+    // value 패치는 마지막, 다른 속성은 자식 패치 앞에
+    assert.deepEqual(patches.at(-1), { type: PatchType.PROPS, path: [], changes: [{ name: 'value', value: 'b', oldValue: 'a' }] });
+    assert.equal(patches[0].type, PatchType.PROPS);
+    assert.deepEqual(patches[0].changes.map((c) => c.name), ['class']);
+  });
+
+  test('select 가 아닌 태그의 패치 순서는 그대로다', () => {
+    const a = h('input', { value: 'a', class: 'x' });
+    const b = h('input', { value: 'b', class: 'y' });
+    const patches = diff(a, b);
+    assert.equal(patches.length, 1);
+    assert.deepEqual(patches[0].changes.map((c) => c.name), ['value', 'class']);
+  });
+});

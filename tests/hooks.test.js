@@ -439,3 +439,75 @@ describe('제약 조건: Hook 은 루트 컴포넌트에서만', () => {
     assert.equal(el.innerHTML, '<dl><dt>k</dt><dd>v</dd></dl>');
   });
 });
+
+describe('렌더 실패 · 렌더 중 setState', () => {
+  test('렌더가 실패해도 effect deps 는 커밋된 렌더 기준으로 비교한다', async () => {
+    let set;
+    let boom = false;
+    const runs = [];
+    const { el, comp } = setup(() => {
+      const [n, setN] = useState(0);
+      set = setN;
+      useEffect(() => { runs.push(n); }, [n]);
+      if (boom) throw new Error('render fail');
+      return h('p', null, String(n));
+    }, { onError: () => {} });
+    await flushMicrotasks();
+    boom = true;
+    set(1);
+    assert.throws(() => comp.flush(), /render fail/); // n=1 렌더 실패 → 화면은 0 그대로
+    boom = false;
+    set(2);
+    set(1);
+    comp.flush(); // n=1 이 처음으로 커밋된다
+    assert.equal(el.textContent, '1');
+    assert.deepEqual(runs, [0, 1]);
+  });
+
+  test('실패한 렌더가 새로 만든 Hook 슬롯은 남지 않는다', () => {
+    let set;
+    let extra = false;
+    const { el, comp } = setup(() => {
+      const [n, setN] = useState(0);
+      set = setN;
+      if (extra) useState('x'); // 규칙 위반 (조건부 Hook)
+      return h('p', null, String(n));
+    }, { onError: () => {} });
+    extra = true;
+    set(1);
+    assert.throws(() => comp.flush(), /Hook 호출 개수/);
+    assert.equal(comp.hooks.length, 1);
+    extra = false;
+    set(2);
+    comp.flush(); // 규칙을 지키면 다시 정상 동작
+    assert.equal(el.textContent, '2');
+  });
+
+  test('렌더 중 조건 없는 setState 는 무한 루프 대신 에러로 멈춘다', async () => {
+    const errors = [];
+    let renders = 0;
+    const { el } = setup(() => {
+      const [n, setN] = useState(0);
+      renders++;
+      if (renders < 1000) setN(n + 1);
+      return h('p', null, String(n));
+    }, { onError: (e) => errors.push(e) });
+    await flushMicrotasks(10);
+    assert.equal(errors.length, 1);
+    assert.match(errors[0].message, /Too many re-renders/);
+    assert.ok(renders <= 30, `렌더 ${renders}번`);
+    assert.equal(el.textContent, '24'); // 마지막으로 성공한 렌더의 화면
+  });
+
+  test('조건부로 끝나는 렌더 중 setState (props 에서 state 파생) 는 그대로 동작한다', async () => {
+    const errors = [];
+    const { el } = setup(() => {
+      const [n, setN] = useState(0);
+      if (n < 3) setN(n + 1);
+      return h('p', null, String(n));
+    }, { onError: (e) => errors.push(e) });
+    await flushMicrotasks(10);
+    assert.equal(el.textContent, '3');
+    assert.equal(errors.length, 0);
+  });
+});
