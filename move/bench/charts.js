@@ -1,7 +1,7 @@
 /**
  * README 에 넣을 SVG 그래프 (의존성 없음, GitHub 에서 <img> 로 보임 — 색은 고정값)
  */
-export const C = { ours: '#1F9D6B', common: '#D64545', naive: '#8A93A3', ink: '#1A2233', soft: '#5A6578', grid: '#E3E1DA', bg: '#FBFAF7' };
+export const C = { ours: '#1F9D6B', common: '#D64545', naive: '#8A93A3', v0: '#D64545', v1: '#E0A23B', v2: '#1F9D6B', ink: '#1A2233', soft: '#5A6578', grid: '#E3E1DA', bg: '#FBFAF7' };
 const FONT = "font-family=\"-apple-system, 'Segoe UI', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif\"";
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 export const fmt = (x) => (x >= 10000 ? `${Math.round(x / 1000)}k` : x >= 1000 ? `${+(x / 1000).toFixed(1)}k` : x >= 10 ? String(Math.round(x)) : x >= 1 ? String(+x.toFixed(1)) : String(+x.toFixed(2)));

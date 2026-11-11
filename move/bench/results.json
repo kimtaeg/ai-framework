@@ -1,125 +1,125 @@
 {
-  "when": "2026-11-10T12:50:29.505Z",
+  "when": "2026-11-11T02:47:08.061Z",
   "node": "v24.20.0",
   "timing": [
     {
       "n": 1000,
       "op": "shuffle",
-      "common": 1.9,
+      "common": 1.84,
       "commonMoves": 942,
-      "ours": 1.63,
+      "ours": 0.66,
       "oursMoves": 942,
-      "naive": 1.32,
+      "naive": 0.88,
       "naiveMoves": 995
     },
     {
       "n": 1000,
       "op": "reverse",
-      "common": 1.42,
+      "common": 1.38,
       "commonMoves": 999,
-      "ours": 0.96,
+      "ours": 0.46,
       "oursMoves": 999,
-      "naive": 1.08,
+      "naive": 0.39,
       "naiveMoves": 999
     },
     {
       "n": 2000,
       "op": "shuffle",
-      "common": 8.31,
+      "common": 8.08,
       "commonMoves": 1910,
-      "ours": 3.22,
+      "ours": 1.02,
       "oursMoves": 1910,
-      "naive": 2.92,
+      "naive": 1.39,
       "naiveMoves": 1994
     },
     {
       "n": 2000,
       "op": "reverse",
-      "common": 10.37,
+      "common": 10.87,
       "commonMoves": 1999,
-      "ours": 2.43,
+      "ours": 0.71,
       "oursMoves": 1999,
-      "naive": 2.51,
+      "naive": 0.77,
       "naiveMoves": 1999
     },
     {
       "n": 5000,
       "op": "shuffle",
-      "common": 41.37,
+      "common": 40.37,
       "commonMoves": 4863,
-      "ours": 8.04,
+      "ours": 3.83,
       "oursMoves": 4863,
-      "naive": 8.25,
+      "naive": 4.26,
       "naiveMoves": 4994
     },
     {
       "n": 5000,
       "op": "reverse",
-      "common": 55.76,
+      "common": 54.29,
       "commonMoves": 4999,
-      "ours": 6.55,
+      "ours": 1.9,
       "oursMoves": 4999,
-      "naive": 6.17,
+      "naive": 2.36,
       "naiveMoves": 4999
     },
     {
       "n": 10000,
       "op": "shuffle",
-      "common": 151.16,
+      "common": 146.47,
       "commonMoves": 9810,
-      "ours": 19.99,
+      "ours": 9.45,
       "oursMoves": 9810,
-      "naive": 18.62,
+      "naive": 12.07,
       "naiveMoves": 9989
     },
     {
       "n": 10000,
       "op": "reverse",
-      "common": 210.64,
+      "common": 203.64,
       "commonMoves": 9999,
-      "ours": 11.7,
+      "ours": 3.53,
       "oursMoves": 9999,
-      "naive": 11.91,
+      "naive": 5.35,
       "naiveMoves": 9999
     },
     {
       "n": 20000,
       "op": "shuffle",
-      "common": 565.3,
+      "common": 563.72,
       "commonMoves": 19725,
-      "ours": 40.1,
+      "ours": 24.45,
       "oursMoves": 19725,
-      "naive": 43.67,
+      "naive": 29.81,
       "naiveMoves": 19993
     },
     {
       "n": 20000,
       "op": "reverse",
-      "common": 804.31,
+      "common": 640.67,
       "commonMoves": 19999,
-      "ours": 24.22,
+      "ours": 8.09,
       "oursMoves": 19999,
-      "naive": 26.3,
+      "naive": 12.35,
       "naiveMoves": 19999
     },
     {
       "n": 50000,
       "op": "shuffle",
-      "common": 3398.93,
+      "common": 3027.34,
       "commonMoves": 49567,
-      "ours": 108.81,
+      "ours": 68.76,
       "oursMoves": 49567,
-      "naive": 123.8,
+      "naive": 81.68,
       "naiveMoves": 49993
     },
     {
       "n": 50000,
       "op": "reverse",
-      "common": 5042.14,
+      "common": 2977.86,
       "commonMoves": 49999,
-      "ours": 61.66,
+      "ours": 23.49,
       "oursMoves": 49999,
-      "naive": 75.13,
+      "naive": 36.07,
       "naiveMoves": 49999
     }
   ],
@@ -158,8 +158,8 @@
     "trials": 10000,
     "equalMin": 10000,
     "oursMoreThanNaive": 0,
-    "totalNaive": 751913,
-    "totalOurs": 395833,
+    "totalNaive": 751556,
+    "totalOurs": 396300,
     "bins": [
       {
         "label": "우리가 더 많이 옮김",
@@ -171,142 +171,179 @@
       },
       {
         "label": "1 ~ 9번 적게",
-        "count": 978
+        "count": 977
       },
       {
         "label": "10 ~ 49번 적게",
-        "count": 2874
+        "count": 2885
       },
       {
         "label": "50 ~ 99번 적게",
-        "count": 1438
+        "count": 1434
       },
       {
         "label": "100번 이상 적게",
-        "count": 1149
+        "count": 1143
       }
     ]
   },
   "browser": {
-    "note": "move/ 페이지 코드로 Chrome 에서 잰 값 (2026-11-10). 한 줄 = 색 · 글자 2개 · 입력칸. diff + patch + 강제 레이아웃까지 ms, 9회 중앙값, 두 방식을 번갈아 먼저 실행. 브라우저 창이 가려진 상태라 페인트는 포함하지 않음.",
+    "note": "move/ 페이지 코드로 Chrome 에서 잰 값 (2026-11-10, 브라우저 창이 보이는 상태). 패치 적용 직전부터 브라우저가 다음 화면을 그릴 때까지(diff + patch + 스타일 · 레이아웃 · 페인트) ms, 9회 중앙값. 두 방식을 서로 다른 프레임에서, 번갈아 먼저 실행. 측정 중에는 옮긴 줄 번쩍임 애니메이션을 끔. 한 줄 = 색 · 글자 2개 · 입력칸. 화면 갱신 주기(약 16.7ms) 단위로 끊기므로 250줄은 두 방식 모두 한 프레임 안.",
     "rows": 1000,
     "ops": [
       {
         "label": "맨 아래 → 맨 위",
-        "naive": 28.4,
-        "ours": 4.9
+        "naive": 49.9,
+        "ours": 23.5
       },
       {
         "label": "두 줄 바꾸기",
-        "naive": 29.6,
-        "ours": 4.9
+        "naive": 50.2,
+        "ours": 18.8
       },
       {
         "label": "아래 10% → 맨 위",
-        "naive": 42.6,
-        "ours": 10.6
+        "naive": 46,
+        "ours": 25.7
       },
       {
         "label": "섞기",
-        "naive": 35.3,
-        "ours": 31.9
+        "naive": 62.6,
+        "ours": 60
       },
       {
         "label": "뒤집기",
-        "naive": 36.6,
-        "ours": 35
+        "naive": 61.8,
+        "ours": 60.1
       }
     ],
     "all": {
       "250": {
         "lastToFirst": [
-          15.8,
-          2.9
-        ],
-        "tail10": [
-          6.6,
-          2.2
+          17.6,
+          18
         ],
         "swap": [
-          7.4,
-          1.6
-        ],
-        "shuffle": [
-          8,
-          6.9
-        ],
-        "reverse": [
-          6.6,
-          8.6
-        ]
-      },
-      "500": {
-        "lastToFirst": [
-          16.6,
-          2.5
+          18,
+          16.7
         ],
         "tail10": [
-          14.5,
-          4.9
-        ],
-        "swap": [
-          16.3,
-          2.6
+          17.6,
+          17.8
         ],
         "shuffle": [
-          14.4,
-          14.3
+          18.3,
+          18.1
         ],
         "reverse": [
-          13.7,
-          15.4
+          18,
+          18.8
         ]
       },
       "1000": {
         "lastToFirst": [
-          28.4,
-          4.9
-        ],
-        "tail10": [
-          42.6,
-          10.6
+          49.9,
+          23.5
         ],
         "swap": [
-          29.6,
-          4.9
+          50.2,
+          18.8
+        ],
+        "tail10": [
+          46,
+          25.7
         ],
         "shuffle": [
-          35.3,
-          31.9
+          62.6,
+          60
         ],
         "reverse": [
-          36.6,
-          35
+          61.8,
+          60.1
         ]
       },
       "2000": {
         "lastToFirst": [
-          65.8,
-          18.4
-        ],
-        "tail10": [
-          59.1,
-          19
+          102.6,
+          45.7
         ],
         "swap": [
-          93.2,
-          11.3
+          99.1,
+          36.2
+        ],
+        "tail10": [
+          93.4,
+          48.9
         ],
         "shuffle": [
-          74.8,
-          85.2
+          127.7,
+          126.7
         ],
         "reverse": [
-          70.9,
-          66.1
+          127.7,
+          125.2
         ]
       }
     },
-    "allNote": "all 의 값은 [앞에서부터, 우리 LIS] (ms)"
-  }
+    "allNote": "all 의 값은 [앞에서부터, 우리 LIS] (ms)",
+    "previous": "이전 측정(창이 가려진 상태 · 페인트 제외, diff + patch + 강제 레이아웃): 1,000줄 맨 아래 → 맨 위 28.4 / 4.9, 두 줄 바꾸기 29.6 / 4.9, 아래 10% 42.6 / 10.6, 섞기 35.3 / 31.9, 뒤집기 36.6 / 35.0"
+  },
+  "stages": [
+    {
+      "n": 1000,
+      "scenario": "바뀐 것 없음",
+      "v0": 2.679,
+      "v1": 2.266,
+      "v2": 0.958
+    },
+    {
+      "n": 1000,
+      "scenario": "한 줄 글자 변경",
+      "v0": 2.835,
+      "v1": 2.185,
+      "v2": 1.094
+    },
+    {
+      "n": 1000,
+      "scenario": "맨 아래 → 맨 위",
+      "v0": 2.439,
+      "v1": 2.222,
+      "v2": 1.134
+    },
+    {
+      "n": 1000,
+      "scenario": "섞기",
+      "v0": 2.838,
+      "v1": 2.522,
+      "v2": 1.376
+    },
+    {
+      "n": 10000,
+      "scenario": "바뀐 것 없음",
+      "v0": 38.381,
+      "v1": 23.454,
+      "v2": 12.021
+    },
+    {
+      "n": 10000,
+      "scenario": "한 줄 글자 변경",
+      "v0": 39.23,
+      "v1": 29.143,
+      "v2": 11.893
+    },
+    {
+      "n": 10000,
+      "scenario": "맨 아래 → 맨 위",
+      "v0": 35.458,
+      "v1": 25.566,
+      "v2": 13.066
+    },
+    {
+      "n": 10000,
+      "scenario": "섞기",
+      "v0": 179.287,
+      "v1": 35.521,
+      "v2": 23.439
+    }
+  ]
 }

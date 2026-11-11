@@ -6,10 +6,12 @@
  *  2. DOM 이동 횟수: 10 ~ 10만 줄 (순서만 계산, 실제 diff 로 교차 확인)
  *  3. 손해 없음: 무작위 재배치 1만 번에서 (앞에서부터 이동 − 우리 이동) 의 분포, 우리 이동 = 이론상 최소인지
  *  4. 브라우저 시간: browser.json (move/ 페이지에서 잰 값) → 막대 그래프
+ *  5. 단계별 diff 지연: 처음(0cc8727) · 1단계(목록 재배치 최적화, 9f4e772) · 지금(할당 제거), 실제 앱 같은 줄로
  */
 import { writeFileSync, readFileSync } from 'node:fs';
 import { h, diff, devConfig, longestIncreasingSubsequence } from '../../src/lib/index.js';
 import { diff as diffCommon } from './lis-common.js';
+import { diff as diffV1 } from './diff-v1.js';
 import { diffNaive, naiveMoves } from '../naive.js';
 import { renderLogLog, renderBars, renderHistogram, C, fmt } from './charts.js';
 
@@ -60,6 +62,34 @@ for (const n of SIZES) {
   }
 }
 
+// ---------------------------------------------------------------- 5. 단계별 diff 지연 (실제 앱 같은 줄: 요소 5개 · 클래스 · 스타일 · 클릭 핸들러)
+const appRow = (it) => h('li', { key: it.id, class: 'row' },
+  h('span', { class: 'sw', style: { background: `hsl(${it.id % 360} 60% 50%)` } }),
+  h('span', { class: 'id' }, `#${it.id}`),
+  h('span', { class: 'label' }, it.label),
+  h('input', { placeholder: '메모', value: '' }),
+  h('button', { onClick: () => {} }, '삭제'));
+const appList = (items) => h('ul', { class: 'list' }, items.map(appRow));
+const STAGES = { v0: diffCommon, v1: diffV1, v2: diff };
+const SCENARIOS = ['바뀐 것 없음', '한 줄 글자 변경', '맨 아래 → 맨 위', '섞기'];
+const stages = [];
+for (const n of [1000, 10000]) {
+  const items = Array.from({ length: n }, (_, i) => ({ id: i, label: `항목 ${i}` }));
+  const nexts = [items, items.map((it, i) => (i === n >> 1 ? { ...it, label: '바뀜' } : it)), [items.at(-1), ...items.slice(0, -1)], shuffle(items)];
+  SCENARIOS.forEach((name, si) => {
+    const row = { n, scenario: name };
+    const t = { v0: [], v1: [], v2: [] };
+    for (let r = 0; r < 30; r++) {
+      // 매번 새 VNode (실제 다시 그리기와 같게), 세 단계를 돌아가며 먼저 실행
+      const order = Object.keys(STAGES); for (let k = 0; k < r % 3; k++) order.push(order.shift());
+      for (const st of order) { const a = appList(items), b = appList(nexts[si]); const t0 = performance.now(); STAGES[st](a, b); if (r >= 5) t[st].push(performance.now() - t0); }
+    }
+    for (const st of Object.keys(STAGES)) row[st] = +med(t[st]).toFixed(3);
+    stages.push(row);
+    console.log(`${n} ${name}  처음 ${row.v0}ms · 1단계 ${row.v1}ms · 지금 ${row.v2}ms  (${(row.v0 / row.v2).toFixed(1)}배)`);
+  });
+}
+
 // ---------------------------------------------------------------- 2. 이동 횟수
 const moveSizes = [10, 100, 1000, 10000, 100000];
 const moves = moveSizes.map((n) => {
@@ -108,7 +138,7 @@ console.log('손해 없음', noLoss);
 
 // ---------------------------------------------------------------- 4. 브라우저 (move/ 페이지에서 잰 값 — browser.json)
 
-writeFileSync(new URL('results.json', dir), JSON.stringify({ when: new Date().toISOString(), node: process.version, timing, moves, noLoss, browser }, null, 2));
+writeFileSync(new URL('results.json', dir), JSON.stringify({ when: new Date().toISOString(), node: process.version, timing, moves, noLoss, browser, stages }, null, 2));
 
 // ---------------------------------------------------------------- 그래프
 const pick = (op, key) => timing.filter((r) => r.op === op).map((r) => ({ x: r.n, y: r[key] }));
@@ -143,4 +173,12 @@ out('noloss.svg', renderHistogram({
 }));
 browserChart();
 
-console.log('완료: move/bench/results.json, complexity.svg, moves.svg, noloss.svg, browser.svg');
+const s1k = stages.filter((r) => r.n === 1000);
+out('stages.svg', renderBars({
+  title: 'diff 지연 — 1,000줄 목록, 단계별',
+  subtitle: 'diff 계산 시간 (ms, Node, 25회 중앙값) · 한 줄 = 요소 5개 · 클래스 · 스타일 · 클릭 핸들러 · 낮을수록 빠름',
+  yLabel: 'diff 시간 (ms)',
+  legendItems: [['처음', C.v0], ['1단계: 목록 재배치', C.v1], ['지금: 할당 제거', C.v2]],
+  groups: s1k.map((r) => ({ label: r.scenario, sub: `${(r.v0 / r.v2).toFixed(1)}배`, bars: [{ key: 'v0', y: r.v0 }, { key: 'v1', y: r.v1 }, { key: 'v2', y: r.v2 }] })),
+}));
+console.log('완료: move/bench/results.json, complexity.svg, moves.svg, noloss.svg, browser.svg, stages.svg');
