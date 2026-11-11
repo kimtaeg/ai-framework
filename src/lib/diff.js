@@ -18,10 +18,17 @@
  * patch 는 path(루트로부터의 childNodes 인덱스 배열)로 대상을 가리킨다.
  * patches 배열은 "앞에서부터 순서대로 적용" 했을 때 path 가 항상 유효하도록 생성된다.
  *   - 한 레벨에서: REMOVE(뒤에서부터) → MOVE/INSERT(구조 확정) → 각 자식 재귀 diff
+ *
+ * 한 번의 diff 호출에 필요한 상태(경로 스택 · 포커스 key)는 호출마다 만드는 문맥(ctx)에 담는다.
+ * 모듈 전역 변수를 쓰지 않으므로 diff 안에서 diff 를 다시 불러도 서로 섞이지 않는다.
  */
 
 import { TEXT } from './vdom.js';
 import { warn } from './warn.js';
+import { longestIncreasingSubsequence } from './lis.js';
+import { FenwickSum } from './fenwick.js';
+
+export { longestIncreasingSubsequence }; // 예전처럼 diff.js 에서도 가져올 수 있게
 
 export const PatchType = Object.freeze({
   INSERT: 'INSERT',
@@ -35,57 +42,52 @@ export const PatchType = Object.freeze({
 /**
  * @param {object|null} oldVNode
  * @param {object|null} newVNode
- * @returns {Array<object>} patches
- */
-// 이번 diff 동안 "되도록 옮기지 않았으면 하는" key (포커스가 있는 줄 등). 최상위 diff 호출의 options.keep 으로 받는다.
-let keepKeys = null;
-
-/**
+ * @param {number[]} [path]   이 두 노드의 경로 (보통 [])
+ * @param {Array} [patches]  결과를 쌓을 배열
  * @param {object} [options]
  * @param {Set} [options.keep] 옮기는 횟수가 같은 여러 방법 중, 이 key 의 줄은 옮기지 않는 쪽을 고른다 (focusedKeys 참고)
+ * @param {boolean} [options.liveHandlers] 이벤트 핸들러가 함수 → 다른 함수로만 바뀐 건 패치하지 않는다.
+ *   이벤트가 일어날 때 최신 VNode 에서 핸들러를 찾아 부르는 화면(컴포넌트가 관리하는 DOM)에서만 켠다 (vdom.js setEvent)
+ * @returns {Array<object>} patches
  */
 export function diff(oldVNode, newVNode, path = [], patches = [], options) {
-  for (let i = 0; i < path.length; i++) stack[i] = path[i];
-  if (options?.keep) {
-    const prev = keepKeys;
-    keepKeys = options.keep;
-    try {
-      return diffNode(oldVNode, newVNode, path.length, patches);
-    } finally {
-      keepKeys = prev;
-    }
-  }
-  return diffNode(oldVNode, newVNode, path.length, patches);
+  const ctx = newContext(path, options);
+  return diffNode(ctx, oldVNode, newVNode, path.length, patches);
 }
 
 /**
- * 지금 비교 중인 노드의 경로. stack[0 .. depth) 가 루트에서 지금 노드까지의 childNodes 인덱스다.
- *  예전에는 자식마다 parentPath.concat(i) 로 새 배열을 만들었다 (노드 수만큼 할당 — 바뀐 게 없어도).
- *  지금은 하나의 배열을 덮어쓰며 내려가고, 패치를 만들 때만 그 순간의 경로를 잘라 낸다.
+ * 한 번의 diff 동안 쓰는 상태.
+ *  stack        : 루트에서 지금 노드까지의 childNodes 인덱스. 노드마다 경로 배열을 새로 만들지 않고 이 배열 하나를 덮어쓴다.
+ *  keep         : 되도록 옮기지 않을 key (포커스가 있는 줄)
+ *  liveHandlers : 핸들러 함수가 바뀐 건 패치하지 않음
  */
-const stack = [];
-const pathTo = (depth) => stack.slice(0, depth);
+function newContext(path, options) {
+  return { stack: path.slice(), keep: options?.keep ?? null, liveHandlers: !!options?.liveHandlers };
+}
 
-function diffNode(oldVNode, newVNode, depth, patches) {
-  // 같은 객체 참조면 하위 트리가 동일함이 보장된다. (useMemo 로 VNode 를 재사용하면 비교 자체를 건너뜀)
+/** 패치를 만들 때만 그 순간의 경로를 잘라 낸다 */
+const pathTo = (ctx, depth) => ctx.stack.slice(0, depth);
+
+function diffNode(ctx, oldVNode, newVNode, depth, patches) {
+  // 같은 객체 참조면 하위 트리가 동일함이 보장된다. (useMemo · memo 로 VNode 를 재사용하면 비교 자체를 건너뜀)
   if (oldVNode === newVNode) return patches;
 
   if (oldVNode == null || newVNode == null || !isSameNode(oldVNode, newVNode)) {
-    patches.push({ type: PatchType.REPLACE, path: pathTo(depth), node: newVNode ?? null, oldNode: oldVNode ?? null });
+    patches.push({ type: PatchType.REPLACE, path: pathTo(ctx, depth), node: newVNode ?? null, oldNode: oldVNode ?? null });
     return patches;
   }
 
   if (newVNode.type === TEXT) {
     if (oldVNode.text !== newVNode.text) {
-      patches.push({ type: PatchType.TEXT, path: pathTo(depth), text: newVNode.text, oldText: oldVNode.text });
+      patches.push({ type: PatchType.TEXT, path: pathTo(ctx, depth), text: newVNode.text, oldText: oldVNode.text });
     }
     return patches;
   }
 
-  const changes = diffProps(oldVNode.props, newVNode.props);
-  if (changes.length) patches.push({ type: PatchType.PROPS, path: pathTo(depth), changes });
+  const changes = compareProps(oldVNode.props, newVNode.props, ctx.liveHandlers);
+  if (changes.length) patches.push({ type: PatchType.PROPS, path: pathTo(ctx, depth), changes });
 
-  childrenAt(oldVNode.children, newVNode.children, depth, patches);
+  childrenAt(ctx, oldVNode.children, newVNode.children, depth, patches);
   return patches;
 }
 
@@ -94,24 +96,40 @@ export function isSameNode(a, b) {
   return a.type === b.type && (a.key ?? null) === (b.key ?? null);
 }
 
-/**
- * props 비교. 반환: [{ name, value, oldValue }] (value === undefined 이면 삭제)
- * 함수(이벤트 핸들러)는 매 렌더 새로 만들어지므로 참조가 바뀌면 교체 대상이 된다.
- */
 const NO_CHANGES = Object.freeze([]);
+const hasOwn = Object.prototype.hasOwnProperty;
 
+/**
+ * props 비교 (공개 API) — 반환: [{ name, value, oldValue }] (value === undefined 이면 삭제)
+ *  항상 새 배열을 돌려준다 (호출한 쪽이 결과를 고쳐도 안전).
+ */
 export function diffProps(oldProps = {}, newProps = {}) {
-  // Object.keys 배열과 빈 결과 배열을 노드마다 만들지 않는다 (바뀐 게 없으면 같은 빈 배열을 돌려준다)
+  const changes = compareProps(oldProps, newProps, false, true);
+  return changes === NO_CHANGES ? [] : changes;
+}
+
+/**
+ * diff 안에서 쓰는 props 비교.
+ *  - 바뀐 게 없으면 얼려 둔 빈 배열 하나를 돌려준다 (노드마다 배열을 만들지 않음)
+ *  - liveHandlers 이면 이벤트 핸들러가 함수 → 다른 함수로만 바뀐 건 건너뛴다 (onClick: () => … 처럼 매번 새로 만드는 핸들러).
+ *    이벤트가 일어나면 최신 VNode 에서 핸들러를 찾아 부르므로 DOM 에 새 함수를 넣어 둘 필요가 없다.
+ */
+function compareProps(oldProps, newProps, liveHandlers, ownOnly = false) {
+  // ownOnly: 물려받은 속성은 비교하지 않는다. diff 안에서는 끈다 — h() 와 domToVNode 가 props 를 항상 평범한 객체로
+  // 새로 만들어 물려받은 속성이 들어올 수 없기 때문 (속성마다 확인하면 노드 수만큼 비용이 든다). 공개 API diffProps 에서만 켠다.
   let changes = null;
   for (const name in newProps) {
+    if (ownOnly && !hasOwn.call(newProps, name)) continue;
     const a = oldProps[name];
     const b = newProps[name];
     if (Object.is(a, b)) continue;
+    if (liveHandlers && typeof a === 'function' && typeof b === 'function' && name.length > 2 && name[0] === 'o' && name[1] === 'n') continue;
     if (name === 'style' && isPlainObject(a) && isPlainObject(b) && shallowEqual(a, b)) continue;
     (changes ??= []).push({ name, value: b, oldValue: a });
   }
   for (const name in oldProps) {
-    if (!(name in newProps)) (changes ??= []).push({ name, value: undefined, oldValue: oldProps[name] });
+    if (ownOnly && !hasOwn.call(oldProps, name)) continue;
+    if (!(ownOnly ? hasOwn.call(newProps, name) : name in newProps)) (changes ??= []).push({ name, value: undefined, oldValue: oldProps[name] });
   }
   return changes ?? NO_CHANGES;
 }
@@ -125,28 +143,26 @@ export function diffProps(oldProps = {}, newProps = {}) {
  *            → 이동(MOVE) 횟수가 최소가 된다. (Vue 3 / Inferno 와 같은 아이디어)
  *  4. 재귀  : 위치가 확정된 뒤, 짝지어진 노드끼리 diff
  */
-export function diffChildren(oldCh, newCh, parentPath, patches) {
-  for (let i = 0; i < parentPath.length; i++) stack[i] = parentPath[i];
-  childrenAt(oldCh, newCh, parentPath.length, patches);
+export function diffChildren(oldCh, newCh, parentPath, patches, options) {
+  childrenAt(newContext(parentPath, options), oldCh, newCh, parentPath.length, patches);
 }
 
-function childrenAt(oldCh, newCh, depth, patches) {
+function childrenAt(ctx, oldCh, newCh, depth, patches) {
   if (oldCh.length === 0 && newCh.length === 0) return;
+  const { stack } = ctx;
 
   // ---- 빠른 길: key 가 하나도 없고 개수가 같으면 → i 번째끼리 짝, 삭제·이동·삽입 없음 ----
-  // (아래 일반 과정을 거쳐도 결과가 정확히 같다. 다시 그릴 때 가장 흔한 경우라 Map·Set·LIS 를 만들지 않는다)
   if (oldCh.length === newCh.length && allUnkeyed(oldCh) && allUnkeyed(newCh)) {
     for (let i = 0; i < newCh.length; i++) {
       stack[depth] = i;
-      diffNode(oldCh[i], newCh[i], depth + 1, patches);
+      diffNode(ctx, oldCh[i], newCh[i], depth + 1, patches);
     }
     return;
   }
 
   // ---- 빠른 길 2: 개수가 같고 거의 모든 줄이 같은 자리에 같은 key → 어긋난 몇 자리만 처리 ----
-  // (두 줄 바꾸기, 바뀐 게 없는 다시 그리기 같은 흔한 경우. Map · Set · 좌표 계산 없이 끝낸다)
-  if (oldCh.length === newCh.length && diffMostlyInPlace(oldCh, newCh, depth, patches)) return;
-  const parentPath = pathTo(depth); // 이 단계의 REMOVE · MOVE · INSERT 가 함께 쓰는 경로
+  if (oldCh.length === newCh.length && diffMostlyInPlace(ctx, oldCh, newCh, depth, patches)) return;
+  const parentPath = pathTo(ctx, depth); // 이 단계의 REMOVE · MOVE · INSERT 가 함께 쓰는 경로
 
   // ---- 1. 매칭 ----  (노드 대신 old 인덱스로 다뤄 Map · Set 을 줄인다)
   const oldLen = oldCh.length;
@@ -180,122 +196,40 @@ function childrenAt(oldCh, newCh, depth, patches) {
   }
 
   // ---- 2. 삭제 (뒤에서부터) ----
-  // 뒤에서부터 지우면 앞쪽 인덱스는 밀리지 않으므로, 패치 인덱스는 원래 인덱스 그대로다.
   for (let i = oldLen - 1; i >= 0; i--) {
     if (!used[i]) patches.push({ type: PatchType.REMOVE, path: parentPath, index: i, node: oldCh[i] });
   }
 
   // ---- 3. 이동 / 삽입 ----
-  place(oldCh, newCh, used, matchIdx, parentPath, patches);
+  place(ctx, oldCh, newCh, used, matchIdx, parentPath, patches);
 
   // ---- 4. 재귀 diff (이제 DOM 순서 == newCh 순서) ----
   for (let i = 0; i < newLen; i++) {
     const m = matchIdx[i];
     if (m >= 0) {
       stack[depth] = i;
-      diffNode(oldCh[m], newCh[i], depth + 1, patches);
+      diffNode(ctx, oldCh[m], newCh[i], depth + 1, patches);
     }
   }
 }
 
-/**
- * keepKeys 에 든 줄에 가중치 1 을 준 배열 (해당 줄이 없으면 null → 보통 LIS).
- *  p 번째 원소의 old 인덱스는 oldIndexOf(p).
- */
-function keepWeights(oldCh, len, oldIndexOf) {
-  if (!keepKeys) return null;
+/** keep 에 든 줄에 가중치 1 을 준 배열 (해당 줄이 없으면 null → 보통 LIS). p 번째 원소의 old 인덱스는 oldIndexOf(p). */
+function keepWeights(ctx, oldCh, len, oldIndexOf) {
+  if (!ctx.keep) return null;
   let w = null;
   for (let p = 0; p < len; p++) {
     const key = oldCh[oldIndexOf(p)].key;
-    if (key != null && keepKeys.has(key)) (w ??= new Uint8Array(len))[p] = 1;
+    if (key != null && ctx.keep.has(key)) (w ??= new Uint8Array(len))[p] = 1;
   }
   return w;
 }
 
 /**
- * 최장 증가 부분 수열의 "인덱스" 들을 반환. O(n log n), 이미 증가하는 부분은 O(1) 씩.
- * 예) [2, 0, 1, 3] → [1, 2, 3]  (값 0,1,3)
- *  - 엄격하게 증가하는 수열만 센다 (같은 값은 이어지지 않음).
- *  - 비교할 수 없는 값(undefined · null · NaN)은 건너뛴다. 예전에는 이런 값이 섞이면 결과가 짧아졌다
- *    ([1, undefined, 2, 3] → 길이 2). diff 는 이런 값을 넘기지 않지만 밖에서 쓰는 경우를 위해 막아 둔다.
- *  - 배열 · 타입 배열 모두 받는다.
- */
-export function longestIncreasingSubsequence(arr, weights) {
-  const n = arr.length;
-  if (n === 0) return [];
-  if (weights) return weightedLIS(arr, weights);
-  const prev = new Int32Array(n); // prev[i] = i 앞에 오는 원소의 인덱스 (+1, 0 이면 없음)
-  const tails = new Int32Array(n); // tails[len] = 길이 len+1 인 증가 수열의 마지막 원소 인덱스
-  let len = 0;
-  for (let i = 0; i < n; i++) {
-    const v = arr[i];
-    if (v == null || v !== v) continue; // undefined · null · NaN
-    // 빠른 길: 지금까지 가장 긴 수열의 끝보다 크면 이분 탐색 없이 뒤에 붙인다 (이미 정렬된 구간이 많은 diff 에서 흔함)
-    if (len === 0 || arr[tails[len - 1]] < v) {
-      prev[i] = len > 0 ? tails[len - 1] + 1 : 0;
-      tails[len++] = i;
-      continue;
-    }
-    let lo = 0;
-    let hi = len - 1;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (arr[tails[mid]] < v) lo = mid + 1;
-      else hi = mid;
-    }
-    prev[i] = lo > 0 ? tails[lo - 1] + 1 : 0;
-    tails[lo] = i;
-  }
-  // 뒤에서부터 채워 reverse 없이 만든다
-  const result = new Array(len);
-  for (let k = len - 1, i = tails[len - 1]; k >= 0; k--) {
-    result[k] = i;
-    i = prev[i] - 1;
-  }
-  return result;
-}
-
-/**
- * 가중치가 있는 LIS — 가장 긴 증가 수열들 중에서 가중치 합이 가장 큰 것. O(n log n).
- *  길이가 먼저이므로 옮기는 횟수(남은 줄 − LIS 길이)는 늘지 않는다. 같은 길이일 때만 가중치가 큰 줄을 남긴다.
- *  값을 순위로 바꾼 뒤, "내 값보다 작은 값으로 끝나는 가장 좋은 (길이, 가중치)" 를 Fenwick 트리(앞부분 최댓값)로 찾는다.
- */
-function weightedLIS(arr, weights) {
-  const n = arr.length;
-  const ok = [];
-  for (let i = 0; i < n; i++) { const v = arr[i]; if (v != null && v === v) ok.push(i); }
-  if (ok.length === 0) return [];
-  const vals = [...new Set(ok.map((i) => arr[i]))].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
-  const rankOf = new Map(vals.map((v, r) => [v, r + 1]));
-  const m = vals.length;
-  const tLen = new Int32Array(m + 1), tW = new Float64Array(m + 1), tI = new Int32Array(m + 1).fill(-1);
-  const better = (l1, w1, l2, w2) => l1 > l2 || (l1 === l2 && w1 > w2);
-  const prev = new Int32Array(n).fill(-1);
-  let bestLen = 0, bestW = -1, bestI = -1;
-  for (const i of ok) {
-    const r = rankOf.get(arr[i]);
-    // 순위 < r 중 가장 좋은 끝점
-    let ql = 0, qw = 0, qi = -1;
-    for (let k = r - 1; k > 0; k -= k & -k) if (better(tLen[k], tW[k], ql, qw)) { ql = tLen[k]; qw = tW[k]; qi = tI[k]; }
-    const len = ql + 1, w = qw + (weights[i] || 0);
-    prev[i] = qi;
-    if (better(len, w, bestLen, bestW)) { bestLen = len; bestW = w; bestI = i; }
-    for (let k = r; k <= m; k += k & -k) if (better(len, w, tLen[k], tW[k])) { tLen[k] = len; tW[k] = w; tI[k] = i; }
-  }
-  const result = new Array(bestLen);
-  for (let k = bestLen - 1, i = bestI; k >= 0; k--, i = prev[i]) result[k] = i;
-  return result;
-}
-
-/**
  * 빠른 길 2 — 개수가 같고, key 가 다른 자리가 MAX_MISPLACED 개 이하이며, 그 자리들끼리 key 만 서로 바뀐 경우.
- *  같은 자리에 같은 key 가 있는 줄은 key 로 찾아도 그 자리의 노드와 짝이 되므로, 어긋난 몇 자리만 짝을 찾으면 된다.
- *  LIS 는 일반 과정과 같은 수열로 구하므로 MOVE 패치도 일반 과정과 똑같다 (중복 key 가 없을 때).
- *  하나라도 조건이 안 맞으면 false 를 돌려주고 일반 과정으로 간다.
- *  비용: key 비교 n 번 + LIS(n log n) + 옮기는 줄 수 × n.  (예전 일반 과정은 Map · Set · 배열을 n 크기로 여러 개 만들었다)
+ *  (중복 key 는 h() 가 리스트를 만들 때 경고한다 — vdom.js checkListKeys)
  */
 const MAX_MISPLACED = 8;
-function diffMostlyInPlace(oldCh, newCh, depth, patches) {
+function diffMostlyInPlace(ctx, oldCh, newCh, depth, patches) {
   const n = oldCh.length;
   const mis = [];
   for (let i = 0; i < n; i++) {
@@ -306,10 +240,9 @@ function diffMostlyInPlace(oldCh, newCh, depth, patches) {
     mis.push(i);
   }
   const k = mis.length;
-  const matchOf = newCh.length ? oldCh.slice() : []; // 새 인덱스 i 와 짝이 되는 old 노드 (어긋나지 않은 자리는 그대로)
+  const matchOf = newCh.length ? oldCh.slice() : [];
   let parentPath = null; // 이 단계의 MOVE 가 함께 쓰는 경로 (MOVE 가 있을 때만 만든다)
   if (k > 0) {
-    // 어긋난 자리끼리 key 가 1:1 로 짝지어지는가
     const taken = new Uint8Array(k);
     const seq = new Int32Array(n);
     for (let i = 0; i < n; i++) seq[i] = i;
@@ -322,10 +255,8 @@ function diffMostlyInPlace(oldCh, newCh, depth, patches) {
       seq[mis[x]] = mis[found];
       matchOf[mis[found]] = oldCh[mis[x]];
     }
-    // 이동: 일반 과정과 같은 규칙 (뒤에서부터, LIS 가 아닌 노드를 오른쪽 이웃 앞으로). 옮기는 줄은 많아야 k 개.
     const stable = new Uint8Array(n);
-    const weights = keepWeights(oldCh, n, (p) => p);
-    for (const p of longestIncreasingSubsequence(seq, weights)) stable[seq[p]] = 1; // 새 인덱스 기준
+    for (const p of longestIncreasingSubsequence(seq, keepWeights(ctx, oldCh, n, (p) => p))) stable[seq[p]] = 1;
     const live = oldCh.slice();
     for (let i = n - 1; i >= 0; i--) {
       if (stable[i]) continue;
@@ -334,48 +265,39 @@ function diffMostlyInPlace(oldCh, newCh, depth, patches) {
       live.splice(from, 1);
       const to = i + 1 < n ? live.indexOf(matchOf[i + 1]) : live.length;
       live.splice(to, 0, m);
-      if (from !== to) patches.push({ type: PatchType.MOVE, path: (parentPath ??= pathTo(depth)), from, to, key: m.key });
+      if (from !== to) patches.push({ type: PatchType.MOVE, path: (parentPath ??= pathTo(ctx, depth)), from, to, key: m.key });
     }
   }
   for (let i = 0; i < n; i++) {
-    stack[depth] = i;
-    diffNode(matchOf[i], newCh[i], depth + 1, patches);
+    ctx.stack[depth] = i;
+    diffNode(ctx, matchOf[i], newCh[i], depth + 1, patches);
   }
   return true;
 }
 
 /**
  * 이동 / 삽입 패치 만들기 — O(n log n)
- *  뒤에서부터 각 새 노드를 "오른쪽 이웃 앞" 에 둔다 (LIS 에 속한 노드는 그대로).
- *  예전에는 매번 배열에서 indexOf · splice 로 위치를 찾아 O(n²) 이었다 (2만 줄 섞기 593ms).
- *
- *  아이디어: 모든 노드가 "언젠가 있게 될 자리" 를 미리 한 줄로 세워 둘 수 있다.
+ *  모든 노드가 "언젠가 있게 될 자리" 를 미리 한 줄의 좌표로 세워 두고,
+ *  "지금 몇 번째인가" = 내 좌표 앞에 지금 DOM 에 있는 노드 수 를 Fenwick 트리로 센다.
  *   - 움직이지 않는 노드와 아직 안 옮긴 노드: 삭제 뒤 원래 자리 p   → 좌표 (p, ∞)
- *   - 옮기거나 새로 넣는 새 인덱스 i 의 노드: 오른쪽에서 가장 가까운 안 움직이는 노드 s 바로 앞
- *                                               → 좌표 (s 의 자리, i)   (s 가 없으면 맨 끝)
- *   같은 s 앞에 붙는 노드들은 i 가 작을수록 왼쪽이고, 모두 s 바로 앞에 붙는다.
- *  그러면 "지금 몇 번째인가" = 내 좌표보다 앞에 있는, 현재 DOM 에 있는 좌표의 개수 → Fenwick 트리로 O(log n).
- *  결과 패치는 예전 방식과 똑같다 (무작위 대조). 배열은 모두 타입 배열이라 Map · Set 을 새로 만들지 않는다.
+ *   - 옮기거나 새로 넣는 새 인덱스 i 의 노드: 오른쪽에서 가장 가까운 안 움직이는 노드 s 바로 앞 → 좌표 (s 의 자리, i)
  */
-function place(oldCh, newCh, used, matchIdx, parentPath, patches) {
+function place(ctx, oldCh, newCh, used, matchIdx, parentPath, patches) {
   const oldLen = oldCh.length;
   const n = newCh.length;
-  // 삭제 뒤 자리
   const livePos = new Int32Array(oldLen);
   const liveOld = new Int32Array(oldLen); // 삭제 뒤 자리 → old 인덱스
   let L = 0;
   for (let i = 0; i < oldLen; i++) if (used[i]) { liveOld[L] = i; livePos[i] = L++; }
-  // 삭제 뒤 자리 p 의 노드가 가야 할 새 인덱스 → LIS
   const seq = new Int32Array(L);
   for (let i = 0; i < n; i++) if (matchIdx[i] >= 0) seq[livePos[matchIdx[i]]] = i;
   const stablePos = new Uint8Array(L);
-  for (const k of longestIncreasingSubsequence(seq, keepWeights(oldCh, L, (p) => liveOld[p]))) stablePos[k] = 1;
+  for (const k of longestIncreasingSubsequence(seq, keepWeights(ctx, oldCh, L, (p) => liveOld[p]))) stablePos[k] = 1;
 
-  // 새 인덱스마다: 움직이는가, 붙을 자리(base)는 어디인가
   const moving = new Uint8Array(n);
   const base = new Int32Array(n);
-  const count = new Int32Array(L + 1); // 자리 b 앞에 붙는 노드 수
-  let nextStable = L; // 오른쪽에서 가장 가까운 안 움직이는 노드의 자리 (없으면 맨 끝 = L)
+  const count = new Int32Array(L + 1);
+  let nextStable = L;
   let movers = 0;
   for (let i = n - 1; i >= 0; i--) {
     const m = matchIdx[i];
@@ -399,25 +321,22 @@ function place(oldCh, newCh, used, matchIdx, parentPath, patches) {
   const rankNew = new Int32Array(n);
   for (let i = 0; i < n; i++) if (moving[i]) rankNew[i] = start[base[i]]++;
 
-  // Fenwick 트리: 현재 DOM 에 있는 좌표를 1 로 표시
-  const tree = new Int32Array(r + 1);
-  const add = (k, v) => { for (k++; k <= r; k += k & -k) tree[k] += v; };
-  const countBefore = (k) => { let s = 0; for (; k > 0; k -= k & -k) s += tree[k]; return s; };
-  for (let p = 0; p < L; p++) add(rankOrig[p], 1);
+  const fw = new FenwickSum(r); // 현재 DOM 에 있는 좌표를 1 로 표시
+  for (let p = 0; p < L; p++) fw.add(rankOrig[p], 1);
 
   for (let i = n - 1; i >= 0; i--) {
     if (!moving[i]) continue;
     const m = matchIdx[i];
     if (m >= 0) {
       const ro = rankOrig[livePos[m]];
-      const from = countBefore(ro);
-      add(ro, -1);
-      const to = countBefore(rankNew[i]);
-      add(rankNew[i], 1);
+      const from = fw.countBefore(ro);
+      fw.add(ro, -1);
+      const to = fw.countBefore(rankNew[i]);
+      fw.add(rankNew[i], 1);
       if (from !== to) patches.push({ type: PatchType.MOVE, path: parentPath, from, to, key: oldCh[m].key });
     } else {
-      const index = countBefore(rankNew[i]);
-      add(rankNew[i], 1);
+      const index = fw.countBefore(rankNew[i]);
+      fw.add(rankNew[i], 1);
       patches.push({ type: PatchType.INSERT, path: parentPath, index, node: newCh[i] });
     }
   }

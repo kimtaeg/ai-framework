@@ -36,7 +36,7 @@ export class Playground {
     // VDOM 으로 표현하지 않는 노드(주석, 들여쓰기 공백)를 정리해 DOM 인덱스와 VDOM 인덱스를 일치시킨다.
     normalizeDom(this.actualRoot);
     const vnode = containerToVNode(this.actualRoot);
-    this.history = new DeltaHistory(vnode, { keyframeEvery: 10 });
+    this.history = new DeltaHistory(vnode, { keyframeEvery: 10, branching: true }); // 뒤로 간 뒤 새로 고쳐도 원래 미래는 갈래로 남는다
     this.renderTestArea(vnode);
     return vnode;
   }
@@ -165,7 +165,14 @@ export class Playground {
       subtree: true, childList: true, attributes: true, characterData: true,
     });
     const start = performance.now();
-    applyPatches(this.actualRoot, patches, { onApply: (p, node) => applied.push({ patch: p, node }) });
+    let recovered = false;
+    try {
+      applyPatches(this.actualRoot, patches, { onApply: (p, node) => applied.push({ patch: p, node }) });
+    } catch (error) {
+      // 패치가 중간에 실패하면 실제 영역이 VDOM 과 어긋난다 → 목표 VDOM 으로 통째로 다시 그려 맞춘다
+      this.actualRoot.replaceChildren(...next.children.map((c) => createElement(c)));
+      recovered = error.message;
+    }
     const duration = performance.now() - start;
     // MutationObserver: 실제 DOM 에 일어난 변경을 브라우저가 기록한 목록 → 최소 변경 검증
     const mutations = this.observer ? this.observer.takeRecords() : [];
@@ -180,6 +187,7 @@ export class Playground {
       mutations: mutations.length,
       totalNodes: countNodes(next) - 1, // 전체 재렌더링 시 다시 만들어야 하는 노드 수 (루트 제외)
       duration,
+      recovered, // 패치가 실패해 통째로 다시 그렸으면 그 오류 메시지 (아니면 false)
       historyIndex: this.history.index,
       historyLength: this.history.entries.length,
     };

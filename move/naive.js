@@ -5,6 +5,7 @@
  *  루트 아래 한 단계 목록(ul > li, 모두 key 있음)만 다룬다. 각 줄 안쪽은 우리 diff 로 비교한다 (두 방식이 같다).
  */
 import { diff, PatchType } from '../src/lib/index.js';
+import { FenwickSum } from '../src/lib/fenwick.js';
 
 export function diffNaive(oldV, newV) {
   const patches = [];
@@ -48,24 +49,22 @@ export function diffNaive(oldV, newV) {
   }
   const rankNew = new Int32Array(n);
   for (let i = 0; i < n; i++) if (moving[i]) rankNew[i] = start[base[i] + 1]++;
-  const tree = new Int32Array(r + 1);
-  const add = (k, v) => { for (k++; k <= r; k += k & -k) tree[k] += v; };
-  const countBefore = (k) => { let s = 0; for (; k > 0; k -= k & -k) s += tree[k]; return s; };
-  for (let p = 0; p < L; p++) add(rankOrig[p], 1);
+  const fw = new FenwickSum(r); // 우리 diff 와 같은 Fenwick 트리
+  for (let p = 0; p < L; p++) fw.add(rankOrig[p], 1);
   for (let i = 0; i < n; i++) {
     if (!moving[i]) continue;
     const c = newCh[i];
     const oi = oldIndex.get(c.key);
     if (oi !== undefined) {
       const ro = rankOrig[livePos[oi]];
-      const from = countBefore(ro);
-      add(ro, -1);
-      const to = countBefore(rankNew[i]);
-      add(rankNew[i], 1);
+      const from = fw.countBefore(ro);
+      fw.add(ro, -1);
+      const to = fw.countBefore(rankNew[i]);
+      fw.add(rankNew[i], 1);
       if (from !== to) patches.push({ type: PatchType.MOVE, path: [], from, to, key: c.key });
     } else {
-      const index = countBefore(rankNew[i]);
-      add(rankNew[i], 1);
+      const index = fw.countBefore(rankNew[i]);
+      fw.add(rankNew[i], 1);
       patches.push({ type: PatchType.INSERT, path: [], index, node: c });
     }
   }

@@ -91,15 +91,21 @@ describe('Phase 1 Playground', () => {
     assert.equal(pg.forward(), null);
   });
 
-  test('뒤로 간 뒤 새로 Patch 하면 앞으로가기 기록은 사라진다', () => {
+  test('뒤로 간 뒤 새로 Patch 하면 원래 미래는 갈래로 남는다 (분기 히스토리)', () => {
     edit((s) => s.replace('92', '1'));
     edit((s) => s.replace('85', '2'));
     pg.back();
     edit((s) => s.replace('알고리즘', '자료구조'));
-    assert.equal(pg.history.canForward, false);
-    assert.equal(pg.history.entries.length, 3);
+    assert.equal(pg.history.canForward, false, '새 갈래의 끝이므로 앞으로 갈 곳이 없다');
+    assert.equal(pg.history.entries.length, 4, '예전에는 3 — 85→2 기록을 버렸다');
     assert.ok(actual.textContent.includes('자료구조'));
-    assert.ok(actual.textContent.includes('85'), '버려진 기록(85→2)은 반영되지 않음');
+    assert.ok(actual.textContent.includes('85'), '지금 갈래에는 85→2 가 없다');
+    assert.equal(pg.history.entries[3].parent, 1, '#1 에서 갈라진 갈래');
+    pg.go(2); // 버려지지 않은 원래 갈래로
+    assert.ok(!actual.textContent.includes('85') && !actual.textContent.includes('자료구조'));
+    pg.back();
+    pg.forward(); // 앞으로가기는 마지막으로 다녀온 갈래(#2)를 따라간다
+    assert.equal(pg.history.index, 2);
   });
 
   test('history.go 로 임의 시점 이동', () => {

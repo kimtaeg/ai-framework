@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>miniReact 브라우저 자가 검사</title>
+  <link rel="stylesheet" href="../styles/base.css">
+  <style>
+    main { max-width: 880px; }
+    #results li { font-family: var(--mono); font-size: 13px; padding: 4px 0; }
+    #results li.pass b { color: var(--ok); }
+    #results li.fail b { color: var(--danger); }
+    #stage { height: 160px; overflow: auto; border: 1px dashed var(--border); border-radius: 8px; padding: 6px; }
+    #summary { font-weight: 700; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/index.html">mini<span>React</span></a>
+    <nav><a href="/index.html">홈</a><a href="/move/index.html">LIS MOVE</a><a href="/move/selftest.html" aria-current="page">자가 검사</a></nav>
+  </header>
+  <main>
+    <h1>브라우저 자가 검사</h1>
+    <p class="lead">jsdom 테스트로는 확인할 수 없는 실제 브라우저 동작(moveBefore, 포커스, 스크롤, 레이아웃)을 이 페이지가 열리자마자 검사합니다. 결과는 <code>window.__selftest</code> 에도 남습니다.</p>
+    <p id="summary">검사 중…</p>
+    <ol id="results"></ol>
+    <div id="stage"></div>
+  </main>
+  <script type="module" src="./selftest.js"></script>
+</body>
+</html>

@@ -88,6 +88,8 @@ export class FunctionComponent {
     this.updateReasons = []; // 이번 렌더를 일으킨 setState 들 { index, kind }
     this.renderCount = 0;
     this.nestedUpdates = 0;
+    this.memoCache = new Map(); // memo 컴포넌트 결과: Map<memo 함수, Map<key, { props, children, result, gen }>>
+    this.renderGen = 0; // 렌더마다 1씩 — 이번 렌더에 쓰이지 않은 memo 결과를 버릴 때 쓴다
     this.onCommit = options.onCommit ?? null;
     this.onEffects = options.onEffects ?? null;
     this.onError = options.onError ?? null;
@@ -98,6 +100,7 @@ export class FunctionComponent {
     const prevComponent = currentComponent;
     currentComponent = this;
     this.hookIndex = 0;
+    this.renderGen++;
     this.isRendering = true;
     this.renderEffects = { layout: [], passive: [] };
     const expectedHooks = this.hooks.length;
@@ -110,11 +113,20 @@ export class FunctionComponent {
         );
       }
       this.renderCount++;
+      this.sweepMemo();
       return normalizeRoot(out);
     } finally {
       this.isRendering = false;
       currentComponent = prevComponent;
       contextStack.length = 0;
+    }
+  }
+
+  /** 이번 렌더에서 다시 쓰이지 않은 memo 결과를 버린다 (사라진 줄의 결과가 쌓이지 않게) */
+  sweepMemo() {
+    for (const [fn, byKey] of this.memoCache) {
+      for (const [key, entry] of byKey) if (entry.gen !== this.renderGen) byKey.delete(key);
+      if (byKey.size === 0) this.memoCache.delete(fn);
     }
   }
 
@@ -126,6 +138,7 @@ export class FunctionComponent {
     const vnode = this.render();
     const t1 = now();
     const dom = createElement(vnode);
+    if (dom.nodeType === 1) dom.__mrOwner = this; // 이벤트 때 최신 VNode 에서 핸들러를 찾도록 (vdom.js liveHandler)
     container.replaceChildren(dom);
     const t2 = now();
     this.vnode = vnode;
@@ -147,9 +160,19 @@ export class FunctionComponent {
     const t1 = now();
     // 입력 중인 줄이 있으면 diff 가 그 줄을 되도록 옮기지 않게 알려 준다 (moveBefore 가 없는 브라우저의 포커스 보존)
     const keep = typeof document !== 'undefined' && this.dom ? focusedKeys(this.dom) : null;
-    const patches = diff(this.vnode, next, [], [], keep ? { keep } : undefined);
+    const patches = diff(this.vnode, next, [], [], { keep, liveHandlers: true });
     const t2 = now();
-    this.dom = applyPatches(this.dom, patches);
+    try {
+      this.dom = applyPatches(this.dom, patches);
+    } catch (error) {
+      // 패치가 중간에 실패하면 DOM 일부만 바뀐 채로 VNode 와 어긋난다 → 새 트리로 통째로 다시 그려 맞춘다
+      warn(`patch 적용 중 오류가 나서 화면을 새로 그렸습니다: ${error.message}`);
+      const fresh = createElement(next);
+      if (this.container) this.container.replaceChildren(fresh);
+      else this.dom?.replaceWith?.(fresh);
+      this.dom = fresh;
+    }
+    if (this.dom?.nodeType === 1) this.dom.__mrOwner = this; // 루트가 교체됐을 수 있다
     const t3 = now();
     this.vnode = next;
     this.commit({ type: 'update', patches, reasons, start: t0, timings: { render: t1 - t0, diff: t2 - t1, patch: t3 - t2 } });
@@ -314,19 +337,23 @@ function resolveUncached(node) {
         contextStack.pop();
       }
     }
-    childDepth++;
-    let out;
-    try {
-      out = node.type({ ...node.props, children: node.children });
-    } finally {
-      childDepth--;
+    // memo 컴포넌트: 같은 key 의 props · children 이 지난 렌더와 같으면 지난 결과 객체를 그대로 쓴다
+    // → 결과가 같은 객체라 diff 가 그 줄 전체를 비교 없이 건너뛴다 (diffNode 의 oldVNode === newVNode)
+    const memo = node.type.__memo;
+    const comp = currentComponent;
+    if (memo && comp && node.key != null) {
+      let byKey = comp.memoCache.get(node.type);
+      if (!byKey) comp.memoCache.set(node.type, (byKey = new Map()));
+      const hit = byKey.get(node.key);
+      if (hit && sameChildren(hit.children, node.children) && memo.areEqual(hit.props, node.props)) {
+        hit.gen = comp.renderGen;
+        return hit.result;
+      }
+      const result = callChild(node);
+      byKey.set(node.key, { props: node.props, children: node.children, result, gen: comp.renderGen });
+      return result;
     }
-    const resolved = resolve(out);
-    // 컴포넌트에 준 key 를 결과 엘리먼트에 물려준다 (리스트 재정렬 시 MOVE 로 인식)
-    if (resolved && !Array.isArray(resolved) && node.key != null && resolved.key == null) {
-      return { ...resolved, key: node.key };
-    }
-    return resolved;
+    return callChild(node);
   }
 
   const children = [];
@@ -338,6 +365,52 @@ function resolveUncached(node) {
   }
   // 바뀐 것이 없으면 원래 객체를 그대로 반환 (참조 동일성 유지)
   return same ? node : { ...node, children };
+}
+
+/** 자식 컴포넌트를 순수 함수로 실행하고 펼친다 (Hook 금지 구역) */
+function callChild(node) {
+  childDepth++;
+  let out;
+  try {
+    out = node.type({ ...node.props, children: node.children });
+  } finally {
+    childDepth--;
+  }
+  const resolved = resolve(out);
+  // 컴포넌트에 준 key 를 결과 엘리먼트에 물려준다 (리스트 재정렬 시 MOVE 로 인식)
+  if (resolved && !Array.isArray(resolved) && node.key != null && resolved.key == null) {
+    return { ...resolved, key: node.key };
+  }
+  return resolved;
+}
+
+function sameChildren(a, b) {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+/** props 를 얕게 비교 (memo 기본 비교) */
+export function shallowEqualProps(a, b) {
+  if (a === b) return true;
+  const ka = Object.keys(a);
+  if (ka.length !== Object.keys(b).length) return false;
+  for (const k of ka) if (!Object.is(a[k], b[k])) return false;
+  return true;
+}
+
+/**
+ * memo(Component, areEqual?) — props 가 같으면 다시 실행하지 않는 자식 컴포넌트.
+ *  리스트에서 key 를 줘야 동작한다 (key 로 지난 결과를 찾는다). Context Provider 안쪽에서도 동작하지만
+ *  memo 컴포넌트가 useContext 로 읽는 값이 바뀌면 다시 그려지지 않으므로, 그런 컴포넌트는 memo 로 감싸지 않는다.
+ *  props 에 매번 새 함수(onClick: () => …)를 넘기면 항상 달라 보이므로 useCallback 과 함께 쓴다.
+ */
+export function memo(fn, areEqual = shallowEqualProps) {
+  const wrapped = (props) => fn(props);
+  wrapped.__memo = { fn, areEqual };
+  Object.defineProperty(wrapped, 'name', { value: `memo(${fn.name || '익명'})` });
+  return wrapped;
 }
 
 function toArray(x) {

@@ -6,7 +6,7 @@ export { diff, diffProps, diffChildren, PatchType, longestIncreasingSubsequence,
 export { applyPatches, applyPatch, resolvePath, moveNode, applyPatchesToVNode } from './patch.js';
 export { StateHistory, DeltaHistory } from './history.js';
 export {
-  FunctionComponent, mount, resolve,
+  FunctionComponent, mount, resolve, memo,
   useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, useReducer,
   createContext, useContext,
 } from './component.js';

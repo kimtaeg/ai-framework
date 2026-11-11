@@ -10,7 +10,7 @@
  * VNode 는 "무엇을 그려야 하는가" 만 담은 가벼운 JS 객체이므로 생성·비교 비용이 매우 작다.
  */
 
-import { warn } from './warn.js';
+import { warn, devConfig } from './warn.js';
 
 export const TEXT = '#text';
 export const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -49,18 +49,25 @@ export function h(type, props, ...children) {
 
 /** 배열(map 결과)로 넘긴 형제들 중 key 가 없는 엘리먼트가 있으면 경고 (React 와 같은 규칙) */
 function checkListKeys(list, parentType) {
+  if (!devConfig.warnings) return; // 경고를 끄면 검사도 하지 않는다 (운영 · 측정)
   let elements = 0;
   let missing = 0;
+  let seen = null;
+  let dup = null;
   for (const c of list) {
     if (c && typeof c === 'object' && !Array.isArray(c) && c.type !== TEXT) {
       elements++;
       if (c.key == null) missing++;
+      else if ((seen ??= new Set()).has(c.key)) dup ??= c.key;
+      else seen.add(c.key);
     }
   }
+  const where = typeof parentType === 'string' ? `<${parentType}>` : parentType?.name || '컴포넌트';
   if (elements >= 2 && missing > 0) {
-    const where = typeof parentType === 'string' ? `<${parentType}>` : parentType?.name || '컴포넌트';
     warn(`${where} 안의 리스트 항목 ${missing}개에 key 가 없습니다. 리스트를 map 으로 만들 때는 각 항목에 고유한 key 를 지정하세요.`);
   }
+  // 중복 key 는 diff 의 빠른 길에서는 검사하지 않으므로, 리스트를 만들 때 여기서 알려 준다
+  if (dup != null) warn(`형제 사이에 같은 key "${dup}" 가 여러 개 있습니다. key 는 형제 안에서 고유해야 합니다.`);
 }
 
 export function normalizeChildren(children, out = []) {
@@ -240,7 +247,7 @@ export function setProp(el, name, value, oldValue) {
   if (name === 'children' || name === 'ref') return; // (h() 는 key 를 props 에서 이미 분리한다)
 
   if (isEventProp(name, value, oldValue)) {
-    setEvent(el, name.slice(2).toLowerCase(), typeof value === 'function' ? value : null);
+    setEvent(el, name.slice(2).toLowerCase(), typeof value === 'function' ? value : null, name);
     return;
   }
   if (name === 'style') {
@@ -265,13 +272,15 @@ export function setProp(el, name, value, oldValue) {
   else el.setAttribute(name, value === true ? '' : String(value));
 }
 
-function setEvent(el, eventName, handler) {
+function setEvent(el, eventName, handler, propName) {
   const store = el.__mrHandlers || (el.__mrHandlers = {});
   const proxies = el.__mrProxies || (el.__mrProxies = {});
   if (handler) {
     store[eventName] = handler;
+    (el.__mrPropNames || (el.__mrPropNames = {}))[eventName] = propName;
     if (!proxies[eventName]) {
-      proxies[eventName] = (e) => store[eventName]?.(e);
+      // 컴포넌트가 관리하는 화면이면 최신 VNode 의 핸들러를, 아니면 마지막으로 넣어 둔 핸들러를 부른다
+      proxies[eventName] = (e) => (liveHandler(el, eventName) ?? store[eventName])?.(e);
       el.addEventListener(eventName, proxies[eventName]);
     }
   } else {
@@ -281,6 +290,28 @@ function setEvent(el, eventName, handler) {
       delete proxies[eventName];
     }
   }
+}
+
+/**
+ * 이벤트가 일어난 순간, 요소의 위치(루트에서의 childNodes 인덱스)를 따라 컴포넌트의 최신 VNode 를 찾아 그 핸들러를 돌려준다.
+ *  diff 가 핸들러 변경을 패치하지 않아도(liveHandlers) 항상 최신 함수가 불린다. React 가 이벤트 때 최신 props 를 읽는 것과 같은 생각.
+ *  비용은 클릭할 때 한 번 (조상 수 × 형제 수) — 다시 그릴 때마다 드는 비용이 아니다.
+ *  컴포넌트가 관리하지 않는 DOM 이면 undefined.
+ */
+function liveHandler(el, eventName) {
+  const path = [];
+  let n = el;
+  while (n && !n.__mrOwner) {
+    const parent = n.parentNode;
+    if (!parent) return undefined;
+    path.push(Array.prototype.indexOf.call(parent.childNodes, n));
+    n = parent;
+  }
+  if (!n) return undefined;
+  let v = n.__mrOwner.vnode;
+  for (let i = path.length - 1; i >= 0 && v; i--) v = v.children?.[path[i]];
+  const fn = v?.props?.[el.__mrPropNames?.[eventName]];
+  return typeof fn === 'function' ? fn : undefined;
 }
 
 function setStyle(el, value, oldValue) {

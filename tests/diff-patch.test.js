@@ -313,13 +313,21 @@ describe('diff — 긴 목록의 이동 계산 (O(n log n) 배치)', () => {
     assert.equal(diff(keyedUl(keys), keyedUl(keys)).length, 0);
   });
 
-  test('2만 줄 뒤집기도 빠르게 끝난다 (예전 indexOf·splice 방식은 약 0.8초)', () => {
+  test('줄 수를 4배로 늘려도 뒤집기 시간이 4배 남짓만 는다 (O(n²) 이면 16배) — 컴퓨터 속도와 무관한 검사', () => {
+    // 예전: "2만 줄 뒤집기 400ms 이내" 처럼 절대 시간으로 검사해 느린 컴퓨터에서 실패할 수 있었다.
+    // 지금: 같은 컴퓨터에서 n 과 4n 의 시간 비율만 본다. n log n 이면 약 4.5배, n² 이면 16배.
+    const timeOf = (n) => {
+      const keys = Array.from({ length: n }, (_, i) => i);
+      const a = keyedUl(keys), b = keyedUl(keys.slice().reverse());
+      diff(a, b); // 워밍업
+      const t = [];
+      for (let r = 0; r < 5; r++) { const t0 = performance.now(); diff(a, b); t.push(performance.now() - t0); }
+      return t.sort((x, y) => x - y)[2];
+    };
+    const small = timeOf(5000), big = timeOf(20000);
+    assert.ok(big / small < 9, `5천 줄 ${small.toFixed(1)}ms → 2만 줄 ${big.toFixed(1)}ms (${(big / small).toFixed(1)}배)`);
     const keys = Array.from({ length: 20000 }, (_, i) => i);
-    const t0 = performance.now();
-    const patches = diff(keyedUl(keys), keyedUl(keys.slice().reverse()));
-    const ms = performance.now() - t0;
-    assert.equal(patches.filter((p) => p.type === PatchType.MOVE).length, 19999);
-    assert.ok(ms < 400, `${ms.toFixed(0)}ms`);
+    assert.equal(diff(keyedUl(keys), keyedUl(keys.slice().reverse())).filter((p) => p.type === PatchType.MOVE).length, 19999);
   });
 });
 

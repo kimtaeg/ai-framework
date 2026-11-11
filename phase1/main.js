@@ -119,7 +119,9 @@ function renderHistory() {
       const li = document.createElement('li');
       const btn = document.createElement('button');
       btn.className = 'history-item' + (i === index ? ' current' : '');
-      btn.innerHTML = `<span class="mono">#${i}</span> ${e.label} <span class="muted">${new Date(e.time).toLocaleTimeString()}</span>`;
+      // 분기 히스토리: 바로 앞 기록이 부모가 아니면 새 갈래의 시작 → ↳ 와 부모 번호를 표시
+      const branch = i > 0 && e.parent !== i - 1 ? `<span class="muted">↳ #${e.parent}에서 갈라짐</span> ` : '';
+      btn.innerHTML = `<span class="mono">#${i}</span> ${branch}${e.label} <span class="muted">${new Date(e.time).toLocaleTimeString()}</span>`;
       btn.addEventListener('click', () => !pg.inSteps && pg.go(i));
       li.append(btn);
       return li;

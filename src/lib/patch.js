@@ -28,6 +28,7 @@ export function resolvePath(root, path) {
  */
 export function applyPatches(root, patches, options = {}) {
   const { onApply } = options;
+  const finder = new PathFinder(root);
   for (let i = 0; i < patches.length; i++) {
     const p = patches[i];
     // 같은 부모에 MOVE · INSERT 가 여러 개 이어지면 한꺼번에 처리한다 (섞기 · 뒤집기)
@@ -35,16 +36,78 @@ export function applyPatches(root, patches, options = {}) {
       let j = i + 1;
       while (j < patches.length && (patches[j].type === PatchType.MOVE || patches[j].type === PatchType.INSERT) && samePath(patches[j].path, p.path)) j++;
       if (j - i >= RUN_MIN) {
-        applyRun(root, patches, i, j, onApply);
+        applyRun(finder.find(p.path), patches, i, j, onApply);
+        finder.changedChildrenOf(p.path.length);
         i = j - 1;
         continue;
       }
     }
-    const node = applyPatch(root, p);
-    if (p.path.length === 0 && p.type === PatchType.REPLACE) root = node;
+    const node = applyAt(finder, p);
+    if (p.path.length === 0 && p.type === PatchType.REPLACE) {
+      root = node;
+      finder.reset(node);
+    }
     onApply?.(p, node);
   }
   return root;
+}
+
+/**
+ * 경로 → DOM 노드 찾기 (앞 패치의 경로를 기억해 공통 앞부분은 다시 내려가지 않는다)
+ *  패치는 깊이 우선 순서로 만들어지므로 이어진 패치끼리 경로 앞부분이 겹치는 경우가 많다.
+ *  nodes[d] = 경로의 앞 d 칸을 따라간 노드. 구조가 바뀐 깊이부터 아래는 다시 찾는다.
+ */
+class PathFinder {
+  constructor(root) {
+    this.reset(root);
+  }
+
+  reset(root) {
+    this.path = [];
+    this.nodes = [root];
+    this.valid = 0; // nodes[0 .. valid] 가 믿을 수 있는 노드
+  }
+
+  find(path) {
+    let d = 0;
+    const limit = Math.min(path.length, this.valid, this.path.length);
+    while (d < limit && this.path[d] === path[d]) d++;
+    let node = this.nodes[d];
+    for (let k = d; k < path.length; k++) {
+      node = node?.childNodes[path[k]];
+      if (!node) throw new Error(`patch: 경로 [${path.join(', ')}] 에 해당하는 DOM 노드가 없습니다.`);
+      this.nodes[k + 1] = node;
+    }
+    this.path = path;
+    this.valid = path.length;
+    return node;
+  }
+
+  /** depth 깊이의 노드의 자식 목록이 바뀜 → 그 아래로 기억한 노드는 버린다 */
+  changedChildrenOf(depth) {
+    if (this.valid > depth) this.valid = depth;
+  }
+}
+
+/** 패치 하나 적용 (경로 찾기는 PathFinder 로) */
+function applyAt(finder, p) {
+  switch (p.type) {
+    case PatchType.INSERT:
+    case PatchType.REMOVE:
+    case PatchType.MOVE: {
+      const parent = finder.find(p.path);
+      const node = applyToParent(parent, p);
+      finder.changedChildrenOf(p.path.length);
+      return node;
+    }
+    case PatchType.REPLACE: {
+      const node = applyToTarget(finder.find(p.path), p);
+      finder.changedChildrenOf(p.path.length - 1); // 대상 자리에 다른 노드가 들어갔다
+      return node;
+    }
+    default:
+      return applyToTarget(finder.find(p.path), p);
+  }
 }
 
 const RUN_MIN = 8;
@@ -56,8 +119,7 @@ const samePath = (a, b) => a === b || (a.length === b.length && a.every((v, k) =
  *  (섞기처럼 이동이 많으면 이동 수 × 형제 수). 형제 목록을 JS 배열로 한 번만 만들어 두고 배열에서 찾는다.
  *  패치의 인덱스 의미는 하나씩 적용할 때와 같다 (MOVE 의 to 는 뺀 뒤 기준).
  */
-function applyRun(root, patches, i, j, onApply) {
-  const parent = resolvePath(root, patches[i].path);
+function applyRun(parent, patches, i, j, onApply) {
   const kids = Array.from(parent.childNodes);
   for (let k = i; k < j; k++) {
     const p = patches[k];
@@ -96,9 +158,14 @@ export function moveNode(parent, node, ref) {
 }
 
 export function applyPatch(root, p) {
+  if (p.type === PatchType.INSERT || p.type === PatchType.REMOVE || p.type === PatchType.MOVE) return applyToParent(resolvePath(root, p.path), p);
+  return applyToTarget(resolvePath(root, p.path), p);
+}
+
+/** 대상 노드 자신을 바꾸는 패치: REPLACE · TEXT · PROPS */
+function applyToTarget(target, p) {
   switch (p.type) {
     case PatchType.REPLACE: {
-      const target = resolvePath(root, p.path);
       if (p.node == null) {
         target.remove();
         return null;
@@ -107,35 +174,35 @@ export function applyPatch(root, p) {
       if (target.parentNode) target.parentNode.replaceChild(el, target);
       return el;
     }
-    case PatchType.TEXT: {
-      const target = resolvePath(root, p.path);
+    case PatchType.TEXT:
       target.nodeValue = p.text;
       return target;
-    }
-    case PatchType.PROPS: {
-      const target = resolvePath(root, p.path);
+    case PatchType.PROPS:
       for (const { name, value, oldValue } of p.changes) setProp(target, name, value, oldValue);
       return target;
-    }
+    default:
+      throw new Error(`patch: 알 수 없는 패치 타입 ${p.type}`);
+  }
+}
+
+/** 부모의 자식 목록을 바꾸는 패치: INSERT · REMOVE · MOVE */
+function applyToParent(parent, p) {
+  switch (p.type) {
     case PatchType.INSERT: {
-      const parent = resolvePath(root, p.path);
       const el = createElement(p.node, childNamespace(parent));
       parent.insertBefore(el, parent.childNodes[p.index] ?? null);
       return el;
     }
     case PatchType.REMOVE: {
-      const parent = resolvePath(root, p.path);
       const child = parent.childNodes[p.index];
       if (child) parent.removeChild(child);
       return parent;
     }
     case PatchType.MOVE: {
-      const parent = resolvePath(root, p.path);
       const child = parent.childNodes[p.from];
-      // insertBefore 는 이미 붙어 있는 노드를 알아서 떼어 옮긴다 → removeChild 를 따로 부르지 않는다 (DOM 호출 2번 → 1번).
       // p.to 는 "뺀 뒤" 의 인덱스이므로, 뒤로 옮길 때(from < to)는 빼기 전 기준으로 한 칸 뒤의 노드 앞에 넣는다.
       const ref = parent.childNodes[p.from < p.to ? p.to + 1 : p.to] ?? null;
-      if (ref !== child) moveNode(parent, child, ref);
+      if (ref !== child) moveNode(parent, child, ref); // removeChild 없이 한 번 (DOM 호출 2번 → 1번)
       return child;
     }
     default:
