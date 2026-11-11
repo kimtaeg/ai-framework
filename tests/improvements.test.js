@@ -111,6 +111,57 @@ describe('6 · 매번 새로 만드는 핸들러는 패치 없이 바꾼다', ()
   });
 });
 
+describe('6 · 바깥에서 DOM 을 바꿔도 다른 줄의 핸들러가 불리지 않는다', () => {
+  function setup(keyed) {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const calls = [];
+    let setN;
+    function App() {
+      const [n, set] = useState(0);
+      setN = set;
+      return h('ul', null, ...[1, 2, 3].map((id) => h('li', keyed ? { key: id } : null, h('span', null, `줄 ${id}`), h('button', { onClick: () => calls.push(`${id}:${n}`) }, '삭제'))));
+    }
+    const comp = mount(App, host);
+    setN(9);
+    comp.flush();
+    const button = (id) => [...host.querySelectorAll('li')].find((li) => li.firstChild.textContent === `줄 ${id}`).querySelector('button');
+    return { host, comp, calls, button };
+  }
+
+  test('평소에는 최신 핸들러 (n = 9)', () => {
+    const { host, comp, calls, button } = setup(true);
+    button(2).click();
+    assert.deepEqual(calls, ['2:9']);
+    comp.unmount(); host.remove();
+  });
+
+  for (const keyed of [true, false]) {
+    test(`목록 앞에 누가 줄을 끼워 넣어도 누른 줄(2)의 핸들러가 불린다 (${keyed ? 'key 있음' : 'key 없음'})`, () => {
+      const { host, comp, calls, button } = setup(keyed);
+      const ul = host.querySelector('ul');
+      const intruder = document.createElement('li');
+      intruder.innerHTML = '<span>광고</span><button>x</button>';
+      ul.insertBefore(intruder, ul.firstChild); // 바깥 코드가 DOM 을 바꿈 → 위치가 한 칸씩 밀림
+      button(2).click();
+      assert.equal(calls.length, 1);
+      assert.match(calls[0], /^2:/, `누른 줄은 2 인데 ${calls[0]} 의 핸들러가 불림`);
+      comp.unmount(); host.remove();
+    });
+  }
+
+  test('브라우저 번역처럼 글자를 다른 태그로 감싸도, 위치가 그대로인 줄은 최신 핸들러를 쓴다', () => {
+    const { host, comp, calls, button } = setup(true);
+    const span = host.querySelector('li span'); // 줄 1 의 글자
+    const font = document.createElement('font');
+    font.textContent = span.firstChild.nodeValue;
+    span.replaceChild(font, span.firstChild); // 텍스트 노드 → <font> (줄 2 의 경로에는 영향 없음)
+    button(2).click();
+    assert.deepEqual(calls, ['2:9']);
+    comp.unmount(); host.remove();
+  });
+});
+
 describe('7 · memo', () => {
   test('props 가 같은 줄은 지난 결과 객체를 그대로 써서 diff 가 건너뛰고, 사라진 줄의 결과는 버린다', () => {
     const host = document.createElement('div');

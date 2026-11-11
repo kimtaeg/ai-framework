@@ -296,22 +296,40 @@ function setEvent(el, eventName, handler, propName) {
  * 이벤트가 일어난 순간, 요소의 위치(루트에서의 childNodes 인덱스)를 따라 컴포넌트의 최신 VNode 를 찾아 그 핸들러를 돌려준다.
  *  diff 가 핸들러 변경을 패치하지 않아도(liveHandlers) 항상 최신 함수가 불린다. React 가 이벤트 때 최신 props 를 읽는 것과 같은 생각.
  *  비용은 클릭할 때 한 번 (조상 수 × 형제 수) — 다시 그릴 때마다 드는 비용이 아니다.
- *  컴포넌트가 관리하지 않는 DOM 이면 undefined.
+ *
+ *  위치로 찾으므로, 우리 코드가 아닌 무언가(브라우저 번역 · 확장 프로그램 등)가 DOM 을 바꿨으면 엉뚱한 줄의 VNode 를 찾을 수 있다.
+ *  그래서 내려가는 단계마다 "자식 수 · 태그 · key" 가 VNode 와 같은지 확인하고, 하나라도 다르면 undefined 를 돌려
+ *  요소에 직접 넣어 둔 핸들러(마지막으로 patch 한 함수)를 쓰게 한다 — 다른 줄의 핸들러가 불리는 일은 없다.
+ *  컴포넌트가 관리하지 않는 DOM 이어도 undefined.
  */
 function liveHandler(el, eventName) {
-  const path = [];
+  const nodes = []; // el 부터 루트 바로 아래까지
   let n = el;
   while (n && !n.__mrOwner) {
-    const parent = n.parentNode;
-    if (!parent) return undefined;
-    path.push(Array.prototype.indexOf.call(parent.childNodes, n));
-    n = parent;
+    nodes.push(n);
+    n = n.parentNode;
   }
   if (!n) return undefined;
   let v = n.__mrOwner.vnode;
-  for (let i = path.length - 1; i >= 0 && v; i--) v = v.children?.[path[i]];
+  if (!sameShape(n, v)) return undefined;
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const node = nodes[i];
+    const parent = node.parentNode;
+    if (!v?.children || parent.childNodes.length !== v.children.length) return undefined; // 형제 수가 다르면 누가 끼워 넣거나 뺐다
+    v = v.children[Array.prototype.indexOf.call(parent.childNodes, node)];
+    if (!sameShape(node, v)) return undefined; // 태그나 key 가 다르면 다른 노드다
+  }
   const fn = v?.props?.[el.__mrPropNames?.[eventName]];
   return typeof fn === 'function' ? fn : undefined;
+}
+
+/** DOM 노드와 VNode 가 같은 노드로 보이는가: 텍스트 / 태그 이름 / key */
+function sameShape(node, v) {
+  if (!v) return false;
+  if (node.nodeType === 3) return v.type === TEXT;
+  if (node.nodeType !== 1 || typeof v.type !== 'string') return false;
+  if (node.localName !== v.type && node.localName !== v.type.toLowerCase()) return false;
+  return (node.__mrKey ?? null) === (v.key ?? null);
 }
 
 function setStyle(el, value, oldValue) {
