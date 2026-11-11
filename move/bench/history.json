@@ -1,0 +1,104 @@
+{
+  "when": "2026-11-11T04:25:01.431Z",
+  "node": "v24.20.0",
+  "rows": 1000,
+  "edits": 100,
+  "results": [
+    {
+      "mode": "inline",
+      "name": "스냅샷 (지금까지)",
+      "memMB": 213.09,
+      "pushMs": 1,
+      "backMs": 0.939,
+      "jumpMs": 1.031
+    },
+    {
+      "mode": "inline",
+      "name": "델타 · 키프레임 1칸마다",
+      "memMB": 280.14,
+      "pushMs": 1.789,
+      "backMs": 0.299,
+      "jumpMs": 1.6
+    },
+    {
+      "mode": "inline",
+      "name": "델타 · 키프레임 5칸마다",
+      "memMB": 116.12,
+      "pushMs": 1.702,
+      "backMs": 0.443,
+      "jumpMs": 2.308
+    },
+    {
+      "mode": "inline",
+      "name": "델타 · 키프레임 10칸마다",
+      "memMB": 95.63,
+      "pushMs": 1.801,
+      "backMs": 0.248,
+      "jumpMs": 1.671
+    },
+    {
+      "mode": "inline",
+      "name": "델타 · 키프레임 25칸마다",
+      "memMB": 83.31,
+      "pushMs": 3.284,
+      "backMs": 0.358,
+      "jumpMs": 2.3
+    },
+    {
+      "mode": "inline",
+      "name": "델타 · 키프레임 없음 (처음만)",
+      "memMB": 77.18,
+      "pushMs": 1.732,
+      "backMs": 0.287,
+      "jumpMs": 11.63
+    },
+    {
+      "mode": "stable",
+      "name": "스냅샷 (지금까지)",
+      "memMB": 206.86,
+      "pushMs": 0.904,
+      "backMs": 0.874,
+      "jumpMs": 0.873
+    },
+    {
+      "mode": "stable",
+      "name": "델타 · 키프레임 1칸마다",
+      "memMB": 207.13,
+      "pushMs": 1.617,
+      "backMs": 0.008,
+      "jumpMs": 1.297
+    },
+    {
+      "mode": "stable",
+      "name": "델타 · 키프레임 5칸마다",
+      "memMB": 43.14,
+      "pushMs": 1.596,
+      "backMs": 0.005,
+      "jumpMs": 0.938
+    },
+    {
+      "mode": "stable",
+      "name": "델타 · 키프레임 10칸마다",
+      "memMB": 22.65,
+      "pushMs": 1.603,
+      "backMs": 0.003,
+      "jumpMs": 0.733
+    },
+    {
+      "mode": "stable",
+      "name": "델타 · 키프레임 25칸마다",
+      "memMB": 10.37,
+      "pushMs": 1.582,
+      "backMs": 0.003,
+      "jumpMs": 0.713
+    },
+    {
+      "mode": "stable",
+      "name": "델타 · 키프레임 없음 (처음만)",
+      "memMB": 4.23,
+      "pushMs": 1.588,
+      "backMs": 0.002,
+      "jumpMs": 0.173
+    }
+  ]
+}

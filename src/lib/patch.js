@@ -142,3 +142,85 @@ export function applyPatch(root, p) {
       throw new Error(`patch: 알 수 없는 패치 타입 ${p.type}`);
   }
 }
+
+/**
+ * 패치를 실제 DOM 이 아니라 VNode 트리에 적용한다 → 새 VNode 트리 (원래 트리는 바꾸지 않음).
+ *  델타 히스토리(history.js)가 저장해 둔 패치만으로 과거 · 미래의 VNode 를 다시 만들 때 쓴다.
+ *  바뀌는 경로의 노드만 복사하고 나머지 하위 트리는 원래 트리와 공유한다 (copy-on-write).
+ *  패치 의미는 applyPatches 와 같다: 앞에서부터 순서대로, path 는 루트에서의 자식 인덱스.
+ */
+export function applyPatchesToVNode(root, patches) {
+  if (!patches.length) return root;
+  const fresh = new WeakSet(); // 이번 호출에서 새로 복사한 노드 (다시 복사하지 않음)
+  const own = (n) => {
+    if (fresh.has(n)) return n;
+    const c = { ...n, children: n.children.slice() };
+    fresh.add(c);
+    return c;
+  };
+  for (const p of patches) {
+    if (p.type === PatchType.REPLACE && p.path.length === 0) {
+      root = p.node ?? null; // 루트 교체 (교체된 노드는 원본이 아니므로 복사 대상이 아니다)
+      continue;
+    }
+    const structural = p.type === PatchType.INSERT || p.type === PatchType.REMOVE || p.type === PatchType.MOVE;
+    if (!structural && p.path.length === 0) {
+      // 루트 자신의 글자 · 속성
+      if (p.type === PatchType.TEXT) root = { ...root, text: p.text };
+      else if (p.type === PatchType.PROPS) root = withProps(own(root), p.changes);
+      else throw new Error(`applyPatchesToVNode: 알 수 없는 패치 타입 ${p.type}`);
+      continue;
+    }
+    root = own(root);
+    // 대상(또는 대상의 부모)까지 내려가며 복사
+    const depth = structural ? p.path.length : p.path.length - 1; // INSERT · REMOVE · MOVE 의 path 는 부모
+    let node = root;
+    for (let d = 0; d < depth; d++) {
+      const i = p.path[d];
+      node.children[i] = own(node.children[i]);
+      node = node.children[i];
+    }
+    switch (p.type) {
+      case PatchType.INSERT:
+        node.children.splice(p.index, 0, p.node);
+        break;
+      case PatchType.REMOVE:
+        node.children.splice(p.index, 1);
+        break;
+      case PatchType.MOVE: {
+        const [moved] = node.children.splice(p.from, 1);
+        node.children.splice(p.to, 0, moved);
+        break;
+      }
+      case PatchType.REPLACE: {
+        const i = p.path[p.path.length - 1];
+        if (p.node == null) node.children.splice(i, 1);
+        else node.children[i] = p.node;
+        break;
+      }
+      case PatchType.TEXT: {
+        const i = p.path[p.path.length - 1];
+        node.children[i] = { ...node.children[i], text: p.text };
+        break;
+      }
+      case PatchType.PROPS: {
+        const i = p.path[p.path.length - 1];
+        node.children[i] = withProps(own(node.children[i]), p.changes);
+        break;
+      }
+      default:
+        throw new Error(`applyPatchesToVNode: 알 수 없는 패치 타입 ${p.type}`);
+    }
+  }
+  return root;
+}
+
+function withProps(node, changes) {
+  const props = { ...node.props };
+  for (const { name, value } of changes) {
+    if (value === undefined) delete props[name];
+    else props[name] = value;
+  }
+  node.props = props;
+  return node;
+}

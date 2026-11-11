@@ -207,7 +207,11 @@ export function focusedKeys(root) {
   const el = doc?.activeElement;
   if (!el || el === doc.body || !root.contains(el)) return null;
   const keys = new Set();
-  for (let n = el; n && n !== root.parentNode; n = n.parentNode) if (n.__mrKey != null) keys.add(n.__mrKey);
+  for (let n = el; n && n !== root.parentNode; n = n.parentNode) {
+    // createElement 로 만든 요소는 __mrKey, HTML 에서 읽은 요소는 key · data-key 속성 (domToVNode 와 같은 규칙)
+    const key = n.__mrKey ?? n.getAttribute?.('key') ?? n.getAttribute?.('data-key');
+    if (key != null) keys.add(key);
+  }
   return keys.size ? keys : null;
 }
 

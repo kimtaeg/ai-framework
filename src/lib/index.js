@@ -3,8 +3,8 @@ export {
   createElement, setProp, vnodeToHTML, childrenToHTML, countNodes, focusedKeys,
 } from './vdom.js';
 export { diff, diffProps, diffChildren, PatchType, longestIncreasingSubsequence, summarizePatches } from './diff.js';
-export { applyPatches, applyPatch, resolvePath, moveNode } from './patch.js';
-export { StateHistory } from './history.js';
+export { applyPatches, applyPatch, resolvePath, moveNode, applyPatchesToVNode } from './patch.js';
+export { StateHistory, DeltaHistory } from './history.js';
 export {
   FunctionComponent, mount, resolve,
   useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, useReducer,

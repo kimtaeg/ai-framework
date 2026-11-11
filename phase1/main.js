@@ -107,6 +107,7 @@ function renderLog(result) {
       <span>MutationObserver 기록 <b>${result.mutations}</b>건</span>
       <span>전체 재렌더링 시 <b>${result.totalNodes}</b>개 노드 재생성</span>
       <span>${result.duration.toFixed(2)}ms</span>
+      ${result.via ? `<span>${{ delta: '저장된 패치 사용 · diff 없음', 'delta-keep': '입력 중인 줄을 지키려고 diff 다시 계산', keyframe: `키프레임에서 ${result.steps}칸 다시 만듦`, replay: `현재 위치에서 ${result.steps}칸 다시 만듦` }[result.via]} (${result.historyMs.toFixed(2)}ms)</span>` : ''}
     </div>`;
   log.replaceChildren(...result.patches.map(patchItem));
 }

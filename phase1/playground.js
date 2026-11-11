@@ -3,13 +3,18 @@
  *
  *  로드 시   : 실제 영역 DOM → VDOM 변환 → 히스토리[0] 저장 → 테스트 영역 렌더링
  *  Patch    : 테스트 영역 → 새 VDOM → diff(이전, 새) → 실제 영역에 변경분만 patch → 히스토리 push
- *  뒤로/앞으로: 히스토리의 VDOM 으로 이동 → diff(현재, 목표) 로 실제 영역 patch + 테스트 영역 재렌더링
+ *  뒤로/앞으로: 히스토리의 VDOM 으로 이동 → 실제 영역에는 바뀐 부분만 patch + 테스트 영역 재렌더링
+ *
+ *  히스토리는 키프레임 + 델타 (DeltaHistory): 10칸마다 VDOM 하나, 그 사이는 앞 · 뒤 패치만 저장한다.
+ *   - 한 칸 이동은 저장된 패치를 그대로 적용한다 (diff 없음)
+ *   - 실제 영역을 다시 만들지 않고 patch 하므로, 사용자가 입력하던 값 · 포커스 · 스크롤이 이동 뒤에도 남는다
+ *     (멀리 이동할 때는 포커스가 있는 줄을 되도록 옮기지 않도록 diff 에 알려 준다)
  */
 
-import { containerToVNode, normalizeDom, countNodes, createElement } from '../src/lib/vdom.js';
+import { containerToVNode, normalizeDom, countNodes, createElement, focusedKeys } from '../src/lib/vdom.js';
 import { diff, summarizePatches } from '../src/lib/diff.js';
 import { applyPatches, applyPatch } from '../src/lib/patch.js';
-import { StateHistory } from '../src/lib/history.js';
+import { DeltaHistory } from '../src/lib/history.js';
 
 export class Playground {
   /**
@@ -31,7 +36,7 @@ export class Playground {
     // VDOM 으로 표현하지 않는 노드(주석, 들여쓰기 공백)를 정리해 DOM 인덱스와 VDOM 인덱스를 일치시킨다.
     normalizeDom(this.actualRoot);
     const vnode = containerToVNode(this.actualRoot);
-    this.history = new StateHistory(vnode);
+    this.history = new DeltaHistory(vnode, { keyframeEvery: 10 });
     this.renderTestArea(vnode);
     return vnode;
   }
@@ -45,7 +50,7 @@ export class Playground {
     const prev = this.history.current;
     const result = this.#commit(prev, nextVNode, 'patch');
     if (result.patches.length > 0) {
-      this.history.push(nextVNode, label);
+      this.history.push(nextVNode, label, result.patches);
       result.historyIndex = this.history.index;
       result.historyLength = this.history.entries.length;
     }
@@ -93,7 +98,7 @@ export class Playground {
     if (!s) return null;
     while (s.index < s.patches.length) this.stepNext();
     this.steps = null;
-    if (s.patches.length) this.history.push(s.next, s.label);
+    if (s.patches.length) this.history.push(s.next, s.label, s.patches);
     const result = {
       kind: 'patch',
       prev: s.prev,
@@ -123,30 +128,38 @@ export class Playground {
 
   back() {
     if (!this.history.canBack) return null;
-    return this.#travel(() => this.history.back(), 'back');
+    return this.#travel(this.history.index - 1, 'back');
   }
 
   forward() {
     if (!this.history.canForward) return null;
-    return this.#travel(() => this.history.forward(), 'forward');
+    return this.#travel(this.history.index + 1, 'forward');
   }
 
   go(index) {
     if (index === this.history.index) return null;
-    return this.#travel(() => this.history.go(index), 'go');
+    return this.#travel(index, 'go');
   }
 
-  #travel(move, kind) {
+  #travel(target, kind) {
     const prev = this.history.current;
-    const target = move();
-    const result = this.#commit(prev, target, kind);
-    this.renderTestArea(target);
+    const keep = focusedKeys(this.actualRoot);
+    const t0 = performance.now();
+    const moved = this.history.travel(target, keep ? { keep } : undefined);
+    const historyMs = performance.now() - t0; // 패치를 꺼내거나(한 칸) 키프레임에서 다시 만드는(멀리) 시간
+    const result = this.#apply(prev, moved.vnode, kind, moved.patches);
+    Object.assign(result, { via: moved.via, steps: moved.steps, historyMs });
+    this.renderTestArea(moved.vnode);
     this.onCommit(result);
     return result;
   }
 
   #commit(prev, next, kind) {
-    const patches = diff(prev, next);
+    const keep = focusedKeys(this.actualRoot);
+    return this.#apply(prev, next, kind, diff(prev, next, [], [], keep ? { keep } : undefined));
+  }
+
+  #apply(prev, next, kind, patches) {
     const applied = [];
     this.observer?.observe(this.actualRoot, {
       subtree: true, childList: true, attributes: true, characterData: true,
