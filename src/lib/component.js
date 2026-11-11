@@ -24,7 +24,7 @@
  *   - 예외: useContext 는 상태를 만들지 않고 값을 "읽기만" 하므로 자식에서도 쓸 수 있다.
  */
 
-import { TEXT, createElement, createText, normalizeChildren } from './vdom.js';
+import { TEXT, createElement, createText, normalizeChildren, focusedKeys } from './vdom.js';
 import { diff } from './diff.js';
 import { applyPatches } from './patch.js';
 import { warn } from './warn.js';
@@ -145,7 +145,9 @@ export class FunctionComponent {
     const t0 = now();
     const next = this.render();
     const t1 = now();
-    const patches = diff(this.vnode, next);
+    // 입력 중인 줄이 있으면 diff 가 그 줄을 되도록 옮기지 않게 알려 준다 (moveBefore 가 없는 브라우저의 포커스 보존)
+    const keep = typeof document !== 'undefined' && this.dom ? focusedKeys(this.dom) : null;
+    const patches = diff(this.vnode, next, [], [], keep ? { keep } : undefined);
     const t2 = now();
     this.dom = applyPatches(this.dom, patches);
     const t3 = now();

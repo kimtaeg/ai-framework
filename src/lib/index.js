@@ -1,9 +1,9 @@
 export {
   TEXT, SVG_NS, h, createText, domToVNode, containerToVNode, htmlToVNode, normalizeDom,
-  createElement, setProp, vnodeToHTML, childrenToHTML, countNodes,
+  createElement, setProp, vnodeToHTML, childrenToHTML, countNodes, focusedKeys,
 } from './vdom.js';
 export { diff, diffProps, diffChildren, PatchType, longestIncreasingSubsequence, summarizePatches } from './diff.js';
-export { applyPatches, applyPatch, resolvePath } from './patch.js';
+export { applyPatches, applyPatch, resolvePath, moveNode } from './patch.js';
 export { StateHistory } from './history.js';
 export {
   FunctionComponent, mount, resolve,

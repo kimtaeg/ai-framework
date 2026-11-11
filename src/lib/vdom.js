@@ -182,6 +182,7 @@ export function createElement(vnode, parentNs = null) {
 
   const ns = vnode.type === 'svg' ? SVG_NS : parentNs;
   const el = ns ? document.createElementNS(ns, vnode.type) : document.createElement(vnode.type);
+  if (vnode.key != null) el.__mrKey = vnode.key; // 포커스가 있는 줄을 diff 에 알려 주기 위해 (focusedKeys)
 
   // <select value> 는 <option> 이 붙은 뒤에 설정해야 반영된다.
   const deferValue = vnode.type === 'select' && 'value' in vnode.props;
@@ -195,6 +196,19 @@ export function createElement(vnode, parentNs = null) {
   for (const child of vnode.children) target.appendChild(createElement(child, childNs));
   if (deferValue) setProp(el, 'value', vnode.props.value, undefined);
   return el;
+}
+
+/**
+ * root 안에서 지금 포커스가 있는 요소와 그 조상들의 key 집합 (없으면 null).
+ * diff 에 넘기면, 옮기는 횟수가 같은 여러 방법 중 이 줄들을 옮기지 않는 쪽을 고른다 (moveBefore 가 없는 브라우저에서 포커스 보존).
+ */
+export function focusedKeys(root) {
+  const doc = root?.ownerDocument;
+  const el = doc?.activeElement;
+  if (!el || el === doc.body || !root.contains(el)) return null;
+  const keys = new Set();
+  for (let n = el; n && n !== root.parentNode; n = n.parentNode) if (n.__mrKey != null) keys.add(n.__mrKey);
+  return keys.size ? keys : null;
 }
 
 /** 부모 DOM 기준으로 자식이 생성되어야 할 네임스페이스 (SVG 내부 여부) */

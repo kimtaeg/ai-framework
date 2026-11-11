@@ -1,9 +1,9 @@
 import './setup.js';
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { h, createElement, htmlToVNode, TEXT } from '../src/lib/vdom.js';
+import { h, createElement, htmlToVNode, TEXT, focusedKeys } from '../src/lib/vdom.js';
 import { diff, PatchType, longestIncreasingSubsequence, diffProps } from '../src/lib/diff.js';
-import { applyPatches } from '../src/lib/patch.js';
+import { applyPatches, moveNode } from '../src/lib/patch.js';
 
 /** old 를 그리고 diff/patch 로 new 로 바꾼 결과가 new 를 처음부터 그린 결과와 같은지 검증 */
 function check(oldV, newV) {
@@ -320,5 +320,86 @@ describe('diff — 긴 목록의 이동 계산 (O(n log n) 배치)', () => {
     const ms = performance.now() - t0;
     assert.equal(patches.filter((p) => p.type === PatchType.MOVE).length, 19999);
     assert.ok(ms < 400, `${ms.toFixed(0)}ms`);
+  });
+});
+
+describe('포커스 보존 — 같은 최소 횟수 중 입력 중인 줄은 옮기지 않는다', () => {
+  const ul = (keys) => h('ul', null, ...keys.map((k) => h('li', { key: k }, h('input', { 'data-k': k }))));
+  const moved = (patches) => patches.filter((p) => p.type === PatchType.MOVE).map((p) => p.key);
+
+  test('가중치 LIS: 길이는 그대로, 같은 길이면 가중치 합이 가장 큰 것 (O(n²) 정답과 무작위 2천 개 대조)', () => {
+    let seed = 3;
+    const rand = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const brute = (a, w) => { const L = a.map(() => 1), W = a.map((_, i) => w[i]); let bl = 0, bw = -1; for (let i = 0; i < a.length; i++) { for (let j = 0; j < i; j++) if (a[j] < a[i] && (L[j] + 1 > L[i] || (L[j] + 1 === L[i] && W[j] + w[i] > W[i]))) { L[i] = L[j] + 1; W[i] = W[j] + w[i]; } if (L[i] > bl || (L[i] === bl && W[i] > bw)) { bl = L[i]; bw = W[i]; } } return [bl, bw]; };
+    for (let t = 0; t < 2000; t++) {
+      const n = 1 + Math.floor(rand() * 30);
+      const a = Array.from({ length: n }, () => Math.floor(rand() * 25));
+      const w = Array.from({ length: n }, () => (rand() < 0.3 ? 1 : 0));
+      const r = longestIncreasingSubsequence(a, w);
+      const [bl, bw] = brute(a, w);
+      assert.equal(r.length, bl);
+      assert.equal(r.length, longestIncreasingSubsequence(a).length);
+      assert.equal(r.reduce((s, i) => s + w[i], 0), bw);
+      for (let i = 1; i < r.length; i++) assert.ok(r[i] > r[i - 1] && a[r[i]] > a[r[i - 1]]);
+    }
+  });
+
+  test('한 칸 아래로: 기본은 그 줄을 옮기지만, keep 이면 옆 줄을 옮긴다 (횟수는 1번 그대로)', () => {
+    const from = ['a', 'b', 'c', 'd'], to = ['a', 'c', 'b', 'd']; // b 를 한 칸 아래로
+    assert.deepEqual(moved(diff(ul(from), ul(to))), ['b']);
+    assert.deepEqual(moved(diff(ul(from), ul(to), [], [], { keep: new Set(['b']) })), ['c']);
+  });
+
+  test('1,000줄 한 칸 아래로 998가지: keep 이면 포커스 줄을 한 번도 안 옮기고, 이동 횟수는 같다', () => {
+    const keys = Array.from({ length: 1000 }, (_, i) => i);
+    for (let i = 1; i < 999; i++) {
+      const next = keys.slice(); [next[i], next[i + 1]] = [next[i + 1], next[i]];
+      const base = moved(diff(ul(keys), ul(next)));
+      const kept = moved(diff(ul(keys), ul(next), [], [], { keep: new Set([i]) }));
+      assert.equal(kept.length, base.length);
+      assert.ok(!kept.includes(i));
+    }
+  });
+
+  test('옮길 수밖에 없으면 옮긴다 — 최소 횟수가 우선', () => {
+    // d 를 맨 위로: d 를 안 옮기려면 a b c 를 다 옮겨야 하므로(3번) d 를 옮긴다(1번)
+    assert.deepEqual(moved(diff(ul(['a', 'b', 'c', 'd']), ul(['d', 'a', 'b', 'c']), [], [], { keep: new Set(['d']) })), ['d']);
+  });
+
+  test('focusedKeys: 실제 DOM 의 포커스 위치에서 key 를 찾고, diff + patch 뒤에도 포커스가 그대로다', () => {
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const oldV = ul(['a', 'b', 'c', 'd']);
+    const root = createElement(oldV);
+    host.appendChild(root);
+    const input = root.querySelector('[data-k="b"]');
+    input.focus();
+    assert.equal(document.activeElement, input);
+    const keep = focusedKeys(root);
+    assert.deepEqual([...keep], ['b']);
+    applyPatches(root, diff(oldV, ul(['a', 'c', 'b', 'd']), [], [], { keep }));
+    assert.deepEqual([...root.querySelectorAll('input')].map((el) => el.dataset.k), ['a', 'c', 'b', 'd']);
+    assert.equal(document.activeElement, input, 'b 를 옮기지 않았으므로 포커스 유지');
+    assert.equal(focusedKeys(document.createElement('div')), null);
+    host.remove();
+  });
+
+  test('moveNode: moveBefore 가 있으면 쓰고, 없거나 실패하면 insertBefore', () => {
+    const parent = document.createElement('ul');
+    document.body.appendChild(parent);
+    const [x, y] = [document.createElement('li'), document.createElement('li')];
+    parent.append(x, y);
+    let used = null;
+    parent.moveBefore = function (node, ref) { used = 'moveBefore'; return this.insertBefore(node, ref); };
+    moveNode(parent, y, x);
+    assert.equal(used, 'moveBefore');
+    assert.equal(parent.firstChild, y);
+    parent.moveBefore = () => { throw new Error('지원 안 함'); };
+    moveNode(parent, x, y);
+    assert.equal(parent.firstChild, x, '실패하면 insertBefore 로');
+    delete parent.moveBefore;
+    moveNode(parent, y, x);
+    assert.equal(parent.firstChild, y);
+    parent.remove();
   });
 });

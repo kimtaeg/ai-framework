@@ -67,7 +67,7 @@ function applyRun(root, patches, i, j, onApply) {
       kids.splice(p.from, 1);
       const ref = kids[p.to] ?? null;
       kids.splice(p.to, 0, node);
-      parent.insertBefore(node, ref);
+      moveNode(parent, node, ref);
     } else {
       node = createElement(p.node, childNamespace(parent));
       parent.insertBefore(node, kids[p.index] ?? null);
@@ -75,6 +75,24 @@ function applyRun(root, patches, i, j, onApply) {
     }
     onApply?.(p, node);
   }
+}
+
+/**
+ * 이미 붙어 있는 노드를 같은 부모 안에서 옮긴다.
+ *  insertBefore 로 옮기면 노드를 한 번 떼었다 붙이므로, 그 안에서 입력 중이던 칸의 포커스 · 커서 · 선택 영역이 풀린다.
+ *  moveBefore (Chrome 133+) 가 있으면 그걸 쓴다 — 떼지 않고 옮겨서 포커스 · 애니메이션 · iframe 상태가 그대로다.
+ *  없거나 (다른 브라우저 · jsdom) 쓸 수 없는 상황(부모가 문서에 안 붙음 등)이면 insertBefore 로 한다.
+ */
+export function moveNode(parent, node, ref) {
+  if (typeof parent.moveBefore === 'function' && parent.isConnected) {
+    try {
+      parent.moveBefore(node, ref);
+      return;
+    } catch {
+      // 아래 insertBefore 로
+    }
+  }
+  parent.insertBefore(node, ref);
 }
 
 export function applyPatch(root, p) {
@@ -117,7 +135,7 @@ export function applyPatch(root, p) {
       // insertBefore 는 이미 붙어 있는 노드를 알아서 떼어 옮긴다 → removeChild 를 따로 부르지 않는다 (DOM 호출 2번 → 1번).
       // p.to 는 "뺀 뒤" 의 인덱스이므로, 뒤로 옮길 때(from < to)는 빼기 전 기준으로 한 칸 뒤의 노드 앞에 넣는다.
       const ref = parent.childNodes[p.from < p.to ? p.to + 1 : p.to] ?? null;
-      if (ref !== child) parent.insertBefore(child, ref);
+      if (ref !== child) moveNode(parent, child, ref);
       return child;
     }
     default:

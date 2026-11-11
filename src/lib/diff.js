@@ -37,7 +37,27 @@ export const PatchType = Object.freeze({
  * @param {object|null} newVNode
  * @returns {Array<object>} patches
  */
-export function diff(oldVNode, newVNode, path = [], patches = []) {
+// 이번 diff 동안 "되도록 옮기지 않았으면 하는" key (포커스가 있는 줄 등). 최상위 diff 호출의 options.keep 으로 받는다.
+let keepKeys = null;
+
+/**
+ * @param {object} [options]
+ * @param {Set} [options.keep] 옮기는 횟수가 같은 여러 방법 중, 이 key 의 줄은 옮기지 않는 쪽을 고른다 (focusedKeys 참고)
+ */
+export function diff(oldVNode, newVNode, path = [], patches = [], options) {
+  if (options?.keep) {
+    const prev = keepKeys;
+    keepKeys = options.keep;
+    try {
+      return diffNode(oldVNode, newVNode, path, patches);
+    } finally {
+      keepKeys = prev;
+    }
+  }
+  return diffNode(oldVNode, newVNode, path, patches);
+}
+
+function diffNode(oldVNode, newVNode, path, patches) {
   // 같은 객체 참조면 하위 트리가 동일함이 보장된다. (useMemo 로 VNode 를 재사용하면 비교 자체를 건너뜀)
   if (oldVNode === newVNode) return patches;
 
@@ -155,6 +175,20 @@ export function diffChildren(oldCh, newCh, parentPath, patches) {
 }
 
 /**
+ * keepKeys 에 든 줄에 가중치 1 을 준 배열 (해당 줄이 없으면 null → 보통 LIS).
+ *  p 번째 원소의 old 인덱스는 oldIndexOf(p).
+ */
+function keepWeights(oldCh, len, oldIndexOf) {
+  if (!keepKeys) return null;
+  let w = null;
+  for (let p = 0; p < len; p++) {
+    const key = oldCh[oldIndexOf(p)].key;
+    if (key != null && keepKeys.has(key)) (w ??= new Uint8Array(len))[p] = 1;
+  }
+  return w;
+}
+
+/**
  * 최장 증가 부분 수열의 "인덱스" 들을 반환. O(n log n), 이미 증가하는 부분은 O(1) 씩.
  * 예) [2, 0, 1, 3] → [1, 2, 3]  (값 0,1,3)
  *  - 엄격하게 증가하는 수열만 센다 (같은 값은 이어지지 않음).
@@ -162,9 +196,10 @@ export function diffChildren(oldCh, newCh, parentPath, patches) {
  *    ([1, undefined, 2, 3] → 길이 2). diff 는 이런 값을 넘기지 않지만 밖에서 쓰는 경우를 위해 막아 둔다.
  *  - 배열 · 타입 배열 모두 받는다.
  */
-export function longestIncreasingSubsequence(arr) {
+export function longestIncreasingSubsequence(arr, weights) {
   const n = arr.length;
   if (n === 0) return [];
+  if (weights) return weightedLIS(arr, weights);
   const prev = new Int32Array(n); // prev[i] = i 앞에 오는 원소의 인덱스 (+1, 0 이면 없음)
   const tails = new Int32Array(n); // tails[len] = 길이 len+1 인 증가 수열의 마지막 원소 인덱스
   let len = 0;
@@ -193,6 +228,38 @@ export function longestIncreasingSubsequence(arr) {
     result[k] = i;
     i = prev[i] - 1;
   }
+  return result;
+}
+
+/**
+ * 가중치가 있는 LIS — 가장 긴 증가 수열들 중에서 가중치 합이 가장 큰 것. O(n log n).
+ *  길이가 먼저이므로 옮기는 횟수(남은 줄 − LIS 길이)는 늘지 않는다. 같은 길이일 때만 가중치가 큰 줄을 남긴다.
+ *  값을 순위로 바꾼 뒤, "내 값보다 작은 값으로 끝나는 가장 좋은 (길이, 가중치)" 를 Fenwick 트리(앞부분 최댓값)로 찾는다.
+ */
+function weightedLIS(arr, weights) {
+  const n = arr.length;
+  const ok = [];
+  for (let i = 0; i < n; i++) { const v = arr[i]; if (v != null && v === v) ok.push(i); }
+  if (ok.length === 0) return [];
+  const vals = [...new Set(ok.map((i) => arr[i]))].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+  const rankOf = new Map(vals.map((v, r) => [v, r + 1]));
+  const m = vals.length;
+  const tLen = new Int32Array(m + 1), tW = new Float64Array(m + 1), tI = new Int32Array(m + 1).fill(-1);
+  const better = (l1, w1, l2, w2) => l1 > l2 || (l1 === l2 && w1 > w2);
+  const prev = new Int32Array(n).fill(-1);
+  let bestLen = 0, bestW = -1, bestI = -1;
+  for (const i of ok) {
+    const r = rankOf.get(arr[i]);
+    // 순위 < r 중 가장 좋은 끝점
+    let ql = 0, qw = 0, qi = -1;
+    for (let k = r - 1; k > 0; k -= k & -k) if (better(tLen[k], tW[k], ql, qw)) { ql = tLen[k]; qw = tW[k]; qi = tI[k]; }
+    const len = ql + 1, w = qw + (weights[i] || 0);
+    prev[i] = qi;
+    if (better(len, w, bestLen, bestW)) { bestLen = len; bestW = w; bestI = i; }
+    for (let k = r; k <= m; k += k & -k) if (better(len, w, tLen[k], tW[k])) { tLen[k] = len; tW[k] = w; tI[k] = i; }
+  }
+  const result = new Array(bestLen);
+  for (let k = bestLen - 1, i = bestI; k >= 0; k--, i = prev[i]) result[k] = i;
   return result;
 }
 
@@ -232,7 +299,8 @@ function diffMostlyInPlace(oldCh, newCh, parentPath, patches) {
     }
     // 이동: 일반 과정과 같은 규칙 (뒤에서부터, LIS 가 아닌 노드를 오른쪽 이웃 앞으로). 옮기는 줄은 많아야 k 개.
     const stable = new Uint8Array(n);
-    for (const p of longestIncreasingSubsequence(seq)) stable[seq[p]] = 1; // 새 인덱스 기준
+    const weights = keepWeights(oldCh, n, (p) => p);
+    for (const p of longestIncreasingSubsequence(seq, weights)) stable[seq[p]] = 1; // 새 인덱스 기준
     const live = oldCh.slice();
     for (let i = n - 1; i >= 0; i--) {
       if (stable[i]) continue;
@@ -266,13 +334,14 @@ function place(oldCh, newCh, used, matchIdx, parentPath, patches) {
   const n = newCh.length;
   // 삭제 뒤 자리
   const livePos = new Int32Array(oldLen);
+  const liveOld = new Int32Array(oldLen); // 삭제 뒤 자리 → old 인덱스
   let L = 0;
-  for (let i = 0; i < oldLen; i++) if (used[i]) livePos[i] = L++;
+  for (let i = 0; i < oldLen; i++) if (used[i]) { liveOld[L] = i; livePos[i] = L++; }
   // 삭제 뒤 자리 p 의 노드가 가야 할 새 인덱스 → LIS
   const seq = new Int32Array(L);
   for (let i = 0; i < n; i++) if (matchIdx[i] >= 0) seq[livePos[matchIdx[i]]] = i;
   const stablePos = new Uint8Array(L);
-  for (const k of longestIncreasingSubsequence(seq)) stablePos[k] = 1;
+  for (const k of longestIncreasingSubsequence(seq, keepWeights(oldCh, L, (p) => liveOld[p]))) stablePos[k] = 1;
 
   // 새 인덱스마다: 움직이는가, 붙을 자리(base)는 어디인가
   const moving = new Uint8Array(n);
