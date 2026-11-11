@@ -45,38 +45,47 @@ let keepKeys = null;
  * @param {Set} [options.keep] 옮기는 횟수가 같은 여러 방법 중, 이 key 의 줄은 옮기지 않는 쪽을 고른다 (focusedKeys 참고)
  */
 export function diff(oldVNode, newVNode, path = [], patches = [], options) {
+  for (let i = 0; i < path.length; i++) stack[i] = path[i];
   if (options?.keep) {
     const prev = keepKeys;
     keepKeys = options.keep;
     try {
-      return diffNode(oldVNode, newVNode, path, patches);
+      return diffNode(oldVNode, newVNode, path.length, patches);
     } finally {
       keepKeys = prev;
     }
   }
-  return diffNode(oldVNode, newVNode, path, patches);
+  return diffNode(oldVNode, newVNode, path.length, patches);
 }
 
-function diffNode(oldVNode, newVNode, path, patches) {
+/**
+ * 지금 비교 중인 노드의 경로. stack[0 .. depth) 가 루트에서 지금 노드까지의 childNodes 인덱스다.
+ *  예전에는 자식마다 parentPath.concat(i) 로 새 배열을 만들었다 (노드 수만큼 할당 — 바뀐 게 없어도).
+ *  지금은 하나의 배열을 덮어쓰며 내려가고, 패치를 만들 때만 그 순간의 경로를 잘라 낸다.
+ */
+const stack = [];
+const pathTo = (depth) => stack.slice(0, depth);
+
+function diffNode(oldVNode, newVNode, depth, patches) {
   // 같은 객체 참조면 하위 트리가 동일함이 보장된다. (useMemo 로 VNode 를 재사용하면 비교 자체를 건너뜀)
   if (oldVNode === newVNode) return patches;
 
   if (oldVNode == null || newVNode == null || !isSameNode(oldVNode, newVNode)) {
-    patches.push({ type: PatchType.REPLACE, path, node: newVNode ?? null, oldNode: oldVNode ?? null });
+    patches.push({ type: PatchType.REPLACE, path: pathTo(depth), node: newVNode ?? null, oldNode: oldVNode ?? null });
     return patches;
   }
 
   if (newVNode.type === TEXT) {
     if (oldVNode.text !== newVNode.text) {
-      patches.push({ type: PatchType.TEXT, path, text: newVNode.text, oldText: oldVNode.text });
+      patches.push({ type: PatchType.TEXT, path: pathTo(depth), text: newVNode.text, oldText: oldVNode.text });
     }
     return patches;
   }
 
   const changes = diffProps(oldVNode.props, newVNode.props);
-  if (changes.length) patches.push({ type: PatchType.PROPS, path, changes });
+  if (changes.length) patches.push({ type: PatchType.PROPS, path: pathTo(depth), changes });
 
-  diffChildren(oldVNode.children, newVNode.children, path, patches);
+  childrenAt(oldVNode.children, newVNode.children, depth, patches);
   return patches;
 }
 
@@ -89,19 +98,22 @@ export function isSameNode(a, b) {
  * props 비교. 반환: [{ name, value, oldValue }] (value === undefined 이면 삭제)
  * 함수(이벤트 핸들러)는 매 렌더 새로 만들어지므로 참조가 바뀌면 교체 대상이 된다.
  */
+const NO_CHANGES = Object.freeze([]);
+
 export function diffProps(oldProps = {}, newProps = {}) {
-  const changes = [];
-  for (const name of Object.keys(newProps)) {
+  // Object.keys 배열과 빈 결과 배열을 노드마다 만들지 않는다 (바뀐 게 없으면 같은 빈 배열을 돌려준다)
+  let changes = null;
+  for (const name in newProps) {
     const a = oldProps[name];
     const b = newProps[name];
     if (Object.is(a, b)) continue;
     if (name === 'style' && isPlainObject(a) && isPlainObject(b) && shallowEqual(a, b)) continue;
-    changes.push({ name, value: b, oldValue: a });
+    (changes ??= []).push({ name, value: b, oldValue: a });
   }
-  for (const name of Object.keys(oldProps)) {
-    if (!(name in newProps)) changes.push({ name, value: undefined, oldValue: oldProps[name] });
+  for (const name in oldProps) {
+    if (!(name in newProps)) (changes ??= []).push({ name, value: undefined, oldValue: oldProps[name] });
   }
-  return changes;
+  return changes ?? NO_CHANGES;
 }
 
 /**
@@ -114,18 +126,27 @@ export function diffProps(oldProps = {}, newProps = {}) {
  *  4. 재귀  : 위치가 확정된 뒤, 짝지어진 노드끼리 diff
  */
 export function diffChildren(oldCh, newCh, parentPath, patches) {
+  for (let i = 0; i < parentPath.length; i++) stack[i] = parentPath[i];
+  childrenAt(oldCh, newCh, parentPath.length, patches);
+}
+
+function childrenAt(oldCh, newCh, depth, patches) {
   if (oldCh.length === 0 && newCh.length === 0) return;
 
   // ---- 빠른 길: key 가 하나도 없고 개수가 같으면 → i 번째끼리 짝, 삭제·이동·삽입 없음 ----
   // (아래 일반 과정을 거쳐도 결과가 정확히 같다. 다시 그릴 때 가장 흔한 경우라 Map·Set·LIS 를 만들지 않는다)
   if (oldCh.length === newCh.length && allUnkeyed(oldCh) && allUnkeyed(newCh)) {
-    for (let i = 0; i < newCh.length; i++) diff(oldCh[i], newCh[i], parentPath.concat(i), patches);
+    for (let i = 0; i < newCh.length; i++) {
+      stack[depth] = i;
+      diffNode(oldCh[i], newCh[i], depth + 1, patches);
+    }
     return;
   }
 
   // ---- 빠른 길 2: 개수가 같고 거의 모든 줄이 같은 자리에 같은 key → 어긋난 몇 자리만 처리 ----
   // (두 줄 바꾸기, 바뀐 게 없는 다시 그리기 같은 흔한 경우. Map · Set · 좌표 계산 없이 끝낸다)
-  if (oldCh.length === newCh.length && diffMostlyInPlace(oldCh, newCh, parentPath, patches)) return;
+  if (oldCh.length === newCh.length && diffMostlyInPlace(oldCh, newCh, depth, patches)) return;
+  const parentPath = pathTo(depth); // 이 단계의 REMOVE · MOVE · INSERT 가 함께 쓰는 경로
 
   // ---- 1. 매칭 ----  (노드 대신 old 인덱스로 다뤄 Map · Set 을 줄인다)
   const oldLen = oldCh.length;
@@ -170,7 +191,10 @@ export function diffChildren(oldCh, newCh, parentPath, patches) {
   // ---- 4. 재귀 diff (이제 DOM 순서 == newCh 순서) ----
   for (let i = 0; i < newLen; i++) {
     const m = matchIdx[i];
-    if (m >= 0) diff(oldCh[m], newCh[i], parentPath.concat(i), patches);
+    if (m >= 0) {
+      stack[depth] = i;
+      diffNode(oldCh[m], newCh[i], depth + 1, patches);
+    }
   }
 }
 
@@ -271,7 +295,7 @@ function weightedLIS(arr, weights) {
  *  비용: key 비교 n 번 + LIS(n log n) + 옮기는 줄 수 × n.  (예전 일반 과정은 Map · Set · 배열을 n 크기로 여러 개 만들었다)
  */
 const MAX_MISPLACED = 8;
-function diffMostlyInPlace(oldCh, newCh, parentPath, patches) {
+function diffMostlyInPlace(oldCh, newCh, depth, patches) {
   const n = oldCh.length;
   const mis = [];
   for (let i = 0; i < n; i++) {
@@ -283,6 +307,7 @@ function diffMostlyInPlace(oldCh, newCh, parentPath, patches) {
   }
   const k = mis.length;
   const matchOf = newCh.length ? oldCh.slice() : []; // 새 인덱스 i 와 짝이 되는 old 노드 (어긋나지 않은 자리는 그대로)
+  let parentPath = null; // 이 단계의 MOVE 가 함께 쓰는 경로 (MOVE 가 있을 때만 만든다)
   if (k > 0) {
     // 어긋난 자리끼리 key 가 1:1 로 짝지어지는가
     const taken = new Uint8Array(k);
@@ -309,10 +334,13 @@ function diffMostlyInPlace(oldCh, newCh, parentPath, patches) {
       live.splice(from, 1);
       const to = i + 1 < n ? live.indexOf(matchOf[i + 1]) : live.length;
       live.splice(to, 0, m);
-      if (from !== to) patches.push({ type: PatchType.MOVE, path: parentPath, from, to, key: m.key });
+      if (from !== to) patches.push({ type: PatchType.MOVE, path: (parentPath ??= pathTo(depth)), from, to, key: m.key });
     }
   }
-  for (let i = 0; i < n; i++) diff(matchOf[i], newCh[i], parentPath.concat(i), patches);
+  for (let i = 0; i < n; i++) {
+    stack[depth] = i;
+    diffNode(matchOf[i], newCh[i], depth + 1, patches);
+  }
   return true;
 }
 

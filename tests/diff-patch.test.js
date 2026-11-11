@@ -403,3 +403,23 @@ describe('포커스 보존 — 같은 최소 횟수 중 입력 중인 줄은 옮
     parent.remove();
   });
 });
+
+describe('diff 지연 — 경로를 노드마다 만들지 않아도 패치 경로는 정확하다', () => {
+  test('깊이가 다른 여러 곳이 바뀌어도 각 패치의 경로가 맞고, 나중 비교가 앞 패치의 경로를 바꾸지 않는다', () => {
+    const tree = (a, b, c) => h('div', null, h('p', null, h('b', null, a), h('i', null, 'x')), h('p', null, h('b', null, 'y'), h('i', null, b)), h('ul', null, h('li', { key: 1 }, c), h('li', { key: 2 }, 'z')));
+    const patches = diff(tree('a', 'b', 'c'), tree('A', 'B', 'C'));
+    assert.deepEqual(patches.map((p) => [p.type, p.path, p.text]), [
+      ['TEXT', [0, 0, 0], 'A'],
+      ['TEXT', [1, 1, 0], 'B'],
+      ['TEXT', [2, 0, 0], 'C'],
+    ]);
+    assert.ok(new Set(patches.map((p) => p.path)).size === 3, '경로 배열은 패치마다 따로');
+  });
+
+  test('바뀐 게 없으면 패치 0개, diffProps 는 빈 배열', () => {
+    const v = () => h('ul', null, ...[1, 2, 3].map((k) => h('li', { key: k, class: 'r', style: { color: 'red' } }, String(k))));
+    assert.equal(diff(v(), v()).length, 0);
+    assert.deepEqual(diffProps({ a: 1 }, { a: 1 }), []);
+    assert.deepEqual(diffProps({ a: 1 }, { b: 2 }), [{ name: 'b', value: 2, oldValue: undefined }, { name: 'a', value: undefined, oldValue: 1 }]);
+  });
+});
