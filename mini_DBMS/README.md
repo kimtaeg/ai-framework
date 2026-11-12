@@ -22,6 +22,7 @@ java -jar build/libs/mini-dbms.jar repl --data ./data
 |---|---|
 | `run <file.sql> [--data DIR]` | 파일의 문장을 순서대로 실행. 마지막 `;`는 생략 가능 |
 | `repl [--data DIR]` | 대화형. `;`가 나올 때까지 여러 줄 입력, `.exit` 또는 EOF로 종료 |
+| `generate --table T --count N [--seed 42]` | 대용량 테스트 데이터 생성 ([아래](#대용량-데이터-생성)) |
 
 - `--data` 기본값은 `./data`. 디렉터리가 미리 있어야 한다.
 - 한 문장이 실패해도 `ERROR: ...`를 출력하고 다음 문장을 계속 실행한다. run 모드는 `[line N]`으로 문장 위치를 알려준다.
@@ -85,7 +86,7 @@ EXPLAIN SELECT ...;                 -- 실행하지 않고 실행 경로만 보�
 한 줄에 `이름:타입`을 쉼표로 나열한다. 타입은 `INT`(64비트 정수)와 `STRING`. `id:INT` 컬럼이 반드시 있어야 한다.
 
 ```text
-id:INT,name:STRING,age:INT
+id:INT,name:STRING,age:INT,email:STRING
 ```
 
 공백과 타입 대소문자는 무시한다(` id : int `도 된다). 빈 파일·중복 컬럼·모르는 타입은 `StorageException`.
@@ -140,11 +141,39 @@ id:INT,name:STRING,age:INT
 `.tbl` 파일은 엔진이 처음 쓸 때 열어 두고 64KB 메모리 버퍼에 모은다. `readAt`이 버퍼 안의 줄도 읽어야 해서 버퍼를 직접 관리한다. 디스크(OS)로 내려가는 시점은
 
 1. 새 줄이 버퍼의 남은 공간에 들어가지 않을 때 (버퍼보다 큰 줄은 버퍼를 거치지 않고 바로 쓴다)
-2. INSERT 문장 하나가 끝날 때 (`flush()`)
+2. `DatabaseEngine.execute` 호출 하나가 끝날 때 (성공이든 실패든, 그 호출에서 INSERT한 테이블마다 `flush()` 한 번)
 3. SELECT 스캔을 시작할 때
 4. 종료할 때 (`close()` — 정상 종료는 `finally`, Ctrl+C는 shutdown hook)
 
 flush는 OS 페이지 캐시까지만 보장한다(fsync 없음). 디스크 쓰기가 한 번 실패하면 그 파일은 이후 쓰기를 거부한다(재시작하면 파일 기준으로 다시 맞춰진다).
+
+## 대용량 데이터 생성
+
+```bash
+java -jar build/libs/mini-dbms.jar generate --table users --count 1000000 [--seed 42] [--data ./data] \
+     [--batch 1000] [--reset] [--out users.sql]
+```
+
+- Phase 1 SQL 처리기를 그대로 거친다: `INSERT INTO users (name, age, email) VALUES (...)` 문자열을 만들어 `--batch`개씩 `DatabaseEngine.execute`에 넘긴다.
+- 데이터: name은 소문자 5~10자, age는 1~100, email은 `user{n}@test.com`(n = 행 번호 = id). 같은 seed면 배치 크기와 상관없이 같은 데이터가 나온다.
+- 스키마가 없으면 `id:INT,name:STRING,age:INT,email:STRING`로 만든다. email 고유성을 위해 테이블이 비어 있어야 하며, 데이터가 있으면 `--reset`(기존 .tbl 삭제)이 필요하다.
+- `--out`: 실행하지 않고 같은 SQL을 파일로 쓴다. `run` 모드로 실행할 수 있다.
+- 10만 건마다 진행률, 끝에 총 시간과 초당 INSERT 수를 출력한다.
+
+### 병목 점검 (100만 건, Apple Silicon 노트북 기준)
+
+| 항목 | 점검 결과 |
+|---|---|
+| 파일 open/close | 테이블 파일은 엔진이 처음 쓸 때 한 번 열고 끝까지 유지 → 문제 없음 |
+| flush | **INSERT마다 flush(쓰기 시스템 콜 100만 번)가 전체의 절반**이었다. execute 호출 단위로 바꿔서 4.4 s → 2.2 s |
+| 문자열 연결 | 배치용 `StringBuilder` 하나를 재사용하고 생성기가 그 안에 바로 쓴다. SQL 생성은 0.1 s |
+| Lexer / Parser | 1000문장 배치 기준 0.8 s / 0.2 s. 문자열 리터럴을 substring으로 자르는 빠른 경로를 실험했지만 차이가 없어 넣지 않았다 |
+
+| 방식 | 100만 건 |
+|---|---|
+| `generate` (배치 1000) | 약 2.2 s (≈ 45만 rows/s) |
+| `generate --batch 1` | 약 5 s |
+| `generate --out` 후 `run` | 내보내기 1.8 s + 실행 6.7 s (문장마다 execute·flush, 출력 100만 줄) |
 
 ## 처리 흐름
 
@@ -189,6 +218,7 @@ src/main/java/com/minidbms/
 ├── sql/lexer/    Lexer, Token, TokenType
 ├── sql/parser/   Parser, ast/(Statement, InsertStatement, SelectStatement, ExplainStatement, Condition, Operator, Literal)
 ├── engine/       DatabaseEngine(유일한 진입점), Executor, Planner, Plan, AccessPath, QueryResult
+├── bench/        DataGenerator(generate 명령), UserRowGenerator
 ├── storage/      Schema, Column, ColumnType, SchemaLoader, RecordCodec, TableFile, Table
 ├── index/        BPlusTree, Node, InternalNode, LeafNode
 └── common/       DbException과 하위 예외

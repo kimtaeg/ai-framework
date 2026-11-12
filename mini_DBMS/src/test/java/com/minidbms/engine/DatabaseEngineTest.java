@@ -239,4 +239,19 @@ class DatabaseEngineTest {
         assertThrows(UnsupportedOperationException.class, () -> result.rows().clear());
         assertThrows(UnsupportedOperationException.class, () -> result.rows().get(0).set(0, 99L));
     }
+
+    // ---- flush 시점 ----
+
+    @Test
+    void execute가_반환되면_그_안의_INSERT는_파일에_내려가_있다() throws IOException {
+        engine.execute("INSERT INTO users VALUES ('a', 1); INSERT INTO users VALUES ('b', 2)");
+        assertEquals("1|a|1\n2|b|2\n", Files.readString(dataDir.resolve("users.tbl")));
+    }
+
+    @Test
+    void 중간_문장이_실패해도_앞의_INSERT는_flush된다() throws IOException {
+        assertThrows(ColumnNotFoundException.class,
+                () -> engine.execute("INSERT INTO users VALUES ('a', 1); INSERT INTO users (nick) VALUES ('x')"));
+        assertEquals("1|a|1\n", Files.readString(dataDir.resolve("users.tbl")));
+    }
 }

@@ -54,8 +54,8 @@ final class Executor {
             record[targets[i]] = toStoredValue(insert.values().get(i), schema.column(targets[i]), schema);
         }
         // 검증이 모두 끝난 뒤에 id를 부여한다. 실패한 INSERT가 id를 소모하지 않게 하려고.
+        // flush는 DatabaseEngine이 execute 호출 하나가 끝날 때 한 번 한다(INSERT마다 하면 쓰기 시스템 콜이 행 수만큼 생긴다).
         long id = table.insert(record);
-        table.flush();
         // JDBC의 generated keys처럼 부여한 id를 결과 행으로 돌려준다.
         return new QueryResult(QueryResult.Type.INSERT, List.of(Table.ID_COLUMN), List.of(List.of(id)), 1, null, 0);
     }

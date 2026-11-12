@@ -23,7 +23,7 @@ import java.util.function.Consumer;
  * {@link #readAt}이 아직 디스크에 없는 줄도 읽어야 하기 때문이다. 버퍼가 디스크(OS)로 내려가는 시점은 아래 넷뿐이다.
  * <ol>
  *   <li>새 줄이 버퍼의 남은 공간에 들어가지 않을 때</li>
- *   <li>{@link #flush()}를 호출했을 때. 엔진이 문장 하나를 끝낼 때마다 부른다.</li>
+ *   <li>{@link #flush()}를 호출했을 때. 엔진이 execute 호출 하나를 끝낼 때마다 부른다.</li>
  *   <li>{@link #scan}/{@link #scanWithOffsets}를 시작할 때</li>
  *   <li>{@link #close()}할 때</li>
  * </ol>

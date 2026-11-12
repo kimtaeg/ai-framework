@@ -1,1 +1,1 @@
-id:INT,name:STRING,age:INT
+id:INT,name:STRING,age:INT,email:STRING

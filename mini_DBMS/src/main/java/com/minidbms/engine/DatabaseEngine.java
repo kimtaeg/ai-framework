@@ -1,6 +1,7 @@
 package com.minidbms.engine;
 
 import com.minidbms.sql.parser.Parser;
+import com.minidbms.sql.parser.ast.InsertStatement;
 import com.minidbms.sql.parser.ast.Statement;
 import com.minidbms.storage.Table;
 
@@ -8,6 +9,7 @@ import java.io.Closeable;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -43,16 +45,51 @@ public final class DatabaseEngine implements Closeable {
      *
      * <p>전체를 먼저 파싱하므로 문법 오류가 하나라도 있으면 아무것도 실행되지 않는다.
      * 실행 중 오류가 나면 그 앞 문장들의 결과는 이미 파일에 반영된 상태로 예외가 전파된다(트랜잭션 없음).
+     *
+     * <p>flush는 문장마다가 아니라 이 호출이 끝날 때(성공이든 실패든) 쓴 테이블마다 한 번 한다.
+     * 호출자 입장의 보장은 같다: execute가 반환되면 그 안의 INSERT는 모두 파일(OS)에 내려가 있다.
      */
     public List<QueryResult> execute(String sql) {
         List<Statement> statements = Parser.parseAll(sql);
         List<QueryResult> results = new ArrayList<>(statements.size());
-        for (Statement statement : statements) {
-            long start = System.nanoTime();
-            QueryResult result = executor.execute(statement, table(statement.table()), indexEnabled);
-            results.add(result.withElapsedMs((System.nanoTime() - start) / 1_000_000.0));
+        LinkedHashSet<Table> written = new LinkedHashSet<>();
+        try {
+            for (Statement statement : statements) {
+                Table table = table(statement.table());
+                if (statement instanceof InsertStatement) {
+                    written.add(table);
+                }
+                long start = System.nanoTime();
+                QueryResult result = executor.execute(statement, table, indexEnabled);
+                results.add(result.withElapsedMs((System.nanoTime() - start) / 1_000_000.0));
+            }
+        } catch (RuntimeException e) {
+            flushAll(written, e);
+            throw e;
         }
+        flushAll(written, null);
         return results;
+    }
+
+    /** failure가 있으면 flush 오류를 거기에 덧붙여서 원래 오류가 가려지지 않게 한다. */
+    private static void flushAll(Iterable<Table> tables, RuntimeException failure) {
+        RuntimeException flushError = null;
+        for (Table table : tables) {
+            try {
+                table.flush();
+            } catch (RuntimeException e) {
+                if (failure != null) {
+                    failure.addSuppressed(e);
+                } else if (flushError == null) {
+                    flushError = e;
+                } else {
+                    flushError.addSuppressed(e);
+                }
+            }
+        }
+        if (flushError != null) {
+            throw flushError;
+        }
     }
 
     private Table table(String name) {

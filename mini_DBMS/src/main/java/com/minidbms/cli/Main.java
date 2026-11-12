@@ -1,5 +1,7 @@
 package com.minidbms.cli;
 
+import com.minidbms.bench.DataGenerator;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
@@ -9,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.util.Arrays;
 
 /**
  * <pre>
@@ -25,7 +28,8 @@ public final class Main {
     static final String USAGE = """
             사용법:
               java -jar mini-dbms.jar run <file.sql> [--data ./data]
-              java -jar mini-dbms.jar repl [--data ./data]""";
+              java -jar mini-dbms.jar repl [--data ./data]
+              java -jar mini-dbms.jar generate --table users --count 1000000 [--seed 42] [--data ./data]""";
 
     private Main() {
     }
@@ -39,6 +43,10 @@ public final class Main {
 
     /** System.exit 없이 종료 코드만 돌려줘서 테스트에서 그대로 부를 수 있게 한다. */
     static int run(String[] args, InputStream in, PrintStream out, PrintStream err) {
+        if (args.length > 0 && args[0].equals("generate")) {
+            // 생성기는 옵션이 많아서 인자 해석을 bench 패키지에 맡긴다.
+            return DataGenerator.run(Arrays.copyOfRange(args, 1, args.length), out, err);
+        }
         Arguments parsed;
         try {
             parsed = Arguments.parse(args);
