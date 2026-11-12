@@ -7,6 +7,7 @@
 
 import asyncio
 import logging
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -15,12 +16,14 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..core.expiry import active_expire_cycle
+from ..core.persistence import AOF
 from ..core.store import MiniRedis
 from .routes import ApiError, router
 
 logger = logging.getLogger("mini_redis")
 
 ACTIVE_EXPIRE_INTERVAL = 0.1  # 100ms 마다 만료 키 청소
+AOF_FLUSH_INTERVAL = 1.0      # everysec: 1초마다 디스크에 기록
 
 # 프레임워크 기본 에러(없는 경로, 허용 안 된 메서드)를 우리 에러 코드로 바꾸는 표
 HTTP_ERROR_CODES = {404: "NOT_FOUND", 405: "METHOD_NOT_ALLOWED"}  # 응답 변환용 상수 표 (저장소 데이터 아님)
@@ -50,29 +53,73 @@ async def active_expire_loop(store: MiniRedis, interval: float) -> None:
             logger.exception("active expiration 실패")
 
 
+async def aof_flush_loop(aof: AOF, interval: float) -> None:
+    """everysec 정책: 1초마다 버퍼를 디스크에 기록 (같은 이벤트 루프라 요청 처리와 겹치지 않음).
+
+    fsync 는 디스크를 기다리는 블로킹 호출이라 그동안 요청이 잠깐 멈춘다.
+    진짜 Redis 는 이 일을 별도 백그라운드 스레드에 맡긴다. 여기서는 단순함을 택했다.
+    """
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            aof.flush()
+        except Exception:
+            logger.exception("AOF flush 실패")
+
+
+def default_store() -> MiniRedis:
+    """실제 서버용 저장소: AOF 를 붙여서 만든다. 환경 변수로 경로·정책을 바꿀 수 있다.
+
+    MINI_REDIS_AOF=""        → AOF 끄기
+    MINI_REDIS_FSYNC=always  → 명령마다 디스크 기록
+    """
+    path = os.environ.get("MINI_REDIS_AOF", "data/appendonly.aof")
+    if not path:
+        return MiniRedis()
+    return MiniRedis(aof=AOF(path, fsync=os.environ.get("MINI_REDIS_FSYNC", "everysec")))
+
+
 def create_app(
     store: MiniRedis | None = None,
     active_expire: bool = True,
     expire_interval: float = ACTIVE_EXPIRE_INTERVAL,
+    aof_flush_interval: float = AOF_FLUSH_INTERVAL,
 ) -> FastAPI:
-    """앱을 만든다. 테스트는 가짜 시계를 넣은 store 를 넘겨서 독립된 앱을 만든다."""
-    store = store if store is not None else MiniRedis()
+    """앱을 만든다. 테스트는 가짜 시계를 넣은 store 를 넘겨서 독립된 앱을 만든다.
+
+    store 를 넘기지 않으면 AOF 가 붙은 저장소를 만든다. 이때 파일은 아직 열지 않는다(서버 시작 때 연다).
+    → 테스트가 이 모듈을 import 만 해도 data/ 폴더가 생기는 일이 없다.
+    """
+    store = store if store is not None else default_store()
 
     # lifespan: 서버가 켜질 때 yield 앞부분, 꺼질 때 yield 뒷부분이 실행된다 (try/finally 와 비슷한 흐름)
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        task = None
+        store = app.state.store             # 시작 시점에 읽어서, 테스트가 저장소를 바꿔 끼웠어도 그 저장소를 쓴다
+        aof = store.aof
+        if aof is not None:
+            # 1) 요청을 받기 "전에" 복구를 끝낸다 (yield 전이므로 uvicorn 은 아직 요청을 받지 않음)
+            count = aof.replay(store)
+            logger.info("AOF 복구 완료: 명령 %d개", count)
+
+        tasks = []
+        if aof is not None and aof.fsync == "everysec":
+            tasks.append(asyncio.create_task(aof_flush_loop(aof, aof_flush_interval)))
         if active_expire:
             # create_task: 코루틴을 백그라운드에서 돌리기 시작 (스레드를 만드는 게 아니라 같은 루프에 예약)
-            # app.state.store 를 시작 시점에 읽어서, 테스트가 저장소를 바꿔 끼웠어도 그 저장소를 청소한다
-            task = asyncio.create_task(active_expire_loop(app.state.store, expire_interval))
-        yield                               # ← 서버가 요청을 받는 동안 여기서 대기
-        if task is not None:
-            task.cancel()                   # 종료 시 태스크 취소: sleep 중이던 태스크에 CancelledError 가 발생
-            try:
-                await task                  # 취소가 실제로 끝날 때까지 기다림
-            except asyncio.CancelledError:
-                pass                        # 우리가 취소한 것이니 정상
+            tasks.append(asyncio.create_task(active_expire_loop(store, expire_interval)))
+        try:
+            yield                           # ← 서버가 요청을 받는 동안 여기서 대기
+        finally:
+            for task in tasks:
+                task.cancel()               # 종료 시 태스크 취소: sleep 중이던 태스크에 CancelledError 가 발생
+            for task in tasks:
+                try:
+                    await task              # 취소가 실제로 끝날 때까지 기다림
+                except asyncio.CancelledError:
+                    pass                    # 우리가 취소한 것이니 정상
+            if aof is not None:
+                aof.close()                 # 2) 종료 시 버퍼에 남은 명령을 디스크에 쓰고 닫는다
 
     app = FastAPI(title="Mini Redis", lifespan=lifespan)
     # app.state: 앱 전체에서 공유하는 보관함. 저장소는 여기에 딱 하나만 둔다.

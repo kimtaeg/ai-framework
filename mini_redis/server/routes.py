@@ -174,3 +174,12 @@ async def stats(store: MiniRedis = Depends(get_store)):
 @router.get("/health")
 async def health():
     return {"status": "ok"}
+
+
+@router.post("/admin/rewrite-aof")
+async def rewrite_aof(store: MiniRedis = Depends(get_store)):
+    """AOF 파일을 살아 있는 키만으로 다시 써서 크기를 줄인다."""
+    if store.aof is None:
+        raise ApiError(409, "AOF_DISABLED", "AOF 가 켜져 있지 않습니다")
+    commands = store.aof.rewrite(store)
+    return {"rewritten": True, "commands": commands}

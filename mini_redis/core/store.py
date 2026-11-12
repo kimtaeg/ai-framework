@@ -30,6 +30,11 @@ class MiniRedis:
         self._misses = 0    # get 으로 못 찾은 횟수
         self._expired = 0   # 만료돼서 삭제된 키 수
 
+    @property
+    def aof(self):
+        """연결된 AOF 객체 (없으면 None). 서버가 시작할 때 복구·주기적 flush 에 사용한다."""
+        return self._aof
+
     # ==================================================================
     # 내부 도우미 (Lock 을 잡지 않는다. 반드시 Lock 을 잡은 공개 메서드 안에서만 부른다.)
     # threading.Lock 은 같은 스레드가 두 번 잡으면 멈춰버리므로(데드락),
@@ -224,6 +229,65 @@ class MiniRedis:
                 if self._expire_if_needed(key):   # lazy 와 같은 삭제 로직 재사용 (expired 통계도 같이 증가)
                     expired += 1
             return sampled, expired
+
+    # ==================================================================
+    # AOF 전용 (5단계)
+    # ==================================================================
+    def apply_command(self, cmd: str, *args) -> None:
+        """AOF 한 줄을 다시 실행한다 (복구 전용). _log 를 부르지 않으므로 AOF 에 다시 기록되지 않는다.
+
+        만료 시각은 절대 시각이라, 서버가 꺼져 있던 동안 지난 키는 여기서 바로 버려진다.
+        → 재시작해도 TTL 이 처음부터 다시 늘어나지 않는다.
+        """
+        with self._lock:
+            now = self._clock()
+            if cmd == "SET":
+                if len(args) not in (2, 3):
+                    raise ValueError(f"SET 인자 개수가 잘못됨: {len(args)}")
+                key, value = args[0], args[1]
+                expire_at = args[2] if len(args) == 3 else None
+                self._expires.remove(key)              # SET 은 이전 TTL 을 지운다 (set() 과 같은 규칙)
+                if expire_at is not None and expire_at <= now:
+                    self._data.remove(key)             # 이미 만료 시각이 지남 → 덮어쓴 결과가 '없음'
+                    return
+                self._data.put(key, value)
+                if expire_at is not None:
+                    self._expires.put(key, expire_at)
+            elif cmd == "EXPIREAT":
+                key, expire_at = args
+                if not self._data.contains(key):
+                    return
+                if expire_at <= now:
+                    self._delete(key)
+                else:
+                    self._expires.put(key, expire_at)
+            elif cmd == "PERSIST":
+                (key,) = args                           # 인자가 정확히 1개인지 확인하면서 꺼내기
+                self._expires.remove(key)
+            elif cmd == "DEL":
+                (key,) = args
+                self._delete(key)
+            elif cmd == "FLUSHALL":
+                if args:
+                    raise ValueError("FLUSHALL 은 인자가 없어야 합니다")
+                self._data = HashTable()
+                self._expires = HashTable()
+            else:
+                raise ValueError(f"알 수 없는 명령: {cmd}")
+
+    def snapshot(self, callback=None):
+        """살아 있는 모든 키를 [(key, value, expire_at 또는 None), ...] 로 만든다.
+
+        callback 을 주면 Lock 을 잡은 상태 그대로 callback(entries) 를 실행하고 그 결과를 돌려준다.
+        AOF rewrite 가 "스냅샷 ~ 파일 교체" 사이에 다른 쓰기가 끼어들지 못하게 하려고 쓴다.
+        """
+        with self._lock:
+            entries = []
+            for key in list(self._data.keys()):
+                if self._expire_if_needed(key):
+                    continue                           # 만료된 키는 새 파일에 넣지 않음
+                entries.append((key, self._data.get(key), self._expires.get(key, None)))
+            return callback(entries) if callback is not None else entries
 
     def flush_all(self) -> None:
         """모든 키 삭제. 통계(hits/misses)는 Redis 처럼 유지한다."""
