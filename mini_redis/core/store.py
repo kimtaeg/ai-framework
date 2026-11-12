@@ -13,6 +13,10 @@ import time       # 기본 시계 함수 time.time
 
 from .hashtable import MISSING, HashTable
 
+# TTL 상한: 100년(초). 이보다 큰 값은 사실상 "만료 없음"이니 persist 를 쓰면 된다.
+# 상한이 없으면 10**400 같은 거대한 정수가 float 로 바뀌는 순간 OverflowError 가 나서 500 에러나 시작 실패가 된다.
+MAX_TTL_SECONDS = 100 * 365 * 24 * 60 * 60
+
 
 class MiniRedis:
     def __init__(self, clock=time.time, aof=None):
@@ -77,9 +81,13 @@ class MiniRedis:
         if isinstance(ttl, bool) or not isinstance(ttl, (int, float)):
             raise TypeError("ttl은 숫자(초)여야 합니다")
         # inf(무한대)는 ttl() 의 올림 계산에서 OverflowError 를, nan(숫자 아님)은 비교가 항상 거짓이라
-        # 키가 바로 지워지는 문제를 만든다 → 유한한 값만 받는다
-        if not math.isfinite(ttl):
+        # 키가 바로 지워지는 문제를 만든다 → 유한한 값만 받는다.
+        # math.isfinite 는 float 에만 쓴다: 거대한 int 를 넘기면 float 변환에서 OverflowError 가 나기 때문
+        if isinstance(ttl, float) and not math.isfinite(ttl):
             raise ValueError("ttl은 유한한 숫자여야 합니다")
+        # int 끼리 비교는 아무리 큰 수여도 안전하다 (Python int 는 크기 제한이 없음)
+        if ttl > MAX_TTL_SECONDS:
+            raise ValueError(f"ttl은 최대 {MAX_TTL_SECONDS}초(100년)입니다")
 
     # ==================================================================
     # 공개 메서드 (모두 with self._lock: 으로 감싼다)
@@ -289,9 +297,15 @@ class MiniRedis:
 
     @staticmethod
     def _check_expire_at(expire_at) -> None:
-        """AOF 에서 읽은 만료 시각이 정상 숫자인지 (손상된 파일 방어)."""
-        if isinstance(expire_at, bool) or not isinstance(expire_at, (int, float)) or not math.isfinite(expire_at):
+        """AOF 에서 읽은 만료 시각이 정상 숫자인지 (손상된 파일 방어). 문제가 있으면 ValueError → AOFCorruptError."""
+        if isinstance(expire_at, bool) or not isinstance(expire_at, (int, float)):
             raise ValueError(f"만료 시각이 올바르지 않음: {expire_at!r}")
+        try:
+            finite = math.isfinite(expire_at)     # 거대한 int 는 여기서 OverflowError
+        except OverflowError:
+            finite = False
+        if not finite:
+            raise ValueError(f"만료 시각이 올바르지 않음: {str(expire_at)[:40]}")
 
     def purge_expired(self) -> int:
         """만료 시각이 지난 키를 모두 지우고 개수를 돌려준다. AOF 복구가 끝난 직후 한 번 호출한다.

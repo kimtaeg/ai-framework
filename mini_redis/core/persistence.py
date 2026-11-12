@@ -35,6 +35,17 @@ class AOFWriteError(Exception):
     (Redis 도 AOF 쓰기에 실패하면 쓰기 명령을 에러로 거절한다)
     """
 
+class AOFUnsafePathError(AOFWriteError):
+    """AOF 경로가 심볼릭 링크라서 열지 않음.
+
+    링크를 따라가면, 그 경로를 바꿔치기할 수 있는 사람이 기록을 다른 파일로 돌리거나(덮어쓰기)
+    복구 때 엉뚱한 파일을 읽게 만들 수 있다. rewrite 임시 파일과 같은 이유로 막는다.
+    """
+
+
+# 링크를 따라가지 않고 열기 (POSIX). Windows 에는 없어서 0 → 대신 islink 검사로 막는다
+O_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+
 # 폴더 fsync 를 "지원하지 않는" 파일시스템이 돌려주는 에러 번호. 이것만 무시하고 진짜 I/O 오류(EIO 등)는 올려보낸다
 DIR_FSYNC_UNSUPPORTED = {errno.EINVAL, getattr(errno, "ENOTSUP", errno.EINVAL), getattr(errno, "EOPNOTSUPP", errno.EINVAL)}
 
@@ -85,10 +96,12 @@ class AOF:
 
     def _open(self) -> None:
         directory = self._ensure_dir()
-        is_new = not os.path.exists(self.path)
+        self._check_safe_path()
+        is_new = not os.path.lexists(self.path)   # lexists: 링크도 "있는 것"으로 본다 (exists 는 링크를 따라감)
         # open(path, "a") 대신 os.open 으로 권한을 직접 지정해서 새 파일이 다른 사용자에게 보이지 않게 한다.
         # O_APPEND: 무조건 파일 끝에만 쓴다 / O_CREAT: 없으면 만든다 (이미 있는 파일의 권한은 바꾸지 않음)
-        fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, FILE_MODE)
+        # O_NOFOLLOW: 검사한 직후에 누가 링크로 바꿔치기해도 따라가지 않고 실패한다 (ELOOP)
+        fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | O_NOFOLLOW, FILE_MODE)
         self._file = os.fdopen(fd, "a", encoding="utf-8")   # 숫자 fd 를 Python 파일 객체로 감싼다
         if is_new:
             # 파일 내용의 fsync 만으로는 "파일 이름"이 남는다는 보장이 없다 (POSIX).
@@ -102,6 +115,11 @@ class AOF:
         self._error = e
         logger.error("AOF %s 실패, 이후 쓰기를 거절합니다: %s", action, e)
         raise AOFWriteError(f"AOF {action} 실패: {e}") from e
+
+    def _check_safe_path(self) -> None:
+        """AOF 경로 자체가 심볼릭 링크면 거절 (폴더 경로 중간의 링크까지는 검사하지 않음)."""
+        if os.path.islink(self.path):         # islink 는 링크를 따라가지 않고 그 자체를 본다
+            raise AOFUnsafePathError(f"AOF 경로가 심볼릭 링크입니다: {self.path}")
 
     def _check_writable(self) -> None:
         if self._error is not None:
@@ -198,8 +216,9 @@ class AOF:
         with self._lock:
             if self._file is not None:
                 self._file.flush()            # 아직 버퍼에 있는 내용까지 읽히도록
-        if not os.path.exists(self.path):
+        if not os.path.lexists(self.path):
             return 0                          # 첫 실행: 복구할 것이 없음
+        self._check_safe_path()               # 링크를 따라가 엉뚱한 파일로 복구하지 않는다
 
         applied = 0
         good_bytes = 0                        # 여기까지는 정상인 바이트 수 → 잘린 꼬리를 잘라낼 위치
@@ -207,7 +226,8 @@ class AOF:
         missing_newline = False               # 마지막 줄이 완전한데 줄바꿈만 빠졌는지
         # 저장소 Lock 은 apply_command 안에서 잡는다. AOF Lock 은 잡지 않는다(잠금 순서 "저장소 → AOF" 유지).
         # 복구는 서버가 요청을 받기 전에 하므로 이 사이에 다른 쓰기는 없다.
-        with open(self.path, "rb") as f:      # 바이트로 읽어야 잘린 위치(바이트 오프셋)를 정확히 계산할 수 있다
+        fd = os.open(self.path, os.O_RDONLY | O_NOFOLLOW)
+        with os.fdopen(fd, "rb") as f:        # 바이트로 읽어야 잘린 위치(바이트 오프셋)를 정확히 계산할 수 있다
             line_no = 0
             for raw in f:                     # 한 줄씩 꺼냄 (b"\n" 포함). 파일 전체를 읽지 않는다
                 line_no += 1
@@ -269,12 +289,13 @@ class AOF:
         tmp_path = self.path + ".rewrite.tmp"
         with self._lock:
             self._check_writable()            # 이미 디스크 오류 상태면 rewrite 도 하지 않는다
+        self._check_safe_path()               # 링크 자리에 새 파일을 바꿔 끼우지 않는다
         try:
             directory = self._ensure_dir()
             # 새 파일 권한: 기존 AOF 가 있으면 그 권한을 그대로 물려받고, 없으면 소유자 전용
             # (os.replace 는 파일 자체를 바꿔 끼우므로, 권한을 맞춰 두지 않으면 기존 제한이 사라진다)
             try:
-                mode = os.stat(self.path).st_mode & 0o777
+                mode = os.lstat(self.path).st_mode & 0o777   # lstat: 링크를 따라가지 않는 stat
             except FileNotFoundError:
                 mode = FILE_MODE
             # 지난 rewrite 가 중간에 죽어 남긴 임시 파일(또는 누가 만들어 둔 심볼릭 링크)을 먼저 지운다

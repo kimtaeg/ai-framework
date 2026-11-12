@@ -507,3 +507,46 @@ def test_rewrite_does_not_follow_symlink(aof_path, clock, tmp_path):
     r.aof.rewrite(r)
     assert victim.read_text(encoding="utf-8") == "건드리면 안 되는 파일"   # 링크를 따라가 덮어쓰지 않음
     r.aof.close()
+
+
+
+# ===========================================================================
+# 거대한 만료 시각 / 심볼릭 링크 AOF 경로
+# ===========================================================================
+def test_huge_expire_at_in_file_is_corrupt_not_overflow(aof_path, clock):
+    write_file(aof_path, '{"cmd":"SET","args":["a",1,%d]}\n{"cmd":"SET","args":["b",2]}\n' % (10**400))
+    with pytest.raises(AOFCorruptError):    # OverflowError 로 시작이 죽지 않고, 어느 줄이 문제인지 알려준다
+        restore(aof_path, clock)
+
+
+@posix_only
+def test_symlinked_aof_path_is_rejected(tmp_path, clock):
+    target = tmp_path / "elsewhere.txt"
+    target.write_text("다른 파일\n", encoding="utf-8")
+    link = tmp_path / "appendonly.aof"
+    os.symlink(target, link)
+    aof = AOF(str(link), fsync="always")
+    store = MiniRedis(clock=clock, aof=aof)
+    with pytest.raises(persistence.AOFUnsafePathError):
+        aof.replay(store)                    # 링크를 따라가 다른 파일로 복구하지 않음
+    with pytest.raises(persistence.AOFUnsafePathError):
+        store.set("k", "v")                  # 링크를 따라가 다른 파일에 기록하지 않음
+    assert not store.exists("k")             # 기록 못 했으니 메모리에도 없음
+    with pytest.raises(persistence.AOFUnsafePathError):
+        aof.rewrite(store)
+    assert target.read_text(encoding="utf-8") == "다른 파일\n"   # 대상 파일은 그대로
+    assert os.path.islink(link)              # 링크도 바꿔치기되지 않음
+
+
+@posix_only
+def test_symlink_swapped_after_check_is_not_followed(tmp_path, clock, monkeypatch):
+    # 검사를 통과한 직후 링크로 바뀌는 경우(경쟁 상태)도 O_NOFOLLOW 가 막는다
+    target = tmp_path / "elsewhere.txt"
+    target.write_text("원본\n", encoding="utf-8")
+    link = tmp_path / "appendonly.aof"
+    os.symlink(target, link)
+    aof = AOF(str(link), fsync="always")
+    monkeypatch.setattr(AOF, "_check_safe_path", lambda self: None)   # 검사를 건너뛴 것처럼
+    with pytest.raises(AOFWriteError):
+        MiniRedis(clock=clock, aof=aof).set("k", "v")
+    assert target.read_text(encoding="utf-8") == "원본\n"

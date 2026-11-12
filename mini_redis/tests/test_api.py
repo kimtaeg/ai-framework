@@ -493,3 +493,16 @@ async def test_write_returns_503_when_aof_fails(tmp_path):
         assert r.status_code == 503 and r.json()["error"] == "PERSISTENCE_FAILED"
         assert (await c.get("/keys/a")).status_code == 404   # 기록 못 한 쓰기는 메모리에도 없음
         assert (await c.get("/health")).status_code == 200    # 읽기·상태 확인은 계속 가능
+
+
+
+@pytest.mark.parametrize("ttl", [10**30, 10**400])
+async def test_huge_ttl_422_not_500(client, ttl):
+    # JSON 에는 정수 크기 제한이 없다. 거대한 TTL 이 500 이 아니라 검증 에러로 끝나야 한다
+    body = '{"value": 1, "ttl": %d}' % ttl
+    r = await client.put(k("a"), content=body, headers={"content-type": "application/json"})
+    assert r.status_code in (400, 422), r.text
+    assert set(r.json()) == {"error", "message"}
+    await client.put(k("b"), json={"value": 1})
+    r = await client.post(k("b") + "/expire", content='{"ttl": %d}' % ttl, headers={"content-type": "application/json"})
+    assert r.status_code in (400, 422), r.text

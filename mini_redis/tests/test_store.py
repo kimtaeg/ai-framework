@@ -6,7 +6,7 @@ time.sleep 대신 FakeClock 으로 시간을 직접 움직인다 → 테스트�
 import pytest
 
 from mini_redis.core.hashtable import MISSING
-from mini_redis.core.store import MiniRedis
+from mini_redis.core.store import MAX_TTL_SECONDS, MiniRedis
 from mini_redis.tests.fakes import FakeClock
 
 
@@ -357,3 +357,22 @@ def test_unserializable_value_is_not_stored(tmp_path, clock):
     r.set("ok", 1)                   # 값 문제는 디스크 오류가 아니므로 이후 쓰기는 정상
     assert r.get("ok") == 1
     r.aof.close()
+
+
+
+# ---------------------------------------------------------------------------
+# 거대한 정수 TTL (float 변환 OverflowError 방지)
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("ttl", [10**400, MAX_TTL_SECONDS + 1])
+def test_oversized_int_ttl_rejected(r, ttl):
+    with pytest.raises(ValueError):         # OverflowError 가 아니라 검증 에러
+        r.set("k", "v", ttl=ttl)
+    r.set("k", "v")
+    with pytest.raises(ValueError):
+        r.expire("k", ttl)
+    assert r.ttl("k") == -1
+
+
+def test_max_ttl_allowed(r):
+    r.set("k", "v", ttl=MAX_TTL_SECONDS)    # 상한 자체는 허용
+    assert r.ttl("k") == MAX_TTL_SECONDS

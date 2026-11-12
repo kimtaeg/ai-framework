@@ -7,10 +7,13 @@ from typing import Annotated, Any
 
 from pydantic import BaseModel, Field
 
+from ..core.store import MAX_TTL_SECONDS
+
 # Annotated[타입, 조건] = "이 타입인데 이런 조건도 만족해야 함"
 # strict=True: "10" 같은 문자열이나 1.5 같은 실수를 정수로 몰래 바꿔주지 않고 거절한다 (true/false 도 거절)
 # gt=0: 0보다 커야 함 (greater than)
-PositiveTTL = Annotated[int, Field(strict=True, gt=0, description="만료까지 남은 초 (양의 정수)")]
+# le: 상한 (less than or equal). 거대한 정수가 저장소까지 가서 계산 중 터지기 전에 422 로 거절한다
+PositiveTTL = Annotated[int, Field(strict=True, gt=0, le=MAX_TTL_SECONDS, description="만료까지 남은 초 (1 ~ 100년)")]
 StrictInt = Annotated[int, Field(strict=True)]
 
 
