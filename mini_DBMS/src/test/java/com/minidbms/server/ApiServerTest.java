@@ -35,7 +35,7 @@ class ApiServerTest {
     private final ObjectMapper mapper = new ObjectMapper();
 
     private ApiServer start(int core, int max, int queue) throws IOException {
-        server = new ApiServer(new ServerConfig(0, core, max, queue, dataDir));
+        server = new ApiServer(new ServerConfig(0, core, max, queue, dataDir), new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
         server.start();
         return server;
     }
@@ -109,8 +109,9 @@ class ApiServerTest {
     @Test
     void 없는_경로는_JSON_404() throws Exception {
         start(1, 1, 10);
-        HttpResponse<String> response = get("/query");
+        HttpResponse<String> response = get("/nope");
         assertEquals(404, response.statusCode());
+        assertEquals(404, get("/health/extra").statusCode(), "등록한 경로의 하위 경로도 404");
         assertEquals("NOT_FOUND", json(response).get("error").asText());
     }
 

@@ -6,7 +6,7 @@ Java 17로 직접 구현한 파일 기반 미니 DBMS. 외부 라이브러리는
 |---|---|---|
 | 1 | 파일 기반 SQL 처리기 (INSERT, SELECT, CLI) | ✅ |
 | 2 | 메모리 B+ 트리 id 인덱스 + 100만 건 성능 비교 | ✅ |
-| 3 | JDK HttpServer + ThreadPoolExecutor API 서버 | 진행 중 (동시성 · 서버 골격 · /health) |
+| 3 | JDK HttpServer + ThreadPoolExecutor API 서버 | 진행 중 (동시성 · /query · /stats · /health) |
 
 ## 빠른 시작
 
@@ -226,11 +226,55 @@ curl localhost:8080/health
 
 | 경로 | 응답 |
 |---|---|
+| `POST /query` | `{"sql": "..."}`를 실행한 결과 (아래) |
+| `GET /stats` | 워커 풀(활성 스레드·큐 길이·완료 작업·거절 수)과 요청 통계(처리 수·4xx·5xx·평균 처리 시간) |
 | `GET /health` | 200, 상태와 워커 풀 현황 |
-| `/health`에 다른 메서드 | 405 `METHOD_NOT_ALLOWED` (`Allow: GET`) |
-| 그 외 경로 | 404 `NOT_FOUND` (JSON) |
-| 워커·큐가 모두 찼을 때 | 503 `SERVER_BUSY` (`Retry-After: 1`) |
-| 핸들러의 예상 못 한 오류 | 500 `INTERNAL_ERROR` |
+
+```bash
+curl -X POST localhost:8080/query -H 'Content-Type: application/json' \
+     -d '{"sql": "INSERT INTO users (name) VALUES (\u0027lee\u0027); SELECT * FROM users WHERE id BETWEEN 1 AND 2"}'
+```
+```json
+{"results":[
+   {"type":"INSERT","affectedRows":1,"insertedId":2,"elapsedMs":0.064},
+   {"type":"SELECT","columns":["id","name","age","email"],"rows":[[1,"kim",30,"kim@test.com"],[2,"lee",null,null]],
+    "rowCount":2,"accessPath":"INDEX_RANGE","elapsedMs":0.312}],
+ "elapsedMs":0.425}
+```
+
+- 행은 `columns` 순서의 배열이다(행마다 컬럼 이름을 반복하지 않는다). NULL은 JSON `null`.
+- EXPLAIN 결과는 `type: "EXPLAIN"`, 계획 한 행과 `accessPath`.
+- 여러 문장 중 하나가 실행 중 실패하면 그 오류만 돌려준다. 앞 문장은 이미 반영됐을 수 있다(트랜잭션 없음). 문법 오류는 전체를 먼저 파싱하므로 아무것도 실행되지 않는다.
+- `pool.completedTasks`는 HttpServer가 executor에 넘긴 작업 수라 요청 수와 다를 수 있다. 요청 수는 `requests.handled`를 본다.
+
+### 오류 응답
+
+모든 오류는 `{"error": "CODE", "message": "..."}` JSON이다.
+
+| 상태 | code | 언제 |
+|---|---|---|
+| 400 | `PARSE_ERROR` | SQL 문법, 값 개수 불일치, INSERT 컬럼 중복 |
+| 400 | `COLUMN_NOT_FOUND` · `TYPE_MISMATCH` | 없는 컬럼, 타입 불일치 |
+| 400 | `INVALID_JSON` | 본문이 JSON이 아님 / 비어 있음 |
+| 400 | `INVALID_REQUEST` | `sql` 필드 없음·문자열 아님·빈 문자열·주석뿐, 본문이 객체가 아님 |
+| 404 | `TABLE_NOT_FOUND` | 스키마 파일이 없는 테이블 |
+| 404 | `NOT_FOUND` | 없는 경로 (등록 경로의 하위 경로 포함) |
+| 405 | `METHOD_NOT_ALLOWED` | `GET /query`, `POST /stats` 등 (`Allow` 헤더) |
+| 409 | `CONSTRAINT_VIOLATION` · `DUPLICATE_KEY` | id 직접 지정, 키 중복 |
+| 413 | `PAYLOAD_TOO_LARGE` | 본문 1MB 초과 (Content-Length가 있으면 읽기 전에 거절) |
+| 415 | `UNSUPPORTED_MEDIA_TYPE` | Content-Type이 `application/json`이 아니거나 charset이 utf-8이 아님 |
+| 500 | `STORAGE_ERROR` · `DB_ERROR` | 파일 I/O·손상 — 서버 로그에 스택 트레이스 |
+| 500 | `INTERNAL_ERROR` | 예상 못 한 예외 — 메시지는 감추고 서버 로그에 스택 트레이스 |
+| 503 | `SERVER_BUSY` | 워커·큐가 모두 참 (`Retry-After: 1`) |
+
+### 요청 로그
+
+요청마다 한 줄(스레드, 메서드, 경로, 상태, 처리 시간). 거절된 요청은 dispatcher 스레드 이름으로 찍힌다.
+
+```text
+20:28:56.598 [db-worker-3] POST /query 200 1.646 ms
+20:28:56.677 [db-worker-3] POST /query 404 2.637 ms
+```
 
 ### 워커 풀과 503
 
@@ -291,7 +335,8 @@ src/main/java/com/minidbms/
 ├── sql/parser/   Parser, ast/(Statement, InsertStatement, SelectStatement, ExplainStatement, Condition, Operator, Literal)
 ├── engine/       DatabaseEngine(유일한 진입점), Executor, Planner, Plan, AccessPath, QueryResult
 ├── bench/        DataGenerator(generate 명령), UserRowGenerator, Benchmark(bench 명령)
-├── server/       ApiServer, ThreadPoolFactory, BusyRejectionHandler, ServeCommand(serve 명령), ServerConfig, Json
+├── server/       ApiServer, QueryHandler, ErrorMapper, ApiException, ThreadPoolFactory, BusyRejectionHandler,
+│                 RequestStats, ServerLog, ServeCommand(serve 명령), ServerConfig, Json
 ├── storage/      Schema, Column, ColumnType, SchemaLoader, RecordCodec, TableFile, Table
 ├── index/        BPlusTree, Node, InternalNode, LeafNode
 └── common/       DbException과 하위 예외

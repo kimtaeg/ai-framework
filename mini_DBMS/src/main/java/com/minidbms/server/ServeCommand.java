@@ -87,7 +87,7 @@ public final class ServeCommand {
 
         ApiServer server;
         try {
-            server = new ApiServer(config);
+            server = new ApiServer(config, out);
         } catch (IOException e) {
             err.println("ERROR: 서버를 열 수 없습니다 (포트 " + config.port() + "): " + e.getMessage());
             return 1;
@@ -102,7 +102,7 @@ public final class ServeCommand {
         server.start();
         out.printf("mini-dbms API 서버: http://localhost:%d (워커 %d~%d, 큐 %d, data=%s)%n",
                 server.port(), config.coreThreads(), config.maxThreads(), config.queueCapacity(), config.dataDir());
-        out.println("GET /health · 종료: Ctrl+C");
+        out.println("POST /query {\"sql\": \"...\"} · GET /stats · GET /health · 종료: Ctrl+C");
         try {
             stopped.await();
         } catch (InterruptedException e) {

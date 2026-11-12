@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -24,10 +23,8 @@ final class Json {
         } catch (JsonProcessingException e) {
             throw new IOException("JSON 직렬화 실패", e);
         }
-        // 요청 본문을 다 읽지 않으면 keep-alive 연결에서 다음 요청과 섞일 수 있어 비워 둔다.
-        try (InputStream in = exchange.getRequestBody()) {
-            in.transferTo(OutputStream.nullOutputStream());
-        }
+        // 읽지 않은 요청 본문은 여기서 비우지 않는다. 413처럼 큰 본문을 끝까지 받으면 안 되는 경우가 있고,
+        // HttpExchange.close가 남은 본문을 조금 버린 뒤 필요하면 연결을 닫아 keep-alive가 꼬이지 않게 처리한다.
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         exchange.sendResponseHeaders(status, bytes.length);
         try (OutputStream out = exchange.getResponseBody()) {
