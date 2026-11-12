@@ -41,3 +41,8 @@ docs/
 
 # Superpowers 작업 공간 (브레인스토밍 목업, 구현 진행 기록)
 .superpowers/
+
+# Python 테스트·실행 산출물 (pytest 캐시, 바이트코드)
+__pycache__/
+*.pyc
+.pytest_cache/
