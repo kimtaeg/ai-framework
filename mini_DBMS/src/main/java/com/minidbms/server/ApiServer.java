@@ -52,6 +52,7 @@ public final class ApiServer implements Closeable {
         this.server.setExecutor(executor);
         this.engine = new DatabaseEngine(config.dataDir());
         this.engine.setMaxResultRows(config.maxResultRows());
+        this.engine.setQueryTimeoutMillis(config.queryTimeoutMillis());
         route("/health", this::health);
         route("/stats", this::stats);
         route("/query", new QueryHandler(engine));

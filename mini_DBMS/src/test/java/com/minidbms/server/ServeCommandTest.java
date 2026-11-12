@@ -15,9 +15,11 @@ class ServeCommandTest {
     @Test
     void 기본값과_옵션을_해석한다() {
         assertEquals(new ServerConfig(8080, 8, 8, 1000, Path.of("data")), ServeCommand.parse(new String[0]));
-        assertEquals(new ServerConfig(9000, 4, 16, 50, Path.of("/tmp/d"), 500, 3), ServeCommand.parse(new String[]{
+        assertEquals(new ServerConfig(9000, 4, 16, 50, Path.of("/tmp/d"), 500, 3, 250), ServeCommand.parse(new String[]{
                 "--port", "9000", "--threads", "4", "--max-threads", "16", "--queue", "50", "--data", "/tmp/d",
-                "--max-rows", "500", "--grace", "3"}));
+                "--max-rows", "500", "--grace", "3", "--query-timeout", "250"}));
+        assertEquals(0, ServeCommand.parse(new String[]{"--query-timeout", "0"}).queryTimeoutMillis(), "0이면 끔");
+        assertEquals(5_000, ServeCommand.parse(new String[0]).queryTimeoutMillis());
     }
 
     @Test
@@ -29,6 +31,7 @@ class ServeCommandTest {
         assertThrows(IllegalArgumentException.class, () -> ServeCommand.parse(new String[]{"--what"}));
         assertThrows(IllegalArgumentException.class, () -> ServeCommand.parse(new String[]{"--max-rows", "0"}));
         assertThrows(IllegalArgumentException.class, () -> ServeCommand.parse(new String[]{"--grace", "-1"}));
+        assertThrows(IllegalArgumentException.class, () -> ServeCommand.parse(new String[]{"--query-timeout", "-1"}));
     }
 
     @Test

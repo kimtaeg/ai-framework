@@ -5,6 +5,7 @@ import com.minidbms.common.ConstraintViolationException;
 import com.minidbms.common.DbException;
 import com.minidbms.common.DuplicateKeyException;
 import com.minidbms.common.ParseException;
+import com.minidbms.common.QueryTimeoutException;
 import com.minidbms.common.StorageException;
 import com.minidbms.common.TableNotFoundException;
 import com.minidbms.common.TypeMismatchException;
@@ -21,6 +22,7 @@ import java.util.Map;
  * TableNotFoundException         404 TABLE_NOT_FOUND
  * ConstraintViolationException   409 CONSTRAINT_VIOLATION  id 직접 지정
  * DuplicateKeyException          409 DUPLICATE_KEY
+ * QueryTimeoutException          503 QUERY_TIMEOUT         제한 시간 초과 (같은 쿼리를 다시 보내도 같으므로 Retry-After 없음)
  * StorageException               500 STORAGE_ERROR         파일 I/O·손상 (서버 로그)
  * 그 외 DbException              500 DB_ERROR              (서버 로그)
  * ApiException                   그 예외의 상태·코드        HTTP 요청 오류
@@ -63,6 +65,10 @@ final class ErrorMapper {
         }
         if (error instanceof DuplicateKeyException) {
             return client(409, "DUPLICATE_KEY", error);
+        }
+        if (error instanceof QueryTimeoutException) {
+            // 서버 결함이 아니라 설정한 한도에 걸린 것이므로 스택 트레이스는 남기지 않는다(요청 로그에 503으로 보인다).
+            return client(503, "QUERY_TIMEOUT", error);
         }
         if (error instanceof StorageException) {
             // 파일 경로가 들어 있지만 운영자가 원인을 찾는 데 필요하므로 메시지를 그대로 둔다.

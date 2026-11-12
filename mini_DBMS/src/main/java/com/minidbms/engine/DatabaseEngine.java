@@ -34,6 +34,8 @@ public final class DatabaseEngine implements Closeable {
     private volatile boolean indexEnabled = true;
     // SELECT 한 번이 돌려줄 수 있는 최대 행 수. 큰 테이블 전체 조회가 메모리를 다 쓰지 않게 서버가 줄여 둔다.
     private volatile long maxResultRows = Long.MAX_VALUE;
+    // execute 호출 하나의 제한 시간(ms). 0이면 제한 없음.
+    private volatile long queryTimeoutMillis = 0;
 
     public DatabaseEngine(Path dataDir) {
         this.dataDir = Objects.requireNonNull(dataDir, "dataDir");
@@ -64,6 +66,22 @@ public final class DatabaseEngine implements Closeable {
     }
 
     /**
+     * execute 호출 하나(여러 문장이면 전체)의 제한 시간. 넘으면 진행 중인 읽기를 멈추고 QueryTimeoutException을 던진다.
+     * 협조적 타임아웃이라 문장 사이와 스캔·범위 읽기 중(1024행마다)에만 확인한다. 테이블을 처음 열 때의
+     * 인덱스 재구성은 대상이 아니다. 0이면 제한 없음(기본값).
+     */
+    public void setQueryTimeoutMillis(long timeoutMillis) {
+        if (timeoutMillis < 0) {
+            throw new IllegalArgumentException("쿼리 제한 시간은 0 이상이어야 합니다: " + timeoutMillis);
+        }
+        this.queryTimeoutMillis = timeoutMillis;
+    }
+
+    public long queryTimeoutMillis() {
+        return queryTimeoutMillis;
+    }
+
+    /**
      * 세미콜론으로 구분된 문장들을 순서대로 실행한다.
      *
      * <p>전체를 먼저 파싱하므로 문법 오류가 하나라도 있으면 아무것도 실행되지 않는다.
@@ -73,17 +91,23 @@ public final class DatabaseEngine implements Closeable {
      * 호출자 입장의 보장은 같다: execute가 반환되면 그 안의 INSERT는 모두 파일(OS)에 내려가 있다.
      */
     public List<QueryResult> execute(String sql) {
+        // 파싱 전부터 잰다. 1MB짜리 SQL이면 파싱도 시간이 든다.
+        Deadline deadline = Deadline.after(queryTimeoutMillis);
         List<Statement> statements = Parser.parseAll(sql);
         List<QueryResult> results = new ArrayList<>(statements.size());
         LinkedHashSet<Table> written = new LinkedHashSet<>();
         try {
             for (Statement statement : statements) {
+                deadline.check(); // 문장 사이: 짧은 문장이 많이 이어진 요청도 제한 시간 안에서 끊는다
+                long loadStart = System.nanoTime();
                 Table table = table(statement.table());
+                // 처음 쓰는 테이블이면 여기서 파일을 훑어 인덱스를 재구성한다. 그 시간은 타임아웃에서 뺀다(캐시면 거의 0).
+                deadline = deadline.extendedBy(System.nanoTime() - loadStart);
                 if (statement instanceof InsertStatement) {
                     written.add(table);
                 }
                 long start = System.nanoTime();
-                QueryResult result = executor.execute(statement, table, indexEnabled, maxResultRows);
+                QueryResult result = executor.execute(statement, table, indexEnabled, maxResultRows, deadline);
                 results.add(result.withElapsedMs((System.nanoTime() - start) / 1_000_000.0));
             }
         } catch (RuntimeException e) {

@@ -28,13 +28,16 @@ final class Executor {
 
     private final Planner planner = new Planner();
 
-    /** @param maxRows SELECT가 돌려줄 최대 행 수. 넘으면 그만 읽고 truncated로 표시한다. */
-    QueryResult execute(Statement statement, Table table, boolean indexEnabled, long maxRows) {
+    /**
+     * @param maxRows  SELECT가 돌려줄 최대 행 수. 넘으면 그만 읽고 truncated로 표시한다.
+     * @param deadline 넘으면 읽기를 멈추고 QueryTimeoutException
+     */
+    QueryResult execute(Statement statement, Table table, boolean indexEnabled, long maxRows, Deadline deadline) {
         if (statement instanceof InsertStatement insert) {
             return insert(insert, table);
         }
         if (statement instanceof SelectStatement select) {
-            return select(select, table, indexEnabled, maxRows);
+            return select(select, table, indexEnabled, maxRows, deadline);
         }
         if (statement instanceof ExplainStatement explain) {
             return explain(explain.select(), table, indexEnabled);
@@ -114,7 +117,7 @@ final class Executor {
 
     // ---- SELECT ----
 
-    private QueryResult select(SelectStatement select, Table table, boolean indexEnabled, long maxRows) {
+    private QueryResult select(SelectStatement select, Table table, boolean indexEnabled, long maxRows, Deadline deadline) {
         Schema schema = table.schema();
         // 읽기 전에 컬럼·조건을 모두 검증해서, 잘못된 쿼리가 파일을 끝까지 읽은 뒤에야 실패하지 않게 한다.
         int[] projection = projection(select, schema);
@@ -129,7 +132,7 @@ final class Executor {
 
         List<List<Object>> rows = new ArrayList<>();
         if (collect > 0) {
-            read(plan, table, record -> {
+            read(plan, table, deadline, record -> {
                 // 인덱스 경로가 고른 레코드도 같은 필터를 한 번 더 통과시킨다.
                 // 경로와 상관없이 "조건을 만족하는 행"의 정의가 한 곳(compile)에만 있게 하려고.
                 if (filter.test(record)) {
@@ -161,10 +164,25 @@ final class Executor {
     /**
      * 계획에 따라 후보 레코드를 넘긴다. 인덱스 경로는 id 순서, FULL_SCAN은 파일 순서다.
      * visitor가 false를 돌려주면 그 자리에서 멈춘다.
+     *
+     * <p>후보를 {@link Deadline#CHECK_EVERY_ROWS}개 읽을 때마다 마감 시각을 확인한다. 조건에 맞는 행이 아니라
+     * 읽은 행 기준이라, 결과는 0행인데 전체를 훑는 쿼리도 제때 멈춘다. 예외는 Table의 읽기 락과 파일 스트림을
+     * finally로 정리하며 빠져나간다.
      */
-    private static void read(Plan plan, Table table, Predicate<Object[]> visitor) {
+    private static void read(Plan plan, Table table, Deadline deadline, Predicate<Object[]> visitor) {
         if (plan.isEmptyRange()) {
             return;
+        }
+        deadline.check();
+        if (!deadline.isUnlimited()) {
+            Predicate<Object[]> inner = visitor;
+            int[] seen = {0};
+            visitor = record -> {
+                if (++seen[0] % Deadline.CHECK_EVERY_ROWS == 0) {
+                    deadline.check();
+                }
+                return inner.test(record);
+            };
         }
         switch (plan.path()) {
             case INDEX_LOOKUP -> table.findById(plan.low()).ifPresent(visitor::test);

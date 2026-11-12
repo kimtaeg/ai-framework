@@ -37,7 +37,7 @@ final class TestApi implements AutoCloseable {
             Files.writeString(dataDir.resolve("users.schema"), USERS_SCHEMA);
         }
         ServerConfig actual = new ServerConfig(0, config.coreThreads(), config.maxThreads(), config.queueCapacity(),
-                dataDir, config.maxResultRows(), config.shutdownGraceSeconds());
+                dataDir, config.maxResultRows(), config.shutdownGraceSeconds(), config.queryTimeoutMillis());
         this.server = new ApiServer(actual, new PrintStream(OutputStream.nullOutputStream()));
         this.server.start();
         this.client = HttpClient.newBuilder().version(HttpClient.Version.HTTP_1_1)

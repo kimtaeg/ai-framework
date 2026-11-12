@@ -24,7 +24,7 @@ java -jar build/libs/mini-dbms.jar repl --data ./data
 | `repl [--data DIR]` | 대화형. `;`가 나올 때까지 여러 줄 입력, `.exit` 또는 EOF로 종료 |
 | `generate --table T --count N [--seed 42]` | 대용량 테스트 데이터 생성 ([아래](#대용량-데이터-생성)) |
 | `bench --table T [--queries 1000]` | 인덱스 조회 vs 선형 탐색 벤치마크 → `bench-result.md` ([아래](#벤치마크)) |
-| `serve [--port 8080] [--threads 8] [--queue 1000] [--max-rows 10000] [--grace 10]` | HTTP API 서버 ([아래](#api-서버)) |
+| `serve [--port 8080] [--threads 8] [--queue 1000] [--max-rows 10000] [--query-timeout 5000] [--grace 10]` | HTTP API 서버 ([아래](#api-서버)) |
 | `loadtest [--url URL] [--clients 1,4,16,64]` | 동시 클라이언트 수별 TPS·지연 ([아래](#부하-테스트)) |
 
 - `--data` 기본값은 `./data`. 디렉터리가 미리 있어야 한다.
@@ -79,6 +79,7 @@ EXPLAIN SELECT ...;                 -- 실행하지 않고 실행 경로만 보�
 | `TypeMismatchException` | 값 타입이 컬럼 타입과 다름 |
 | `ConstraintViolationException` | `id`를 직접 지정 |
 | `DuplicateKeyException` | B+ 트리에 이미 있는 키를 삽입 |
+| `QueryTimeoutException` | 쿼리가 엔진의 제한 시간을 넘음 |
 | `StorageException` | 파일 I/O 실패, 스키마·레코드 형식 손상 |
 
 ## 저장 포맷
@@ -323,6 +324,7 @@ curl -s localhost:8080/health
 | 500 | `INTERNAL_ERROR` | 예상 못 한 예외 — 메시지는 감추고 서버 로그에 스택 트레이스 |
 | 503 | `SERVER_BUSY` | 워커·큐가 모두 참 (`Retry-After: 1`) |
 | 503 | `SHUTTING_DOWN` | 종료 중에 들어온 요청 (`Connection: close`) |
+| 503 | `QUERY_TIMEOUT` | 요청 하나가 `--query-timeout`(기본 5,000 ms)을 넘음. 다시 보내도 같으므로 `Retry-After` 없음 |
 
 ### 요청 로그
 
@@ -367,7 +369,13 @@ shutdown hook이 `ApiServer.stop()`을 부른다. 순서:
 ### 큰 결과와 오래 걸리는 요청
 
 - **메모리**: SELECT가 모으는 행은 많아야 `max-rows + 1`개다(넘치는지 보려고 하나 더 읽는다). 100만 건 `SELECT *`가 1.2 s·100만 행 대신 1,000행·약 9 ms로 끝난다.
-- **시간**: 행 수 제한은 결과가 큰 쿼리만 줄인다. `WHERE email = 'none'`처럼 결과는 0행인데 전체를 훑는 쿼리는 여전히 1~2 s 걸린다. 쿼리 타임아웃은 아직 없다(아래 알려진 한계).
+- **시간**: 행 수 제한은 결과가 큰 쿼리만 줄인다. `WHERE email = 'none'`처럼 결과는 0행인데 전체를 훑는 쿼리를 위해 **협조적 쿼리 타임아웃**을 둔다.
+  - `engine.setQueryTimeoutMillis(ms)` (서버는 `--query-timeout`, 기본 5,000 ms, 0이면 끔. CLI·벤치마크는 제한 없음).
+  - 범위는 `execute` 호출 하나(= `/query` 요청 하나) 전체다. 문장 사이와, 스캔·인덱스 범위 읽기 중 **후보 1,024행마다** 마감을 확인한다. 조건에 맞는 행이 아니라 읽은 행 기준이라 결과 0행인 스캔도 제때 멈춘다.
+  - 넘으면 `QueryTimeoutException`을 던진다. 스레드를 강제로 멈추지 않고 실행 코드가 스스로 빠져나오므로, 읽기 락과 파일 스트림이 `finally`에서 정상적으로 풀리고 워커도 바로 다음 요청을 받는다.
+  - 테이블을 처음 열 때의 인덱스 재구성 시간은 마감에서 뺀다. 그러지 않으면 큰 테이블을 처음 쓰는 쿼리가 로딩만으로 항상 실패한다.
+  - 앞 문장의 INSERT는 남는다(트랜잭션 없음).
+  - 100만 건, 제한 500 ms: `WHERE email = 'nobody@test.com'` → 0.52 s에 503 `QUERY_TIMEOUT` · 첫 `WHERE id = 1`(로딩 포함 5.1 s) → 200.
 
 ## 부하 테스트
 
@@ -460,4 +468,4 @@ src/main/java/com/minidbms/
 - 인덱스는 id 하나뿐이다. 다른 컬럼 조건은 항상 FULL_SCAN.
 - WHERE는 조건 하나만 지원한다. `AND`는 `BETWEEN a AND b`의 구분자로만 쓴다.
 - UPDATE·DELETE·CREATE TABLE이 없다. 테이블은 `.schema` 파일을 직접 만들어 정의한다.
-- 쿼리 타임아웃이 없다. 결과는 작지만 전체를 훑는 쿼리(인덱스 없는 컬럼 조건)는 테이블 크기만큼 워커를 잡는다. 후보: 스캔 루프에서 N행마다 마감 시각을 확인해 `QueryTimeoutException`을 던지는 협조적 타임아웃.
+- 쿼리 타임아웃은 협조적이라 확인 지점(문장 사이, 1,024행마다) 사이의 일은 끊지 못한다. 테이블을 처음 여는 인덱스 재구성도 대상이 아니다.

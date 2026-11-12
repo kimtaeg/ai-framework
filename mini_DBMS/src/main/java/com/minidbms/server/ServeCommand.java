@@ -16,12 +16,13 @@ public final class ServeCommand {
     static final String USAGE = """
             사용법:
               java -jar mini-dbms.jar serve [--port 8080] [--threads 8] [--max-threads N] [--queue 1000] [--data ./data]
-                                            [--max-rows 10000] [--grace 10]
+                                            [--max-rows 10000] [--grace 10] [--query-timeout 5000]
               --threads      평소 유지하는 워커 수 (core, 기본 8)
               --max-threads  큐가 가득 찼을 때 늘릴 최대 워커 수 (기본 --threads와 같음)
               --queue        워커를 기다리는 요청 큐 크기, 넘치면 503 (기본 1000)
               --max-rows     SELECT 한 번이 돌려줄 최대 행 수, 넘으면 truncated (기본 10000)
-              --grace        종료 시 처리 중인 요청을 기다릴 최대 초 (기본 10)""";
+              --grace        종료 시 처리 중인 요청을 기다릴 최대 초 (기본 10)
+              --query-timeout  /query 요청 하나의 제한 시간 ms, 넘으면 503 QUERY_TIMEOUT, 0이면 끔 (기본 5000)""";
 
     private ServeCommand() {
     }
@@ -33,6 +34,7 @@ public final class ServeCommand {
         int queue = 1000;
         long maxRows = ServerConfig.DEFAULT_MAX_RESULT_ROWS;
         int grace = ServerConfig.DEFAULT_SHUTDOWN_GRACE_SECONDS;
+        long queryTimeout = ServerConfig.DEFAULT_QUERY_TIMEOUT_MILLIS;
         Path dataDir = Path.of("data");
         for (int i = 0; i < args.length; i++) {
             String arg = args[i];
@@ -43,6 +45,7 @@ public final class ServeCommand {
                 case "--queue" -> queue = intValue(args, ++i, arg, 1);
                 case "--max-rows" -> maxRows = intValue(args, ++i, arg, 1);
                 case "--grace" -> grace = intValue(args, ++i, arg, 0);
+                case "--query-timeout" -> queryTimeout = intValue(args, ++i, arg, 0);
                 case "--data" -> {
                     if (++i >= args.length) {
                         throw new IllegalArgumentException("--data 다음에 경로가 필요합니다");
@@ -56,7 +59,7 @@ public final class ServeCommand {
         if (max < threads) {
             throw new IllegalArgumentException("--max-threads(" + max + ")는 --threads(" + threads + ") 이상이어야 합니다");
         }
-        return new ServerConfig(port, threads, max, queue, dataDir, maxRows, grace);
+        return new ServerConfig(port, threads, max, queue, dataDir, maxRows, grace, queryTimeout);
     }
 
     private static int intValue(String[] args, int i, String option, int min) {
@@ -105,9 +108,10 @@ public final class ServeCommand {
         }, "mini-dbms-server-shutdown"));
 
         server.start();
-        out.printf("mini-dbms API 서버: http://localhost:%d (워커 %d~%d, 큐 %d, 최대 %d행, 종료 대기 %d초, data=%s)%n",
-                server.port(), config.coreThreads(), config.maxThreads(), config.queueCapacity(),
-                config.maxResultRows(), config.shutdownGraceSeconds(), config.dataDir());
+        out.printf("mini-dbms API 서버: http://localhost:%d (워커 %d~%d, 큐 %d, 최대 %d행, 쿼리 제한 %s, 종료 대기 %d초, data=%s)%n",
+                server.port(), config.coreThreads(), config.maxThreads(), config.queueCapacity(), config.maxResultRows(),
+                config.queryTimeoutMillis() == 0 ? "없음" : config.queryTimeoutMillis() + " ms",
+                config.shutdownGraceSeconds(), config.dataDir());
         out.println("POST /query {\"sql\": \"...\"} · GET /stats · GET /health · 종료: Ctrl+C");
         try {
             stopped.await();
