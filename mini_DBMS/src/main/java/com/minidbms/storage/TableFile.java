@@ -7,6 +7,7 @@ import java.io.BufferedReader;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -43,8 +44,30 @@ public final class TableFile implements Closeable {
             this.out = new BufferedOutputStream(Files.newOutputStream(path,
                     StandardOpenOption.CREATE, StandardOpenOption.APPEND, StandardOpenOption.WRITE), BUFFER_SIZE);
             this.endOffset = Files.size(path);
+            terminateLastLine();
         } catch (IOException e) {
             throw new StorageException("테이블 파일을 열 수 없습니다: " + path, e);
+        }
+    }
+
+    /**
+     * 기존 파일이 '\n'으로 끝나지 않으면(손으로 편집했거나 쓰다가 중단됨) 줄바꿈을 먼저 넣는다.
+     * 그러지 않으면 다음 append가 마지막 레코드 뒤에 그대로 붙어 두 레코드가 모두 깨진다.
+     * 마지막 줄을 잘라내지 않는 이유: 손으로 넣은 정상 레코드라면 살리고, 잘린 레코드라면 읽을 때 StorageException으로 드러나게 하려고.
+     */
+    private void terminateLastLine() throws IOException {
+        if (endOffset == 0) {
+            return;
+        }
+        int lastByte;
+        try (RandomAccessFile file = new RandomAccessFile(path.toFile(), "r")) {
+            file.seek(endOffset - 1);
+            lastByte = file.read();
+        }
+        if (lastByte != '\n') {
+            out.write('\n');
+            out.flush();
+            endOffset++;
         }
     }
 

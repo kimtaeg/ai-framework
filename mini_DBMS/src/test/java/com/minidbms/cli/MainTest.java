@@ -169,4 +169,35 @@ class MainTest {
                 "--data", dir.resolve("missing").toString()));
         assertTrue(errBytes.toString(StandardCharsets.UTF_8).contains("사용법:"));
     }
+
+    // ---- 입력 파일 엣지 케이스 ----
+
+    @Test
+    void 빈_파일과_주석만_있는_파일은_아무것도_출력하지_않는다() throws IOException {
+        assertEquals(Main.OK, run(InputStream.nullInputStream(), "run", sqlFile("").toString(), "--data", dataDir.toString()));
+        assertEquals(Main.OK, run(InputStream.nullInputStream(), "run", sqlFile("-- 주석만\n\n-- 또 주석").toString(),
+                "--data", dataDir.toString()));
+        assertEquals("", out());
+    }
+
+    @Test
+    void CRLF_줄바꿈_파일도_실행된다() throws IOException {
+        Path file = sqlFile("-- 윈도우 파일\r\nINSERT INTO users\r\n VALUES ('kim', 1);\r\nSELECT name FROM users;\r\n");
+        assertEquals(Main.OK, run(InputStream.nullInputStream(), "run", file.toString(), "--data", dataDir.toString()));
+        assertTrue(out().contains("| kim  |"), out());
+    }
+
+    @Test
+    void BOM이_붙은_UTF8_파일도_실행된다() throws IOException {
+        Path file = sqlFile("\uFEFFINSERT INTO users VALUES ('kim', 1);");
+        assertEquals(Main.OK, run(InputStream.nullInputStream(), "run", file.toString(), "--data", dataDir.toString()), out());
+        assertEquals("1 row inserted (id=1)\n", out());
+    }
+
+    @Test
+    void 오류_위치는_문장_기준이고_줄_번호로_파일_위치를_알려준다() throws IOException {
+        Path file = sqlFile("SELECT * FROM users;\n\nSELECT * FORM users;");
+        run(InputStream.nullInputStream(), "run", file.toString(), "--data", dataDir.toString());
+        assertTrue(out().contains("ERROR: [line 3] Expected FROM but found 'form' at 9"), out());
+    }
 }

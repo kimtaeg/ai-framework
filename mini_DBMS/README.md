@@ -1,0 +1,165 @@
+# Mini DBMS
+
+Java 17로 직접 구현한 파일 기반 미니 DBMS. 외부 라이브러리는 Jackson만 쓴다.
+
+| Phase | 내용 | 상태 |
+|---|---|---|
+| 1 | 파일 기반 SQL 처리기 (INSERT, SELECT, CLI) | ✅ |
+| 2 | 메모리 B+ 트리 id 인덱스 + 100만 건 성능 비교 | |
+| 3 | JDK HttpServer + ThreadPoolExecutor API 서버 | |
+
+## 빠른 시작
+
+```bash
+./gradlew test        # 전체 테스트
+./gradlew jar         # build/libs/mini-dbms.jar 생성 (의존성 포함)
+
+java -jar build/libs/mini-dbms.jar run sql/sample.sql --data ./data
+java -jar build/libs/mini-dbms.jar repl --data ./data
+```
+
+| 명령 | 설명 |
+|---|---|
+| `run <file.sql> [--data DIR]` | 파일의 문장을 순서대로 실행. 마지막 `;`는 생략 가능 |
+| `repl [--data DIR]` | 대화형. `;`가 나올 때까지 여러 줄 입력, `.exit` 또는 EOF로 종료 |
+
+- `--data` 기본값은 `./data`. 디렉터리가 미리 있어야 한다.
+- 한 문장이 실패해도 `ERROR: ...`를 출력하고 다음 문장을 계속 실행한다. run 모드는 `[line N]`으로 문장 위치를 알려준다.
+- 종료 코드: `0` 성공 · `1` 실패한 문장이 있음 · `2` 사용법/파일 오류
+
+```text
+mini-dbms> INSERT INTO users (name) VALUES ('kim');
+1 row inserted (id=1)
+mini-dbms> SELECT * FROM users
+        -> WHERE id >= 1;
++----+------+------+
+| id | name | age  |
++----+------+------+
+|  1 | kim  | NULL |
++----+------+------+
+1 row (0 ms)
+```
+
+## 지원 SQL
+
+```sql
+INSERT INTO table [(col, ...)] VALUES (value, ...);
+SELECT * | col, ... FROM table [WHERE col op value];
+-- op: =  !=  <>  <  <=  >  >=      value: 정수 | '문자열' | NULL
+```
+
+- 키워드·테이블·컬럼 이름은 대소문자를 구분하지 않는다. 결과 컬럼 이름은 스키마 표기를 따른다.
+- 문자열 안의 작은따옴표는 `''`로 쓴다. `--`부터 줄 끝까지는 주석이다.
+- `id`는 엔진이 자동 부여한다(현재 최대 id + 1). 직접 넣으면 오류.
+- 컬럼 목록을 생략하면 `id`를 뺀 스키마 순서대로 값을 받는다. 지정하지 않은 컬럼은 NULL.
+- 타입은 엄격하게 검사한다. INT 컬럼에 `'30'`을 넣거나 비교하면 오류(암묵적 변환 없음).
+- NULL과의 비교는 항상 false다. `age != 30`에도 age가 NULL인 행은 나오지 않는다.
+- 문자열 비교는 유니코드 코드 포인트 순이다(`'B' < 'a' < '가'`).
+
+### 오류 종류 (`common` 패키지, 모두 `DbException` 하위)
+
+| 예외 | 언제 |
+|---|---|
+| `ParseException` | 문법 오류, 값 개수 불일치, INSERT 컬럼 중복 |
+| `TableNotFoundException` | 스키마 파일이 없는 테이블, 잘못된 테이블 이름 |
+| `ColumnNotFoundException` | 스키마에 없는 컬럼 |
+| `TypeMismatchException` | 값 타입이 컬럼 타입과 다름 |
+| `ConstraintViolationException` | `id`를 직접 지정 |
+| `StorageException` | 파일 I/O 실패, 스키마·레코드 형식 손상 |
+
+## 저장 포맷
+
+테이블 하나 = 파일 두 개. 인코딩은 UTF-8.
+
+### `data/{table}.schema`
+
+한 줄에 `이름:타입`을 쉼표로 나열한다. 타입은 `INT`(64비트 정수)와 `STRING`. `id:INT` 컬럼이 반드시 있어야 한다.
+
+```text
+id:INT,name:STRING,age:INT
+```
+
+공백과 타입 대소문자는 무시한다(` id : int `도 된다). 빈 파일·중복 컬럼·모르는 타입은 `StorageException`.
+
+### `data/{table}.tbl`
+
+한 줄이 레코드 하나(`\n`으로 끝남), 필드는 스키마 순서대로 `|`로 구분한다.
+
+```text
+1|kim|30
+2|o'brien; \| \\ 특수문자|19
+3|no-age|\N
+4||25
+```
+
+| 원래 값 | 저장 형태 |
+|---|---|
+| `\` | `\\` |
+| `\|` (구분자) | `\\|` |
+| 줄바꿈 / CR | `\n` / `\r` |
+| NULL | 필드 전체가 `\N` |
+| 빈 문자열 | 빈 필드 |
+
+- 문자열 `"\N"`은 `\\N`으로 저장되므로 NULL과 겹치지 않는다.
+- 줄바꿈과 CR을 이스케이프하므로 레코드 하나는 항상 물리적인 한 줄이다.
+- 쓰기는 append만 한다. `TableFile.append`는 그 줄이 시작된 **byte offset**을 돌려준다(Phase 2에서 B+ 트리가 `id → offset`으로 사용).
+
+### 쓰기 버퍼와 flush
+
+`.tbl` 파일은 엔진이 처음 쓸 때 열어 두고 64KB 버퍼로 쓴다. 디스크(OS)로 내려가는 시점은
+
+1. 버퍼가 가득 찼을 때
+2. INSERT 문장 하나가 끝날 때 (`flush()`)
+3. SELECT 스캔을 시작할 때
+4. 종료할 때 (`close()` — 정상 종료는 `finally`, Ctrl+C는 shutdown hook)
+
+flush는 OS 페이지 캐시까지만 보장한다(fsync 없음).
+
+## 처리 흐름
+
+```mermaid
+flowchart TD
+    A["CLI (run / repl)"] -->|"StatementSplitter: 문자열·주석 밖의 ';'로 문장 분리"| B["DatabaseEngine.execute(sql)"]
+    B --> C["Lexer: 문자 → Token(type, text, position)"]
+    C --> D["Parser: 재귀 하강 → AST (InsertStatement / SelectStatement)"]
+    D --> E{"테이블 캐시에 있나?"}
+    E -->|없음| F["SchemaLoader로 .schema 읽기 + TableFile 열기 + 최대 id 스캔"]
+    F --> G
+    E -->|있음| G["Executor: 스키마로 의미 검증"]
+    G -->|INSERT| H["값 매핑 · 타입 검사 · id 부여 → RecordCodec.encode → TableFile.append + flush"]
+    G -->|SELECT| I["TableFile.scan → RecordCodec.decode → WHERE 필터 → 컬럼 투영"]
+    H --> J["QueryResult"]
+    I --> J
+    J --> K["CLI: '1 row inserted (id=N)' / TableFormatter 표 + 'N rows (x ms)'"]
+```
+
+각 단계의 책임은 한 곳에만 있다.
+
+| 단계 | 책임 | 하지 않는 것 |
+|---|---|---|
+| `StatementSplitter` | 문장 경계 찾기 (한 문장 실패 시 다음 문장 계속) | 토큰화 |
+| `Lexer` | 키워드·식별자·숫자·문자열·기호, 위치 포함 오류 | 문법 |
+| `Parser` | 문법 → AST, `Expected X but found 'Y' at N` | 스키마 검증 |
+| `Executor` | 테이블·컬럼 존재, 타입, 개수, id 규칙, 실행 | 파일 포맷 |
+| `RecordCodec` / `TableFile` | 레코드 ↔ 한 줄, 버퍼링 append·scan | SQL 의미 |
+
+엔진에 여러 문장을 한 번에 넘기면 전체를 먼저 파싱하므로, 문법 오류가 하나라도 있으면 아무것도 실행되지 않는다. 실행 중 오류는 앞 문장의 결과를 남긴다(트랜잭션 없음).
+
+## 패키지 구조
+
+```text
+src/main/java/com/minidbms/
+├── cli/          Main(인자 파싱·종료 코드), Cli(run/repl), StatementSplitter, TableFormatter
+├── sql/lexer/    Lexer, Token, TokenType
+├── sql/parser/   Parser, ast/(Statement, InsertStatement, SelectStatement, Condition, Operator, Literal)
+├── engine/       DatabaseEngine(유일한 진입점), Executor, TableState, QueryResult
+├── storage/      Schema, Column, ColumnType, SchemaLoader, RecordCodec, TableFile, Table
+└── common/       DbException과 하위 예외
+```
+
+## 알려진 한계 (Phase 1)
+
+- 엔진은 아직 스레드 안전하지 않다. 테이블 단위 `ReentrantReadWriteLock`은 Phase 3에서.
+- SELECT는 항상 전체 스캔이다. id 인덱스는 Phase 2에서.
+- WHERE는 조건 하나만 지원한다(`AND`, `BETWEEN`은 아직 파싱하지 않음).
+- UPDATE·DELETE·CREATE TABLE이 없다. 테이블은 `.schema` 파일을 직접 만들어 정의한다.

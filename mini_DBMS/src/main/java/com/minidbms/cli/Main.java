@@ -56,6 +56,10 @@ public final class Main {
         if (parsed.mode().equals("run")) {
             try {
                 script = Files.readString(parsed.file(), StandardCharsets.UTF_8);
+                // 메모장 등이 UTF-8 파일 앞에 붙이는 BOM은 SQL이 아니라 파일 인코딩 표식이므로 읽는 쪽에서 버린다.
+                if (script.startsWith("\uFEFF")) {
+                    script = script.substring(1);
+                }
             } catch (NoSuchFileException e) {
                 err.println("ERROR: SQL 파일이 없습니다: " + parsed.file().toAbsolutePath());
                 return USAGE_ERROR;

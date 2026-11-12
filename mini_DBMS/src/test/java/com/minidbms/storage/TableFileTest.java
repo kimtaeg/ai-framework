@@ -136,4 +136,28 @@ class TableFileTest {
             assertEquals(Arrays.asList(2L, null), Arrays.asList(decoded.get(1)));
         }
     }
+
+    @Test
+    void 줄바꿈_없이_끝난_파일을_열면_줄바꿈을_먼저_넣고_이어_쓴다() throws IOException {
+        Path path = dir.resolve("t.tbl");
+        Files.writeString(path, "1|가");
+        long sizeWithoutNewline = Files.size(path);
+
+        try (TableFile file = new TableFile(path)) {
+            assertEquals(sizeWithoutNewline + 1, file.size());
+            assertEquals(sizeWithoutNewline + 1, file.append("2|b"));
+            assertEquals(List.of("1|가", "2|b"), scanAll(file));
+        }
+        assertEquals("1|가\n2|b\n", Files.readString(path));
+    }
+
+    @Test
+    void 줄바꿈으로_끝난_파일은_건드리지_않는다() throws IOException {
+        Path path = dir.resolve("t.tbl");
+        Files.writeString(path, "1|a\n");
+        try (TableFile file = new TableFile(path)) {
+            assertEquals(4, file.size());
+        }
+        assertEquals("1|a\n", Files.readString(path));
+    }
 }
