@@ -21,7 +21,8 @@ public final class Lexer {
             "WHERE", TokenType.WHERE,
             "AND", TokenType.AND,
             "BETWEEN", TokenType.BETWEEN,
-            "EXPLAIN", TokenType.EXPLAIN);
+            "EXPLAIN", TokenType.EXPLAIN,
+            "LIMIT", TokenType.LIMIT);
 
     private final String sql;
     private int pos;

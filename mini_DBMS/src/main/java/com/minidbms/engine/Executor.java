@@ -18,7 +18,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /**
@@ -29,12 +28,13 @@ final class Executor {
 
     private final Planner planner = new Planner();
 
-    QueryResult execute(Statement statement, Table table, boolean indexEnabled) {
+    /** @param maxRows SELECT가 돌려줄 최대 행 수. 넘으면 그만 읽고 truncated로 표시한다. */
+    QueryResult execute(Statement statement, Table table, boolean indexEnabled, long maxRows) {
         if (statement instanceof InsertStatement insert) {
             return insert(insert, table);
         }
         if (statement instanceof SelectStatement select) {
-            return select(select, table, indexEnabled);
+            return select(select, table, indexEnabled, maxRows);
         }
         if (statement instanceof ExplainStatement explain) {
             return explain(explain.select(), table, indexEnabled);
@@ -57,7 +57,7 @@ final class Executor {
         // flush는 DatabaseEngine이 execute 호출 하나가 끝날 때 한 번 한다(INSERT마다 하면 쓰기 시스템 콜이 행 수만큼 생긴다).
         long id = table.insert(record);
         // JDBC의 generated keys처럼 부여한 id를 결과 행으로 돌려준다.
-        return new QueryResult(QueryResult.Type.INSERT, List.of(Table.ID_COLUMN), List.of(List.of(id)), 1, null, 0);
+        return new QueryResult(QueryResult.Type.INSERT, List.of(Table.ID_COLUMN), List.of(List.of(id)), 1, null, 0, false);
     }
 
     /** values[i]가 들어갈 스키마 컬럼 인덱스를 돌려준다. */
@@ -114,42 +114,62 @@ final class Executor {
 
     // ---- SELECT ----
 
-    private QueryResult select(SelectStatement select, Table table, boolean indexEnabled) {
+    private QueryResult select(SelectStatement select, Table table, boolean indexEnabled, long maxRows) {
         Schema schema = table.schema();
         // 읽기 전에 컬럼·조건을 모두 검증해서, 잘못된 쿼리가 파일을 끝까지 읽은 뒤에야 실패하지 않게 한다.
         int[] projection = projection(select, schema);
         Predicate<Object[]> filter = select.where().map(c -> compile(c, schema)).orElse(r -> true);
         Plan plan = planner.plan(select, table, indexEnabled);
 
+        // 몇 행까지 모을지 정한다. LIMIT이 최대 행 수 이하면 LIMIT만큼, 아니면 "최대 행 수 + 1"까지 모아서
+        // 한 행이라도 넘치는지로 잘렸는지를 판단한다. 어느 쪽이든 그 수에 닿으면 남은 파일·범위를 읽지 않는다.
+        long limit = select.limit().orElse(Long.MAX_VALUE);
+        boolean capApplies = limit > maxRows;
+        long collect = capApplies ? saturatedIncrement(maxRows) : limit;
+
         List<List<Object>> rows = new ArrayList<>();
-        read(plan, table, record -> {
-            // 인덱스 경로가 고른 레코드도 같은 필터를 한 번 더 통과시킨다.
-            // 경로와 상관없이 "조건을 만족하는 행"의 정의가 한 곳(compile)에만 있게 하려고.
-            if (filter.test(record)) {
-                Object[] row = new Object[projection.length];
-                for (int i = 0; i < projection.length; i++) {
-                    row[i] = record[projection[i]];
+        if (collect > 0) {
+            read(plan, table, record -> {
+                // 인덱스 경로가 고른 레코드도 같은 필터를 한 번 더 통과시킨다.
+                // 경로와 상관없이 "조건을 만족하는 행"의 정의가 한 곳(compile)에만 있게 하려고.
+                if (filter.test(record)) {
+                    Object[] row = new Object[projection.length];
+                    for (int i = 0; i < projection.length; i++) {
+                        row[i] = record[projection[i]];
+                    }
+                    rows.add(Collections.unmodifiableList(Arrays.asList(row)));
                 }
-                rows.add(Collections.unmodifiableList(Arrays.asList(row)));
-            }
-        });
+                return rows.size() < collect; // false면 읽기를 멈춘다
+            });
+        }
+        boolean truncated = capApplies && rows.size() > maxRows;
+        if (truncated) {
+            rows.remove(rows.size() - 1); // 넘침을 확인하려고 하나 더 읽은 행
+        }
 
         List<String> columns = new ArrayList<>();
         for (int index : projection) {
             columns.add(schema.column(index).name());
         }
-        return new QueryResult(QueryResult.Type.SELECT, columns, rows, rows.size(), plan.path(), 0);
+        return new QueryResult(QueryResult.Type.SELECT, columns, rows, rows.size(), plan.path(), 0, truncated);
     }
 
-    /** 계획에 따라 후보 레코드를 넘긴다. 인덱스 경로는 id 순서, FULL_SCAN은 파일 순서다. */
-    private static void read(Plan plan, Table table, Consumer<Object[]> consumer) {
+    private static long saturatedIncrement(long n) {
+        return n == Long.MAX_VALUE ? n : n + 1;
+    }
+
+    /**
+     * 계획에 따라 후보 레코드를 넘긴다. 인덱스 경로는 id 순서, FULL_SCAN은 파일 순서다.
+     * visitor가 false를 돌려주면 그 자리에서 멈춘다.
+     */
+    private static void read(Plan plan, Table table, Predicate<Object[]> visitor) {
         if (plan.isEmptyRange()) {
             return;
         }
         switch (plan.path()) {
-            case INDEX_LOOKUP -> table.findById(plan.low()).ifPresent(consumer);
-            case INDEX_RANGE -> table.rangeById(plan.low(), plan.high(), consumer);
-            case FULL_SCAN -> table.scan(consumer);
+            case INDEX_LOOKUP -> table.findById(plan.low()).ifPresent(visitor::test);
+            case INDEX_RANGE -> table.rangeByIdWhile(plan.low(), plan.high(), visitor);
+            case FULL_SCAN -> table.scanWhile(visitor);
         }
     }
 
@@ -158,8 +178,9 @@ final class Executor {
         projection(select, table.schema());
         select.where().ifPresent(c -> compile(c, table.schema()));
         Plan plan = planner.plan(select, table, indexEnabled);
-        List<Object> row = List.of(table.name(), plan.path().name(), plan.detail());
-        return new QueryResult(QueryResult.Type.EXPLAIN, EXPLAIN_COLUMNS, List.of(row), 0, plan.path(), 0);
+        String detail = plan.detail() + (select.limit().isPresent() ? ", LIMIT " + select.limit().getAsLong() : "");
+        List<Object> row = List.of(table.name(), plan.path().name(), detail);
+        return new QueryResult(QueryResult.Type.EXPLAIN, EXPLAIN_COLUMNS, List.of(row), 0, plan.path(), 0, false);
     }
 
     private static int[] projection(SelectStatement select, Schema schema) {

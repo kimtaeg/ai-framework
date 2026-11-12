@@ -28,6 +28,10 @@ final class ServerLog {
         out.println(String.format(Locale.ROOT, "%s [%s] %s %s %d %.3f ms", now(), thread, method, path, status, ms));
     }
 
+    void info(String message) {
+        out.println(now() + " [" + Thread.currentThread().getName() + "] " + message);
+    }
+
     void error(String context, Throwable error) {
         StringWriter trace = new StringWriter();
         error.printStackTrace(new PrintWriter(trace));

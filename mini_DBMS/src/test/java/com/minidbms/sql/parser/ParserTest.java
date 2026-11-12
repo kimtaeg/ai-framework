@@ -172,4 +172,22 @@ class ParserTest {
         assertThrows(IllegalArgumentException.class, () -> new Condition("id", Operator.EQ, Literal.of(1), Literal.of(2)));
         assertThrows(IllegalArgumentException.class, () -> new Condition("id", Operator.BETWEEN, Literal.of(1)));
     }
+
+    // ---- LIMIT ----
+
+    @Test
+    void LIMIT은_WHERE_뒤에_온다() {
+        SelectStatement select = (SelectStatement) parseOne("SELECT * FROM t WHERE id > 3 LIMIT 10");
+        assertEquals(java.util.OptionalLong.of(10), select.limit());
+        assertEquals(java.util.OptionalLong.of(0), ((SelectStatement) parseOne("select * from t limit 0")).limit());
+        assertEquals(java.util.OptionalLong.empty(), ((SelectStatement) parseOne("SELECT * FROM t")).limit());
+    }
+
+    @Test
+    void LIMIT_오류() {
+        assertEquals("Expected row count after LIMIT but found end of input at 21", errorOf("SELECT * FROM t LIMIT"));
+        assertEquals("Expected row count after LIMIT but found 'ten' at 22", errorOf("SELECT * FROM t LIMIT ten"));
+        assertEquals("LIMIT must be 0 or greater but found -1 at 22", errorOf("SELECT * FROM t LIMIT -1"));
+        assertEquals("Expected ';' or end of input but found 'WHERE' at 24", errorOf("SELECT * FROM t LIMIT 1 WHERE id = 1"));
+    }
 }

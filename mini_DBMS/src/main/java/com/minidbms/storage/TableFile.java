@@ -50,6 +50,12 @@ public final class TableFile implements Closeable {
         void accept(long offset, String line);
     }
 
+    /** LineConsumer와 같지만 false를 돌려주면 스캔을 멈춘다. */
+    @FunctionalInterface
+    public interface LineVisitor {
+        boolean visit(long offset, String line);
+    }
+
     private final Path path;
     private final FileChannel channel;
     private final byte[] buffer = new byte[BUFFER_SIZE];
@@ -232,6 +238,14 @@ public final class TableFile implements Closeable {
      * 예전에는 시작할 때 flush했는데, 읽기 락 아래에서 두 스캔이 동시에 flush하면 같은 버퍼가 두 번 쓰여 레코드가 중복된다.
      */
     public void scanWithOffsets(LineConsumer consumer) {
+        scanWhile((offset, line) -> {
+            consumer.accept(offset, line);
+            return true;
+        });
+    }
+
+    /** scanWithOffsets와 같은 순서로 읽되, visitor가 false를 돌려주면 남은 파일을 읽지 않고 멈춘다. */
+    public void scanWhile(LineVisitor visitor) {
         ensureOpen();
         // 시작 시점의 경계를 고정해서 이 범위만 읽는다. 스캔하는 동안 쓰기가 없다는 것은 상위 락이 보장한다.
         long end = flushedSize;
@@ -245,7 +259,9 @@ public final class TableFile implements Closeable {
             while (offset < end && (b = in.read()) != -1) {
                 offset++;
                 if (b == '\n') {
-                    consumer.accept(lineStart, line.toString(StandardCharsets.UTF_8));
+                    if (!visitor.visit(lineStart, line.toString(StandardCharsets.UTF_8))) {
+                        return;
+                    }
                     line.reset();
                     lineStart = offset;
                 } else {
@@ -254,7 +270,9 @@ public final class TableFile implements Closeable {
             }
             if (line.size() > 0) {
                 // 다른 프로세스가 파일을 건드리지 않는 한 생기지 않는다(열 때 마지막 줄을 '\n'으로 닫아 두므로).
-                consumer.accept(lineStart, line.toString(StandardCharsets.UTF_8));
+                if (!visitor.visit(lineStart, line.toString(StandardCharsets.UTF_8))) {
+                    return;
+                }
             }
         } catch (IOException e) {
             throw new StorageException("테이블 파일을 읽을 수 없습니다: " + path, e);
@@ -263,7 +281,9 @@ public final class TableFile implements Closeable {
         int lineStart = 0;
         for (int i = 0; i < bufferedEnd; i++) {
             if (buffer[i] == '\n') {
-                consumer.accept(end + lineStart, new String(buffer, lineStart, i - lineStart, StandardCharsets.UTF_8));
+                if (!visitor.visit(end + lineStart, new String(buffer, lineStart, i - lineStart, StandardCharsets.UTF_8))) {
+                    return;
+                }
                 lineStart = i + 1;
             }
         }

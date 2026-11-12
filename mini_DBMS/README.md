@@ -24,7 +24,7 @@ java -jar build/libs/mini-dbms.jar repl --data ./data
 | `repl [--data DIR]` | 대화형. `;`가 나올 때까지 여러 줄 입력, `.exit` 또는 EOF로 종료 |
 | `generate --table T --count N [--seed 42]` | 대용량 테스트 데이터 생성 ([아래](#대용량-데이터-생성)) |
 | `bench --table T [--queries 1000]` | 인덱스 조회 vs 선형 탐색 벤치마크 → `bench-result.md` ([아래](#벤치마크)) |
-| `serve [--port 8080] [--threads 8] [--queue 1000]` | HTTP API 서버 ([아래](#api-서버)) |
+| `serve [--port 8080] [--threads 8] [--queue 1000] [--max-rows 10000] [--grace 10]` | HTTP API 서버 ([아래](#api-서버)) |
 
 - `--data` 기본값은 `./data`. 디렉터리가 미리 있어야 한다.
 - 한 문장이 실패해도 `ERROR: ...`를 출력하고 다음 문장을 계속 실행한다. run 모드는 `[line N]`으로 문장 위치를 알려준다.
@@ -53,7 +53,7 @@ mini-dbms> EXPLAIN SELECT * FROM users WHERE id = 1;
 
 ```sql
 INSERT INTO table [(col, ...)] VALUES (value, ...);
-SELECT * | col, ... FROM table [WHERE condition];
+SELECT * | col, ... FROM table [WHERE condition] [LIMIT n];
 EXPLAIN SELECT ...;                 -- 실행하지 않고 실행 경로만 보여준다
 -- condition: col op value | col BETWEEN value AND value (양 끝 포함)
 -- op: =  !=  <>  <  <=  >  >=      value: 정수 | '문자열' | NULL
@@ -66,6 +66,7 @@ EXPLAIN SELECT ...;                 -- 실행하지 않고 실행 경로만 보�
 - 타입은 엄격하게 검사한다. INT 컬럼에 `'30'`을 넣거나 비교하면 오류(암묵적 변환 없음).
 - NULL과의 비교는 항상 false다. `age != 30`에도 age가 NULL인 행은 나오지 않는다.
 - 문자열 비교는 유니코드 코드 포인트 순이다(`'B' < 'a' < '가'`).
+- `LIMIT n`(0 이상)은 앞에서부터 n행만 돌려준다. n행을 모으는 순간 남은 파일·인덱스 범위를 읽지 않는다. 순서는 실행 경로를 따른다(인덱스는 id 순, 스캔은 파일 순).
 
 ### 오류 종류 (`common` 패키지, 모두 `DbException` 하위)
 
@@ -243,6 +244,7 @@ curl -X POST localhost:8080/query -H 'Content-Type: application/json' \
 ```
 
 - 행은 `columns` 순서의 배열이다(행마다 컬럼 이름을 반복하지 않는다). NULL은 JSON `null`.
+- SELECT 결과는 서버의 최대 행 수(`--max-rows`, 기본 10,000)에서 잘린다. 잘렸으면 `"truncated": true`. 필요한 만큼 `LIMIT`을 주거나 `WHERE id BETWEEN`으로 나눠 받는다.
 - EXPLAIN 결과는 `type: "EXPLAIN"`, 계획 한 행과 `accessPath`.
 - 여러 문장 중 하나가 실행 중 실패하면 그 오류만 돌려준다. 앞 문장은 이미 반영됐을 수 있다(트랜잭션 없음). 문법 오류는 전체를 먼저 파싱하므로 아무것도 실행되지 않는다.
 - `pool.completedTasks`는 HttpServer가 executor에 넘긴 작업 수라 요청 수와 다를 수 있다. 요청 수는 `requests.handled`를 본다.
@@ -266,6 +268,7 @@ curl -X POST localhost:8080/query -H 'Content-Type: application/json' \
 | 500 | `STORAGE_ERROR` · `DB_ERROR` | 파일 I/O·손상 — 서버 로그에 스택 트레이스 |
 | 500 | `INTERNAL_ERROR` | 예상 못 한 예외 — 메시지는 감추고 서버 로그에 스택 트레이스 |
 | 503 | `SERVER_BUSY` | 워커·큐가 모두 참 (`Retry-After: 1`) |
+| 503 | `SHUTTING_DOWN` | 종료 중에 들어온 요청 (`Connection: close`) |
 
 ### 요청 로그
 
@@ -289,7 +292,28 @@ HTTP 요청을 읽어 `HttpExchange`를 만드는 일은 그 Runnable 안에서 
 그러면 요청 파싱과 핸들러 호출이 그 자리에서 일어나고, 모든 핸들러를 감싼 가드가 표시를 보고 DB 작업 없이 503 JSON만 쓴다.
 헤더를 읽고 작은 응답을 쓰는 비용이라 dispatcher를 오래 붙잡지 않는다. 한계: 헤더를 아주 느리게 보내는 클라이언트가 있으면 그동안 dispatcher가 묶인다.
 
-종료(Ctrl+C)하면 새 연결을 그만 받고 처리 중인 요청을 최대 3초 기다린 뒤 엔진을 닫는다(버퍼 flush).
+### 종료 (Ctrl+C / SIGTERM)
+
+shutdown hook이 `ApiServer.stop()`을 부른다. 순서:
+
+1. **새 요청 거부** — `executor.shutdown()`. 이후 들어오는 요청은 거절 핸들러를 거쳐 503 `SHUTTING_DOWN`. 이미 큐에 있던 요청과 처리 중인 요청은 계속 실행된다.
+2. **완료 대기** — 워커가 끝날 때까지 최대 `--grace`초(기본 10). 넘기면 워커를 interrupt하고 5초 더 기다린다.
+3. **연결 닫기** — `HttpServer.stop(0)`.
+4. **flush** — `engine.close()`가 테이블 버퍼를 파일로 내려쓰고 닫는다(테이블 쓰기 락을 거치므로 읽는 중인 요청이 끝난 뒤).
+
+`HttpServer.stop`을 먼저 부르면 리스너와 함께 연결도 닫혀 큐에서 기다리던 요청이 응답할 곳을 잃는다. 그래서 executor를 먼저 닫는다.
+
+```text
+20:35:38.757 [mini-dbms-server-shutdown] 종료 시작: 새 요청 거부, 처리 중·대기 중 요청 1개를 최대 10초 기다립니다
+20:35:38.997 [HTTP-Dispatcher] GET /health 503 0.731 ms
+20:35:40.215 [db-worker-2] POST /query 200 1756.077 ms
+20:35:40.216 [mini-dbms-server-shutdown] 종료 완료: 테이블 파일 flush 후 닫음
+```
+
+### 큰 결과와 오래 걸리는 요청
+
+- **메모리**: SELECT가 모으는 행은 많아야 `max-rows + 1`개다(넘치는지 보려고 하나 더 읽는다). 100만 건 `SELECT *`가 1.2 s·100만 행 대신 1,000행·약 9 ms로 끝난다.
+- **시간**: 행 수 제한은 결과가 큰 쿼리만 줄인다. `WHERE email = 'none'`처럼 결과는 0행인데 전체를 훑는 쿼리는 여전히 1~2 s 걸린다. 쿼리 타임아웃은 아직 없다(아래 알려진 한계).
 
 ## 처리 흐름
 
@@ -347,3 +371,4 @@ src/main/java/com/minidbms/
 - 인덱스는 id 하나뿐이다. 다른 컬럼 조건은 항상 FULL_SCAN.
 - WHERE는 조건 하나만 지원한다. `AND`는 `BETWEEN a AND b`의 구분자로만 쓴다.
 - UPDATE·DELETE·CREATE TABLE이 없다. 테이블은 `.schema` 파일을 직접 만들어 정의한다.
+- 쿼리 타임아웃이 없다. 결과는 작지만 전체를 훑는 쿼리(인덱스 없는 컬럼 조건)는 테이블 크기만큼 워커를 잡는다. 후보: 스캔 루프에서 N행마다 마감 시각을 확인해 `QueryTimeoutException`을 던지는 협조적 타임아웃.

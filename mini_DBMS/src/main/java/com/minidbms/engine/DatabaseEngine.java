@@ -32,6 +32,8 @@ public final class DatabaseEngine implements Closeable {
     private final ConcurrentHashMap<String, Table> tables = new ConcurrentHashMap<>();
     // 벤치마크에서 같은 데이터로 인덱스 경로와 FULL_SCAN을 비교하려고 끌 수 있게 한다. 다른 스레드에 바로 보이도록 volatile.
     private volatile boolean indexEnabled = true;
+    // SELECT 한 번이 돌려줄 수 있는 최대 행 수. 큰 테이블 전체 조회가 메모리를 다 쓰지 않게 서버가 줄여 둔다.
+    private volatile long maxResultRows = Long.MAX_VALUE;
 
     public DatabaseEngine(Path dataDir) {
         this.dataDir = Objects.requireNonNull(dataDir, "dataDir");
@@ -44,6 +46,21 @@ public final class DatabaseEngine implements Closeable {
 
     public boolean isIndexEnabled() {
         return indexEnabled;
+    }
+
+    /**
+     * SELECT 결과 행 수의 상한. 넘으면 그만 읽고 결과에 truncated=true를 단다.
+     * 메모리에 쌓이는 행은 많아야 maxRows + 1개다. 기본값은 제한 없음(CLI·벤치마크).
+     */
+    public void setMaxResultRows(long maxRows) {
+        if (maxRows < 1) {
+            throw new IllegalArgumentException("최대 행 수는 1 이상이어야 합니다: " + maxRows);
+        }
+        this.maxResultRows = maxRows;
+    }
+
+    public long maxResultRows() {
+        return maxResultRows;
     }
 
     /**
@@ -66,7 +83,7 @@ public final class DatabaseEngine implements Closeable {
                     written.add(table);
                 }
                 long start = System.nanoTime();
-                QueryResult result = executor.execute(statement, table, indexEnabled);
+                QueryResult result = executor.execute(statement, table, indexEnabled, maxResultRows);
                 results.add(result.withElapsedMs((System.nanoTime() - start) / 1_000_000.0));
             }
         } catch (RuntimeException e) {

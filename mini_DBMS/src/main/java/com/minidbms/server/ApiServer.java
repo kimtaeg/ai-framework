@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * JDK HttpServer 기반 API 서버.
@@ -36,6 +37,7 @@ public final class ApiServer implements Closeable {
     private final ServerLog log;
     private final RequestStats stats = new RequestStats();
     private final long startedAt = System.currentTimeMillis();
+    private final AtomicBoolean stopped = new AtomicBoolean();
 
     public ApiServer(ServerConfig config) throws IOException {
         this(config, System.out);
@@ -49,6 +51,7 @@ public final class ApiServer implements Closeable {
         this.server = HttpServer.create(new InetSocketAddress(config.port()), 0);
         this.server.setExecutor(executor);
         this.engine = new DatabaseEngine(config.dataDir());
+        this.engine.setMaxResultRows(config.maxResultRows());
         route("/health", this::health);
         route("/stats", this::stats);
         route("/query", new QueryHandler(engine));
@@ -94,8 +97,7 @@ public final class ApiServer implements Closeable {
             boolean rejected = BusyRejectionHandler.isRejectedRequest();
             try {
                 if (rejected) {
-                    exchange.getResponseHeaders().set("Retry-After", Integer.toString(RETRY_AFTER_SECONDS));
-                    Json.send(exchange, 503, Json.error("SERVER_BUSY", "서버가 처리할 수 있는 요청 수를 넘었습니다. 잠시 후 다시 시도하세요"));
+                    respondRejected(exchange, BusyRejectionHandler.rejectionReason());
                     return;
                 }
                 handler.handle(exchange);
@@ -112,6 +114,17 @@ public final class ApiServer implements Closeable {
                 exchange.close();
             }
         };
+    }
+
+    private static void respondRejected(HttpExchange exchange, BusyRejectionHandler.Reason reason) throws IOException {
+        if (reason == BusyRejectionHandler.Reason.SHUTTING_DOWN) {
+            // 이 연결로 다음 요청을 보내지 말라고 알린다. 곧 연결이 닫힌다.
+            exchange.getResponseHeaders().set("Connection", "close");
+            Json.send(exchange, 503, Json.error("SHUTTING_DOWN", "서버가 종료 중입니다. 새 요청을 받지 않습니다"));
+            return;
+        }
+        exchange.getResponseHeaders().set("Retry-After", Integer.toString(RETRY_AFTER_SECONDS));
+        Json.send(exchange, 503, Json.error("SERVER_BUSY", "서버가 처리할 수 있는 요청 수를 넘었습니다. 잠시 후 다시 시도하세요"));
     }
 
     private void respondError(HttpExchange exchange, Exception error) {
@@ -177,23 +190,45 @@ public final class ApiServer implements Closeable {
         }
     }
 
+    /** 설정의 종료 대기 시간으로 {@link #stop(int)} */
+    public void stop() {
+        stop(config.shutdownGraceSeconds());
+    }
+
     /**
-     * 새 연결을 그만 받고, 처리 중인 요청이 끝나기를 기다린 뒤 엔진을 닫는다(버퍼 flush).
-     *
-     * @param graceSeconds 처리 중인 요청을 기다릴 최대 시간
+     * 우아한 종료. 순서가 중요하다.
+     * <ol>
+     *   <li><b>새 요청 거부</b>: executor.shutdown(). 이후 dispatcher가 넘기는 요청은 거절 핸들러로 가서 503 SHUTTING_DOWN을 받는다.
+     *       이미 큐에 들어온 요청과 처리 중인 요청은 그대로 실행된다.</li>
+     *   <li><b>완료 대기</b>: 워커가 모두 끝날 때까지 최대 graceSeconds 기다린다. 넘기면 워커를 interrupt하고 조금 더 기다린다.</li>
+     *   <li><b>연결 닫기</b>: server.stop(0)으로 리스너와 남은 연결을 닫는다.</li>
+     *   <li><b>flush</b>: engine.close()가 모든 테이블 버퍼를 파일로 내려쓰고 닫는다. 테이블 쓰기 락을 거치므로
+     *       아직 읽는 중인 요청이 있으면 그 요청이 끝난 뒤에 닫는다.</li>
+     * </ol>
+     * HttpServer.stop을 먼저 부르면 리스너와 함께 연결도 닫혀서, 큐에서 기다리던 요청이 응답할 곳을 잃는다.
+     * 여러 번 불러도 한 번만 실행된다.
      */
     public void stop(int graceSeconds) {
-        server.stop(graceSeconds);
+        if (!stopped.compareAndSet(false, true)) {
+            return;
+        }
+        int inFlight = executor.getActiveCount() + executor.getQueue().size();
+        log.info("종료 시작: 새 요청 거부, 처리 중·대기 중 요청 " + inFlight + "개를 최대 " + graceSeconds + "초 기다립니다");
         executor.shutdown();
         try {
-            if (!executor.awaitTermination(graceSeconds + 5L, TimeUnit.SECONDS)) {
+            if (!executor.awaitTermination(graceSeconds, TimeUnit.SECONDS)) {
+                log.info("종료 대기 시간 초과: 남은 요청 " + (executor.getActiveCount() + executor.getQueue().size())
+                        + "개의 워커를 중단합니다");
                 executor.shutdownNow();
+                executor.awaitTermination(5, TimeUnit.SECONDS);
             }
         } catch (InterruptedException e) {
             executor.shutdownNow();
             Thread.currentThread().interrupt();
         }
+        server.stop(0);
         engine.close();
+        log.info("종료 완료: 테이블 파일 flush 후 닫음");
     }
 
     @Override

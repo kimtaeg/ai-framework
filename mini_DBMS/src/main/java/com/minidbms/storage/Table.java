@@ -11,6 +11,7 @@ import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
@@ -190,10 +191,16 @@ public final class Table implements Closeable {
      * 넘기는 동안 읽기 락을 쥐고 있으므로 consumer 안에서 이 테이블에 쓰면 안 된다(교착).
      */
     public void rangeById(long from, long to, Consumer<Object[]> consumer) {
+        rangeByIdWhile(from, to, record -> {
+            consumer.accept(record);
+            return true;
+        });
+    }
+
+    /** rangeById와 같지만 visitor가 false를 돌려주면 멈춘다(남은 줄은 읽지 않는다). */
+    public void rangeByIdWhile(long from, long to, Predicate<Object[]> visitor) {
         read(() -> {
-            for (long offset : idIndex.range(from, to)) {
-                consumer.accept(RecordCodec.decode(file.readAt(offset), schema));
-            }
+            idIndex.forEachInRange(from, to, offset -> visitor.test(RecordCodec.decode(file.readAt(offset), schema)));
             return null;
         });
     }
@@ -203,12 +210,16 @@ public final class Table implements Closeable {
      * 넘기는 동안 읽기 락을 쥐고 있으므로 consumer 안에서 이 테이블에 쓰면 안 된다(교착).
      */
     public void scan(Consumer<Object[]> consumer) {
+        scanWhile(record -> {
+            consumer.accept(record);
+            return true;
+        });
+    }
+
+    /** scan과 같지만 visitor가 false를 돌려주면 남은 파일을 읽지 않고 멈춘다. LIMIT·최대 행 수 제한에 쓴다. */
+    public void scanWhile(Predicate<Object[]> visitor) {
         read(() -> {
-            file.scanWithOffsets((offset, line) -> {
-                if (offset != ignoredOffset) {
-                    consumer.accept(RecordCodec.decode(line, schema));
-                }
-            });
+            file.scanWhile((offset, line) -> offset == ignoredOffset || visitor.test(RecordCodec.decode(line, schema)));
             return null;
         });
     }

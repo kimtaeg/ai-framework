@@ -11,9 +11,10 @@ import java.util.List;
  * @param affectedRows INSERT는 삽입한 행 수, SELECT는 반환한 행 수, EXPLAIN은 0
  * @param accessPath   SELECT·EXPLAIN이 고른 실행 경로. INSERT는 null
  * @param elapsedMs    실행 시간(밀리초, 소수). 파싱 시간은 빼고 문장 실행만 잰다.
+ * @param truncated    SELECT 결과가 엔진의 최대 행 수 제한에 걸려 잘렸는지. LIMIT으로 줄인 것은 잘린 게 아니다.
  */
 public record QueryResult(Type type, List<String> columns, List<List<Object>> rows, long affectedRows,
-                          AccessPath accessPath, double elapsedMs) {
+                          AccessPath accessPath, double elapsedMs, boolean truncated) {
     public enum Type { INSERT, SELECT, EXPLAIN }
 
     public QueryResult {
@@ -23,6 +24,6 @@ public record QueryResult(Type type, List<String> columns, List<List<Object>> ro
     }
 
     QueryResult withElapsedMs(double ms) {
-        return new QueryResult(type, columns, rows, affectedRows, accessPath, ms);
+        return new QueryResult(type, columns, rows, affectedRows, accessPath, ms, truncated);
     }
 }

@@ -15,6 +15,7 @@ import com.minidbms.sql.parser.ast.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
 
 /**
  * 재귀 하강 파서. 문법 규칙 하나가 메서드 하나에 대응하고, 각 메서드는 자기 규칙만큼 토큰을 소비한다.
@@ -23,7 +24,7 @@ import java.util.Optional;
  * script    := statement (';' statement)* ';'? EOF
  * statement := insert | select | EXPLAIN select
  * insert    := INSERT INTO ident ('(' identList ')')? VALUES '(' literal (',' literal)* ')'
- * select    := SELECT ('*' | identList) FROM ident (WHERE condition)?
+ * select    := SELECT ('*' | identList) FROM ident (WHERE condition)? (LIMIT NUMBER)?
  * condition := ident compareOp literal | ident BETWEEN literal AND literal
  * literal   := NUMBER | STRING | NULL
  * </pre>
@@ -107,7 +108,11 @@ public final class Parser {
         if (match(TokenType.WHERE)) {
             where = Optional.of(condition());
         }
-        return new SelectStatement(table, columns, where);
+        OptionalLong limit = OptionalLong.empty();
+        if (match(TokenType.LIMIT)) {
+            limit = OptionalLong.of(limitCount());
+        }
+        return new SelectStatement(table, columns, where, limit);
     }
 
     private Condition condition() {
@@ -129,6 +134,20 @@ public final class Parser {
         };
         advance();
         return new Condition(column, operator, literal());
+    }
+
+    private long limitCount() {
+        Token token = expect(TokenType.NUMBER, "row count after LIMIT");
+        long count;
+        try {
+            count = Long.parseLong(token.text());
+        } catch (NumberFormatException e) {
+            throw new ParseException("LIMIT '" + token.text() + "' is out of range (64-bit integer) at " + token.position());
+        }
+        if (count < 0) {
+            throw new ParseException("LIMIT must be 0 or greater but found " + count + " at " + token.position());
+        }
+        return count;
     }
 
     private List<String> identList(String what) {

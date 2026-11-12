@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Predicate;
 
 /**
  * 메모리 기반 B+ 트리. 키는 유일하고, 값은 리프에만 있다.
@@ -103,26 +104,36 @@ public final class BPlusTree<K extends Comparable<K>, V> {
      * from이 들어갈 리프까지 한 번만 내려간 뒤, 리프의 next를 따라 오른쪽으로 훑는다.
      */
     public List<V> range(K from, K to) {
+        List<V> result = new ArrayList<>();
+        forEachInRange(from, to, value -> {
+            result.add(value);
+            return true;
+        });
+        return result;
+    }
+
+    /**
+     * range와 같은 순서로 값을 하나씩 넘기고, visitor가 false를 돌려주면 바로 멈춘다.
+     * 결과 목록을 만들지 않으므로 LIMIT처럼 앞부분만 필요할 때 범위 전체를 메모리에 올리지 않는다.
+     */
+    public void forEachInRange(K from, K to, Predicate<V> visitor) {
         Objects.requireNonNull(from, "from");
         Objects.requireNonNull(to, "to");
-        List<V> result = new ArrayList<>();
         if (from.compareTo(to) > 0) {
-            return result;
+            return;
         }
         LeafNode<K, V> leaf = findLeaf(from);
         int i = leaf.find(from);
         i = i >= 0 ? i : -(i + 1); // from이 없으면 from보다 큰 첫 키부터
         while (leaf != null) {
             for (; i < leaf.keys.size(); i++) {
-                if (leaf.keys.get(i).compareTo(to) > 0) {
-                    return result;
+                if (leaf.keys.get(i).compareTo(to) > 0 || !visitor.test(leaf.values.get(i))) {
+                    return;
                 }
-                result.add(leaf.values.get(i));
             }
             leaf = leaf.next;
             i = 0;
         }
-        return result;
     }
 
     private LeafNode<K, V> findLeaf(K key) {

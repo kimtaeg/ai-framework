@@ -75,6 +75,8 @@ final class QueryHandler implements HttpHandler {
             json.put("rows", result.rows());
             if (result.type() == QueryResult.Type.SELECT) {
                 json.put("rowCount", result.affectedRows());
+                // true면 서버의 최대 행 수에서 잘렸다는 뜻이다. 전체가 필요하면 WHERE로 좁히거나 id 범위로 나눠 받는다.
+                json.put("truncated", result.truncated());
             }
             json.put("accessPath", result.accessPath().name());
         }

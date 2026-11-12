@@ -278,4 +278,18 @@ class BPlusTreeTest {
         assertEquals(7, stats.nodes());
         assertEquals(new BPlusTree.Stats(0, 1, 0, 1, 5), new BPlusTree<Integer, String>(5).stats());
     }
+
+    @Test
+    void forEachInRange는_visitor가_false면_멈춘다() {
+        BPlusTree<Integer, String> tree = new BPlusTree<>(3);
+        for (int k = 1; k <= 100; k++) {
+            tree.insert(k, "v" + k);
+        }
+        List<String> seen = new ArrayList<>();
+        tree.forEachInRange(10, 90, v -> {
+            seen.add(v);
+            return seen.size() < 3;
+        });
+        assertEquals(List.of("v10", "v11", "v12"), seen);
+    }
 }

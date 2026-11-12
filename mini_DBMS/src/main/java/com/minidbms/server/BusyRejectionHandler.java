@@ -5,7 +5,11 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 워커 풀과 큐가 모두 찼을 때 HttpServer의 요청을 503 SERVER_BUSY로 끝내기 위한 거절 정책.
+ * 워커 풀이 요청을 받을 수 없을 때 HttpServer의 요청을 503으로 끝내기 위한 거절 정책. 거절 이유는 둘이다.
+ * <ul>
+ *   <li>{@link Reason#BUSY}: 워커와 큐가 모두 찼다 → 503 SERVER_BUSY</li>
+ *   <li>{@link Reason#SHUTTING_DOWN}: 종료 중이라 executor.shutdown()이 불렸다 → 503 SHUTTING_DOWN</li>
+ * </ul>
  *
  * <p><b>왜 그냥 예외를 던지면 안 되나</b>: HttpServer의 dispatcher 스레드는 연결마다 내부 Exchange Runnable을 만들어
  * executor.execute()에 넘긴다. HTTP 요청을 읽어 HttpExchange를 만드는 일은 그 Runnable 안에서 일어나므로,
@@ -17,14 +21,17 @@ import java.util.concurrent.atomic.AtomicLong;
  * (한계: 헤더를 아주 느리게 보내는 클라이언트가 있으면 그동안 dispatcher가 묶인다.)
  */
 public final class BusyRejectionHandler implements RejectedExecutionHandler {
-    private static final ThreadLocal<Boolean> REJECTED = ThreadLocal.withInitial(() -> false);
+    public enum Reason { BUSY, SHUTTING_DOWN }
+
+    private static final ThreadLocal<Reason> REJECTED = new ThreadLocal<>();
 
     private final AtomicLong rejectedCount = new AtomicLong();
 
     @Override
     public void rejectedExecution(Runnable task, ThreadPoolExecutor executor) {
         rejectedCount.incrementAndGet();
-        REJECTED.set(true);
+        // ThreadPoolExecutor는 shutdown 이후의 execute도 이 핸들러로 보낸다.
+        REJECTED.set(executor.isShutdown() ? Reason.SHUTTING_DOWN : Reason.BUSY);
         try {
             task.run();
         } finally {
@@ -34,6 +41,11 @@ public final class BusyRejectionHandler implements RejectedExecutionHandler {
 
     /** 지금 스레드가 거절된 요청을 처리 중인지. 핸들러가 503으로 답할지 판단할 때 쓴다. */
     public static boolean isRejectedRequest() {
+        return REJECTED.get() != null;
+    }
+
+    /** 거절된 요청이면 그 이유, 아니면 null */
+    public static Reason rejectionReason() {
         return REJECTED.get();
     }
 

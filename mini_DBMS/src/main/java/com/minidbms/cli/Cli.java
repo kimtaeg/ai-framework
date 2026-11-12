@@ -91,7 +91,7 @@ final class Cli implements Closeable {
         out.print(TableFormatter.format(result.columns(), result.rows()));
         if (result.type() == QueryResult.Type.SELECT) {
             out.println(rowCount(result.affectedRows()) + " (" + result.accessPath().label() + ", "
-                    + formatMs(result.elapsedMs()) + " ms)");
+                    + formatMs(result.elapsedMs()) + " ms)" + (result.truncated() ? " — 최대 행 수에서 잘림" : ""));
         }
     }
 
