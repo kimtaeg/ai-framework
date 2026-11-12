@@ -8,8 +8,9 @@ from urllib.parse import quote
 import httpx
 import pytest
 
-from mini_redis.client import MiniRedisClient, MiniRedisError, MiniRedisUnavailable
+from mini_redis.client import AsyncMiniRedisClient, MiniRedisClient, MiniRedisError, MiniRedisUnavailable
 from mini_redis.core.store import MiniRedis
+from mini_redis.demo import cached_api, slow_api
 from mini_redis.server.app import create_app
 from mini_redis.server.routes import MAX_VALUE_BYTES, get_store
 from mini_redis.server.thread_server import running_server
@@ -330,3 +331,65 @@ def test_client_unavailable():
             c.get("a")
         with pytest.raises(MiniRedisError):  # MiniRedisError 의 자식이라 한 번에 잡을 수도 있다
             c.set("a", 1)
+
+
+# ===========================================================================
+# 데모 흐름 기능 테스트: Cache-Aside (cached_api → Mini Redis / slow_api)
+# 세 앱을 모두 ASGITransport 로 메모리 안에서 연결한다 (포트 불필요, slow_api 지연 0초).
+# ===========================================================================
+@pytest.fixture
+async def demo(app):
+    origin_app = slow_api.create_app(delay=0)
+    redis_http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://redis")
+    origin_http = httpx.AsyncClient(transport=httpx.ASGITransport(app=origin_app), base_url="http://origin")
+    cached_app = cached_api.create_app(cache=AsyncMiniRedisClient(http_client=redis_http), origin=origin_http)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=cached_app), base_url="http://cached") as c:
+        yield c, origin_app
+    await redis_http.aclose()
+    await origin_http.aclose()
+
+
+async def test_demo_miss_hit_invalidate(demo, client):
+    c, origin_app = demo
+    r1 = await c.get("/products/7")
+    assert r1.status_code == 200 and r1.headers["X-Cache"] == "MISS"     # 첫 요청: 원본에서 가져옴
+    assert r1.json()["name"] == "상품 7"
+
+    r2 = await c.get("/products/7")
+    assert r2.headers["X-Cache"] == "HIT"                                  # 두 번째: 캐시에서
+    assert r2.json() == r1.json()                                          # served_at 까지 같음 = 원본을 다시 안 부름
+    assert origin_app.state.calls == 1
+
+    ttl = (await client.get("/keys/product:7/ttl")).json()["ttl"]
+    assert ttl == 60                                                       # TTL 60초로 저장됨
+
+    r3 = await c.put("/products/7", json={"price": 99})
+    assert r3.status_code == 200 and r3.headers["X-Cache-Invalidated"] == "true"
+    assert (await client.get("/keys/product:7")).status_code == 404        # 캐시 키가 지워짐
+
+    r4 = await c.get("/products/7")
+    assert r4.headers["X-Cache"] == "MISS"                                 # 무효화 후 다시 MISS
+    assert r4.json()["price"] == 99 and r4.json()["version"] == 2          # 수정된 최신 값
+    assert (await c.get("/products/7")).headers["X-Cache"] == "HIT"
+
+
+async def test_demo_bypass_when_cache_down():
+    origin_app = slow_api.create_app(delay=0)
+    origin_http = httpx.AsyncClient(transport=httpx.ASGITransport(app=origin_app), base_url="http://origin")
+    dead_cache = AsyncMiniRedisClient("http://127.0.0.1:1", timeout=0.5)  # 아무도 없는 포트 = 캐시 서버 다운
+    cached_app = cached_api.create_app(cache=dead_cache, origin=origin_http)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=cached_app), base_url="http://cached") as c:
+        r = await c.get("/products/3")
+        assert r.status_code == 200 and r.headers["X-Cache"] == "BYPASS"   # 캐시가 죽어도 서비스는 응답
+        assert r.json()["id"] == 3
+        r = await c.put("/products/3", json={"name": "새 이름"})
+        assert r.status_code == 200 and r.headers["X-Cache-Invalidated"] == "false"
+    await origin_http.aclose()
+    await dead_cache.aclose()
+
+
+async def test_demo_unknown_product_not_cached(demo, client):
+    c, _ = demo
+    r = await c.get("/products/5000")
+    assert r.status_code == 404
+    assert (await client.get("/keys/product:5000")).status_code == 404     # 에러 응답은 캐시하지 않음

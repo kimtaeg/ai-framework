@@ -53,3 +53,6 @@ __pycache__/
 # Mini Redis AOF 데이터 파일
 *.aof
 *.aof.rewrite.tmp
+
+# Mini Redis 벤치마크 결과 (실행할 때마다 새로 생성)
+mini_redis/bench/result.json

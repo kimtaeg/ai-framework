@@ -110,3 +110,77 @@ class MiniRedisClient:
         resp = self._request("DELETE", "/keys", params={"pattern": pattern})
         self._raise_for_error(resp)
         return resp.json()["deleted"]
+
+
+class AsyncMiniRedisClient:
+    """async 버전. FastAPI 같은 async 앱 안에서는 반드시 이쪽을 쓴다.
+
+    동기 클라이언트(MiniRedisClient)를 async 함수 안에서 쓰면, 응답을 기다리는 동안 이벤트 루프 전체가 멈춰
+    다른 요청을 하나도 처리하지 못한다. await 로 기다리면 그동안 이벤트 루프가 다른 요청을 처리한다.
+    메서드 이름과 반환 규칙은 MiniRedisClient 와 같다.
+    """
+
+    def __init__(self, base_url: str = "http://127.0.0.1:8000", timeout: float = 2.0, http_client=None):
+        self._http = http_client or httpx.AsyncClient(base_url=base_url, timeout=timeout)
+
+    async def aclose(self) -> None:
+        await self._http.aclose()
+
+    # async with AsyncMiniRedisClient(...) as c: 문법 지원
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        await self.aclose()
+
+    async def _request(self, method: str, url: str, **kwargs) -> httpx.Response:
+        try:
+            return await self._http.request(method, url, **kwargs)
+        except httpx.TransportError as e:
+            raise MiniRedisUnavailable(e) from e
+
+    # URL 만들기·에러 변환은 동기 클라이언트의 것을 그대로 재사용 (staticmethod 라 클래스 이름으로 호출 가능)
+    _path = staticmethod(MiniRedisClient._path)
+    _raise_for_error = staticmethod(MiniRedisClient._raise_for_error)
+
+    async def get(self, key: str):
+        resp = await self._request("GET", self._path(key))
+        if resp.status_code == 404:
+            return None
+        self._raise_for_error(resp)
+        return resp.json()["value"]
+
+    async def set(self, key: str, value, ttl: int | None = None) -> None:
+        resp = await self._request("PUT", self._path(key), json={"value": value, "ttl": ttl})
+        self._raise_for_error(resp)
+
+    async def delete(self, key: str) -> bool:
+        resp = await self._request("DELETE", self._path(key))
+        if resp.status_code == 404:
+            return False
+        self._raise_for_error(resp)
+        return True
+
+    async def expire(self, key: str, ttl: int) -> bool:
+        resp = await self._request("POST", self._path(key, "/expire"), json={"ttl": ttl})
+        if resp.status_code == 404:
+            return False
+        self._raise_for_error(resp)
+        return True
+
+    async def ttl(self, key: str) -> int:
+        resp = await self._request("GET", self._path(key, "/ttl"))
+        if resp.status_code == 404:
+            return -2
+        self._raise_for_error(resp)
+        return resp.json()["ttl"]
+
+    async def incr(self, key: str, amount: int = 1) -> int:
+        resp = await self._request("POST", self._path(key, "/incr"), json={"amount": amount})
+        self._raise_for_error(resp)
+        return resp.json()["value"]
+
+    async def delete_pattern(self, pattern: str) -> int:
+        resp = await self._request("DELETE", "/keys", params={"pattern": pattern})
+        self._raise_for_error(resp)
+        return resp.json()["deleted"]
