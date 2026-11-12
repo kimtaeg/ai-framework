@@ -2,6 +2,7 @@ package com.minidbms.cli;
 
 import com.minidbms.bench.Benchmark;
 import com.minidbms.bench.DataGenerator;
+import com.minidbms.bench.LoadTest;
 import com.minidbms.server.ServeCommand;
 
 import java.io.BufferedReader;
@@ -33,7 +34,8 @@ public final class Main {
               java -jar mini-dbms.jar repl [--data ./data]
               java -jar mini-dbms.jar generate --table users --count 1000000 [--seed 42] [--data ./data]
               java -jar mini-dbms.jar bench --table users [--queries 1000] [--data ./data]
-              java -jar mini-dbms.jar serve [--port 8080] [--threads 8] [--queue 1000] [--data ./data]""";
+              java -jar mini-dbms.jar serve [--port 8080] [--threads 8] [--queue 1000] [--data ./data]
+              java -jar mini-dbms.jar loadtest [--url http://localhost:8080] [--clients 1,4,16,64] [--duration 5]""";
 
     private Main() {
     }
@@ -53,6 +55,9 @@ public final class Main {
         }
         if (args.length > 0 && args[0].equals("bench")) {
             return Benchmark.run(Arrays.copyOfRange(args, 1, args.length), out, err);
+        }
+        if (args.length > 0 && args[0].equals("loadtest")) {
+            return LoadTest.run(Arrays.copyOfRange(args, 1, args.length), out, err);
         }
         if (args.length > 0 && args[0].equals("serve")) {
             return ServeCommand.run(Arrays.copyOfRange(args, 1, args.length), out, err);

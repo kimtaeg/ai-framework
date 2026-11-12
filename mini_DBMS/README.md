@@ -6,7 +6,7 @@ Java 17로 직접 구현한 파일 기반 미니 DBMS. 외부 라이브러리는
 |---|---|---|
 | 1 | 파일 기반 SQL 처리기 (INSERT, SELECT, CLI) | ✅ |
 | 2 | 메모리 B+ 트리 id 인덱스 + 100만 건 성능 비교 | ✅ |
-| 3 | JDK HttpServer + ThreadPoolExecutor API 서버 | 진행 중 (동시성 · /query · /stats · /health) |
+| 3 | JDK HttpServer + ThreadPoolExecutor API 서버 | ✅ |
 
 ## 빠른 시작
 
@@ -25,6 +25,7 @@ java -jar build/libs/mini-dbms.jar repl --data ./data
 | `generate --table T --count N [--seed 42]` | 대용량 테스트 데이터 생성 ([아래](#대용량-데이터-생성)) |
 | `bench --table T [--queries 1000]` | 인덱스 조회 vs 선형 탐색 벤치마크 → `bench-result.md` ([아래](#벤치마크)) |
 | `serve [--port 8080] [--threads 8] [--queue 1000] [--max-rows 10000] [--grace 10]` | HTTP API 서버 ([아래](#api-서버)) |
+| `loadtest [--url URL] [--clients 1,4,16,64]` | 동시 클라이언트 수별 TPS·지연 ([아래](#부하-테스트)) |
 
 - `--data` 기본값은 `./data`. 디렉터리가 미리 있어야 한다.
 - 한 문장이 실패해도 `ERROR: ...`를 출력하고 다음 문장을 계속 실행한다. run 모드는 `[line N]`으로 문장 위치를 알려준다.
@@ -198,24 +199,28 @@ java -jar build/libs/mini-dbms.jar bench --table users [--queries 1000] [--scan-
 100만 건 결과(전체는 [`bench-result.md`](bench-result.md)): A 평균 **0.025 ms**, B 약 1,350 ms, C 약 1,220 ms — 약 5만 배.
 트리는 order 128, 높이 4, 노드 15,869개이고 테이블 로딩(인덱스 재구성)에 약 2.4 s가 걸린다.
 
-## 동시성 (Phase 3)
+## 동시성 설계 (Phase 3)
 
-`DatabaseEngine`은 여러 스레드가 `execute`를 동시에 불러도 안전하다.
+요청 하나가 지나가는 계층 순서대로, 각 계층에서 무엇이 공유되고 어떻게 보호하는지:
 
-| 대상 | 방법 |
-|---|---|
-| 테이블 캐시 | `ConcurrentHashMap.computeIfAbsent` — 테이블마다 한 번만 열고 인덱스를 재구성한다. `get` 후 `put`이면 두 스레드가 같은 파일을 따로 열어 각자의 `nextId`로 같은 id를 부여한다 |
-| 테이블 안 | 테이블마다 `ReentrantReadWriteLock`. **쓰기 락**: INSERT(id 부여 → append → 인덱스 등록 → nextId++), flush, close. **읽기 락**: 인덱스 조회·범위·전체 스캔 |
-| 읽기 경로 | `readAt`·스캔은 상태를 바꾸지 않는다. 예전 스캔은 시작할 때 flush했는데, 읽기 락은 여러 스레드가 함께 쥘 수 있어 두 스캔이 같은 버퍼를 두 번 써서 레코드가 중복됐다. 지금은 디스크 부분을 읽고 버퍼 부분을 메모리에서 이어 읽는다 |
-| 인덱스 스위치 | `volatile boolean` |
-| Lexer · Parser · Executor · Planner | 호출마다 새로 만들거나 필드가 없다. 공유하는 것은 불변 키워드 표(`Map.of`)뿐 |
+| 계층 | 공유 상태 | 방법 | 이렇게 하지 않으면 |
+|---|---|---|---|
+| HttpServer dispatcher | 연결 수락 | JDK 스레드 1개가 받고 `executor.execute()`로 넘김 | — |
+| 워커 풀 | 요청 큐 | `ThreadPoolExecutor` + 유한 `ArrayBlockingQueue`, 스레드 `db-worker-N` | 무한 큐면 과부하가 503이 아니라 끝없는 지연·메모리 증가로 나타난다 |
+| 거절 | — | `BusyRejectionHandler`: dispatcher에서 ThreadLocal 표시를 달고 실행 → 가드가 503 | 예외를 던지면 클라이언트는 응답 없이 연결이 끊긴다 |
+| 요청 통계 | 처리 수·시간 합 | `LongAdder` | `long`이면 동시 증가가 유실된다 |
+| 요청 로그 | 출력 스트림 | `PrintStream.println` 한 번에 한 줄(내부 동기화), 스택 트레이스도 한 문자열로 | 여러 번 나눠 쓰면 다른 스레드 줄이 끼어든다 |
+| 엔진 테이블 캐시 | `name → Table` | `ConcurrentHashMap.computeIfAbsent` | `get` 후 `put`이면 같은 파일을 두 번 열어 각자의 `nextId`로 id가 중복된다 |
+| 엔진 설정 | 인덱스 스위치·최대 행 수 | `volatile` | 다른 스레드에 바뀐 값이 안 보일 수 있다 |
+| 테이블 | 인덱스·`nextId`·쓰기 버퍼 | 테이블마다 `ReentrantReadWriteLock`. **쓰기**: INSERT(id 부여 → append → 인덱스 등록 → nextId++), flush, close. **읽기**: 인덱스 조회·범위·스캔 | id 중복, 인덱스에는 있는데 파일에 없는 레코드, 반쯤 쓰인 줄을 읽음 |
+| 데이터 파일 읽기 | 버퍼·채널 | 읽기 경로(`readAt`·스캔)는 상태를 바꾸지 않는다. 위치 지정 `FileChannel` 읽기 + 버퍼는 메모리에서 이어 읽기 | 예전처럼 스캔이 flush하면 읽기 락을 함께 쥔 두 스캔이 같은 버퍼를 두 번 써서 레코드가 중복된다 |
+| Lexer · Parser · Executor · Planner | 없음 | 호출마다 새로 만들거나 필드가 없다. 공유하는 것은 불변 키워드 표(`Map.of`)뿐 | — |
 
-- SELECT 하나는 처음부터 끝까지 읽기 락 하나를 쥔다. 그래서 반쯤 쓰인 줄이나 "인덱스에는 있는데 파일에는 없는" 레코드를 볼 수 없다.
-- id 부여와 append가 같은 쓰기 락 안에 있어서, 파일 순서 = id 순서가 동시 INSERT에서도 유지된다.
-- 원자성은 문장 하나 단위다(트랜잭션 없음). `close`는 다른 `execute`가 끝난 뒤에 부른다.
-
-테스트(`ConcurrencyTest`, `TableConcurrencyTest`)는 16스레드 × 1만 INSERT → id 1~160000 연속·중복 없음, INSERT/SELECT 혼합 시 항상 완전한 레코드, 재시작 후 파일·인덱스 일치를 확인한다.
-각 락을 일부러 빼면(쓰기 락 · computeIfAbsent · 읽기 락 · 스캔의 flush) 해당 테스트가 실패하는 것도 확인했다.
+- SELECT 하나는 처음부터 끝까지 읽기 락 하나를 쥔다. 원자성은 문장 하나 단위다(트랜잭션 없음).
+- id 부여와 append가 같은 쓰기 락 안에 있어서 파일 순서 = id 순서가 동시 INSERT에서도 유지된다.
+- 검증: `ConcurrencyTest`(16스레드 × 1만 INSERT → id 1~160000 연속), `TableConcurrencyTest`(버퍼가 남은 상태의 동시 스캔),
+  `ApiConcurrencyTest`(HTTP 클라이언트 50개 × 200건 → 성공 10,000, id 중복 없음), `ApiOverloadTest`(워커 1·큐 1에 60개 동시 → 200 2개, 503 58개).
+  각 락을 일부러 빼면(쓰기 락 · computeIfAbsent · 읽기 락 · 스캔의 flush · 거절 핸들러) 해당 테스트가 실패하는 것도 확인했다.
 
 ## API 서버
 
@@ -225,29 +230,78 @@ curl localhost:8080/health
 # {"status":"UP","uptimeMs":544,"pool":{"coreThreads":8,"maxThreads":8,"poolSize":1,"activeThreads":1,"queued":0,"queueCapacity":1000,"rejected":0}}
 ```
 
-| 경로 | 응답 |
+### API 명세
+
+모든 응답은 `Content-Type: application/json; charset=utf-8`이다.
+
+#### `POST /query`
+
+| 항목 | 내용 |
 |---|---|
-| `POST /query` | `{"sql": "..."}`를 실행한 결과 (아래) |
-| `GET /stats` | 워커 풀(활성 스레드·큐 길이·완료 작업·거절 수)과 요청 통계(처리 수·4xx·5xx·평균 처리 시간) |
-| `GET /health` | 200, 상태와 워커 풀 현황 |
+| 요청 헤더 | `Content-Type: application/json` (charset이 있으면 utf-8만) |
+| 요청 본문 | `{"sql": "문장; 문장; ..."}` — 최대 1MB, 다른 필드는 무시 |
+| 200 응답 | `{"results": [문장별 결과...], "elapsedMs": 전체}` |
+
+문장별 결과:
+
+| type | 필드 |
+|---|---|
+| `INSERT` | `affectedRows`, `insertedId`, `elapsedMs` |
+| `SELECT` | `columns`, `rows`(columns 순서의 배열, NULL은 `null`), `rowCount`, `truncated`, `accessPath`(`INDEX_LOOKUP`·`INDEX_RANGE`·`FULL_SCAN`), `elapsedMs` |
+| `EXPLAIN` | `columns`(`table`, `access_path`, `detail`), `rows`(계획 한 행), `accessPath`, `elapsedMs` |
 
 ```bash
-curl -X POST localhost:8080/query -H 'Content-Type: application/json' \
-     -d '{"sql": "INSERT INTO users (name) VALUES (\u0027lee\u0027); SELECT * FROM users WHERE id BETWEEN 1 AND 2"}'
+# INSERT 두 개 + 인덱스 범위 조회. here-doc을 쓰면 SQL의 작은따옴표를 이스케이프하지 않아도 된다.
+curl -s -X POST localhost:8080/query -H 'Content-Type: application/json' -d @- <<'EOF'
+{"sql": "INSERT INTO users (name, age) VALUES ('kim', 30); INSERT INTO users (name) VALUES ('lee'); SELECT * FROM users WHERE id BETWEEN 1 AND 2"}
+EOF
 ```
 ```json
 {"results":[
+   {"type":"INSERT","affectedRows":1,"insertedId":1,"elapsedMs":0.081},
    {"type":"INSERT","affectedRows":1,"insertedId":2,"elapsedMs":0.064},
-   {"type":"SELECT","columns":["id","name","age","email"],"rows":[[1,"kim",30,"kim@test.com"],[2,"lee",null,null]],
-    "rowCount":2,"accessPath":"INDEX_RANGE","elapsedMs":0.312}],
- "elapsedMs":0.425}
+   {"type":"SELECT","columns":["id","name","age","email"],"rows":[[1,"kim",30,null],[2,"lee",null,null]],
+    "rowCount":2,"truncated":false,"accessPath":"INDEX_RANGE","elapsedMs":0.312}],
+ "elapsedMs":0.497}
+```
+```bash
+# 실행 계획만
+curl -s -X POST localhost:8080/query -H 'Content-Type: application/json' -d '{"sql": "EXPLAIN SELECT * FROM users WHERE id = 1"}'
+# {"results":[{"type":"EXPLAIN","columns":["table","access_path","detail"],"rows":[["users","INDEX_LOOKUP","id = 1 (id = 1)"]],"accessPath":"INDEX_LOOKUP","elapsedMs":0.02}],"elapsedMs":0.05}
+
+# 오류
+curl -s -X POST localhost:8080/query -H 'Content-Type: application/json' -d '{"sql": "SELECT * FORM users"}'
+# 400 {"error":"PARSE_ERROR","message":"Expected FROM but found 'form' at 9"}
 ```
 
-- 행은 `columns` 순서의 배열이다(행마다 컬럼 이름을 반복하지 않는다). NULL은 JSON `null`.
-- SELECT 결과는 서버의 최대 행 수(`--max-rows`, 기본 10,000)에서 잘린다. 잘렸으면 `"truncated": true`. 필요한 만큼 `LIMIT`을 주거나 `WHERE id BETWEEN`으로 나눠 받는다.
-- EXPLAIN 결과는 `type: "EXPLAIN"`, 계획 한 행과 `accessPath`.
+- 큰 결과는 서버의 최대 행 수(`--max-rows`, 기본 10,000)에서 잘리고 `"truncated": true`가 된다. `LIMIT`을 주거나 `WHERE id BETWEEN`으로 나눠 받는다.
 - 여러 문장 중 하나가 실행 중 실패하면 그 오류만 돌려준다. 앞 문장은 이미 반영됐을 수 있다(트랜잭션 없음). 문법 오류는 전체를 먼저 파싱하므로 아무것도 실행되지 않는다.
-- `pool.completedTasks`는 HttpServer가 executor에 넘긴 작업 수라 요청 수와 다를 수 있다. 요청 수는 `requests.handled`를 본다.
+
+#### `GET /stats`
+
+```bash
+curl -s localhost:8080/stats
+```
+```json
+{"pool":{"coreThreads":8,"maxThreads":8,"poolSize":8,"largestPoolSize":8,"activeThreads":1,"queued":0,
+         "queueCapacity":1000,"completedTasks":10,"rejected":0},
+ "requests":{"handled":5,"clientErrors":2,"serverErrors":0,"averageMs":1.734},
+ "uptimeMs":775}
+```
+
+| 필드 | 뜻 |
+|---|---|
+| `pool.activeThreads` · `queued` | 지금 일하는 워커 수 · 큐에서 기다리는 요청 수 |
+| `pool.completedTasks` | executor가 끝낸 작업 수(근사값). HttpServer 내부 작업도 포함돼 요청 수와 다를 수 있다 |
+| `pool.rejected` | 503(`SERVER_BUSY`·`SHUTTING_DOWN`)으로 돌려보낸 요청 수 |
+| `requests.handled` · `averageMs` | 워커가 처리한 요청 수 · 평균 처리 시간(거절 제외) |
+
+#### `GET /health`
+
+```bash
+curl -s localhost:8080/health
+# {"status":"UP","uptimeMs":544,"pool":{...}}
+```
 
 ### 오류 응답
 
@@ -315,6 +369,41 @@ shutdown hook이 `ApiServer.stop()`을 부른다. 순서:
 - **메모리**: SELECT가 모으는 행은 많아야 `max-rows + 1`개다(넘치는지 보려고 하나 더 읽는다). 100만 건 `SELECT *`가 1.2 s·100만 행 대신 1,000행·약 9 ms로 끝난다.
 - **시간**: 행 수 제한은 결과가 큰 쿼리만 줄인다. `WHERE email = 'none'`처럼 결과는 0행인데 전체를 훑는 쿼리는 여전히 1~2 s 걸린다. 쿼리 타임아웃은 아직 없다(아래 알려진 한계).
 
+## 부하 테스트
+
+```bash
+java -jar build/libs/mini-dbms.jar loadtest [--url http://localhost:8080] [--data ./data] [--clients 1,4,16,64] \
+     [--duration 5] [--warmup 2] [--workload lookup|insert|mixed] [--server-threads 8] [--out loadtest-result.md]
+```
+
+- `--url`이 없으면 `--data` 폴더로 서버를 같은 프로세스에 띄워 잰다(localhost 루프백).
+- 클라이언트는 응답을 받은 뒤 다음 요청을 보내는 닫힌 루프다. 클라이언트 수마다 `--duration`초 동안 잰다.
+- `lookup`: `WHERE id = 무작위`(최대 id는 이진 탐색으로 찾는다, id가 1부터 연속인 generate 데이터 가정) · `insert` · `mixed`: lookup 80% + insert 20%
+
+100만 건, 워커 8, 노트북(CPU 8개) 결과:
+
+**lookup**
+
+| 클라이언트 | 요청 수 | TPS | 평균 (ms) | p50 (ms) | p99 (ms) | 최대 (ms) | 503 | 기타 오류 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 8,863 | 1,772 | 0.5485 | 0.4107 | 2.56 | 11.98 | 0 | 0 |
+| 4 | 30,943 | 6,188 | 0.6386 | 0.5280 | 2.45 | 21.78 | 0 | 0 |
+| 16 | 49,724 | 9,942 | 1.61 | 1.44 | 4.55 | 74.16 | 0 | 0 |
+| 64 | 52,742 | 10,540 | 6.07 | 5.50 | 17.81 | 71.57 | 0 | 0 |
+
+**mixed (lookup 80% + insert 20%)**
+
+| 클라이언트 | 요청 수 | TPS | 평균 (ms) | p50 (ms) | p99 (ms) | 최대 (ms) | 503 | 기타 오류 |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 11,920 | 2,384 | 0.4080 | 0.3506 | 1.45 | 8.35 | 0 | 0 |
+| 4 | 32,059 | 6,411 | 0.6143 | 0.5274 | 2.19 | 50.67 | 0 | 0 |
+| 16 | 44,031 | 8,804 | 1.81 | 1.62 | 5.35 | 54.19 | 0 | 0 |
+| 64 | 44,799 | 8,950 | 7.14 | 5.88 | 28.48 | 108.6 | 0 | 0 |
+
+- 클라이언트 1 → 4 → 16에서 TPS가 거의 비례해 늘다가 16 → 64에서 멈춘다. 워커가 8개이고 CPU도 8개라 그 이상은 큐에서 기다리는 시간만 늘어난다(p50 1.4 → 5.5 ms). 닫힌 루프라 TPS ≈ 클라이언트 수 / 평균 지연이다.
+- mixed가 lookup보다 포화 TPS가 낮고 p99가 크다. INSERT는 테이블 쓰기 락을 잡고 파일에 쓰는 동안 같은 테이블의 모든 읽기를 막기 때문이다(테이블 단위 락의 비용).
+- 503은 없다. 클라이언트 64 < 워커 8 + 큐 1000이라 거절할 일이 없다. 503은 `ApiOverloadTest`처럼 큐보다 동시 요청이 많을 때 나온다.
+
 ## 처리 흐름
 
 ```mermaid
@@ -358,7 +447,7 @@ src/main/java/com/minidbms/
 ├── sql/lexer/    Lexer, Token, TokenType
 ├── sql/parser/   Parser, ast/(Statement, InsertStatement, SelectStatement, ExplainStatement, Condition, Operator, Literal)
 ├── engine/       DatabaseEngine(유일한 진입점), Executor, Planner, Plan, AccessPath, QueryResult
-├── bench/        DataGenerator(generate 명령), UserRowGenerator, Benchmark(bench 명령)
+├── bench/        DataGenerator(generate 명령), UserRowGenerator, Benchmark(bench 명령), LoadTest(loadtest 명령)
 ├── server/       ApiServer, QueryHandler, ErrorMapper, ApiException, ThreadPoolFactory, BusyRejectionHandler,
 │                 RequestStats, ServerLog, ServeCommand(serve 명령), ServerConfig, Json
 ├── storage/      Schema, Column, ColumnType, SchemaLoader, RecordCodec, TableFile, Table
@@ -366,7 +455,7 @@ src/main/java/com/minidbms/
 └── common/       DbException과 하위 예외
 ```
 
-## 알려진 한계 (Phase 1)
+## 알려진 한계
 
 - 인덱스는 id 하나뿐이다. 다른 컬럼 조건은 항상 FULL_SCAN.
 - WHERE는 조건 하나만 지원한다. `AND`는 `BETWEEN a AND b`의 구분자로만 쓴다.
