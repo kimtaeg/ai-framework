@@ -100,7 +100,7 @@ if (isServer) {
         return;
       }
       $('#srv-out').innerHTML = `<p class="small">워커 <b>${r.body.workerId}</b> 가 처리 · 락 대기 ${r.body.lockMs.toFixed(1)}ms · 풀 대기 ${r.body.waitedMs.toFixed(1)}ms · 실행 ${r.body.execMs.toFixed(1)}ms · 왕복 ${(performance.now() - t0).toFixed(0)}ms</p>` +
-        r.body.results.map((x) => (x.type === 'insert' ? `<div class="result-block">INSERT ${x.count}건 → id ${x.ids.join(', ')}</div>` : `<div class="result-block"><div class="meta"><span class="plan ${x.plan.type}">${planLabel(x.plan)}</span> 읽은 레코드 ${x.plan.scanned}/${x.plan.total}</div>${table(x.columns, x.rows.slice(0, 50))}${x.rows.length > 50 ? `<p class="small muted">… ${x.rows.length}행 중 50행만 표시</p>` : ''}</div>`)).join('');
+        r.body.results.map((x) => (x.type === 'insert' ? `<div class="result-block">INSERT ${x.count}건 → id ${x.ids.join(', ')}</div>` : `<div class="result-block"><div class="meta"><span class="plan ${x.plan.type}">${planLabel(x.plan)}</span> 읽은 레코드 ${x.plan.scanned}/${x.plan.total}${x.plan.built ? ` · 이번에 인덱스를 만드느라 ${x.plan.built}줄을 먼저 읽음` : ''}</div>${table(x.columns, x.rows.slice(0, 50))}${x.rows.length > 50 ? `<p class="small muted">… ${x.rows.length}행 중 50행만 표시</p>` : ''}</div>`)).join('');
     } catch (e) {
       $('#srv-out').innerHTML = `<p class="bad">서버에 연결하지 못했습니다: ${esc(e.message)} — npm start 를 다시 실행했는지 확인하세요.</p>`;
     }

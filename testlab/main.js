@@ -173,7 +173,7 @@ function draw(s) {
   $('#history').innerHTML = s.history.length
     ? s.history.map((h) => `<tr><td>${time(h.startedAt)}</td><td>${esc(h.title)}${h.option ? ` (${esc(s.jobs[h.job]?.options?.[h.option] ?? h.option)})` : ''}</td><td><span class="badge ${h.status}">${STATUS[h.status] ?? h.status}</span></td><td>${dur(h.startedAt, h.endedAt)}</td><td>${esc(h.summary || '')}</td></tr>`).join('')
     : '<tr><td colspan="5" class="muted">아직 없음</td></tr>';
-  $('#reports').innerHTML = s.reports.length
+  $('#report-links').innerHTML = s.reports.length
     ? s.reports.map((r) => `<a class="btn" href="${esc(r.path)}" target="_blank" rel="noopener">${esc(r.name.replace(/\.html$/, ''))}</a>`).join('')
     : '<span class="muted">아직 없음</span>';
   return running;

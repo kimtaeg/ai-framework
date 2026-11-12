@@ -11,9 +11,11 @@
  *    schema()                    → { 테이블: { columns: [{ name, type: 'INT'|'TEXT' }] } }
  *    append(table, line)         → locator (레코드 위치)
  *    read(table, locator)        → line
- *    scan(table)                 → 반복자 [locator, line]   (처음부터 끝까지 = 선형 탐색)
+ *    scan(table, from?)          → 반복자 [locator, line]   (처음부터 끝까지 = 선형 탐색. from 을 주면 거기서부터)
+ *    end?(table) / limit?(table, end) → 여러 스레드가 한 파일을 쓸 때 "확정된 끝" 까지만 읽게 하는 상한
  *    flush()                     → 버퍼를 실제로 기록
  *    refresh?(table)             → 다른 스레드가 쓴 내용을 반영 (파일 크기 다시 읽기)
+ *    size?(table) / truncate?(table, size) → 실패한 요청이 덧붙인 레코드를 되돌릴 때 (롤백)
  */
 
 export const NULL_MARK = '\\N';
@@ -116,15 +118,24 @@ export class MemoryStorage {
     return this.files[table][locator];
   }
 
-  *scan(table) {
+  *scan(table, from = 0) {
     const f = this.files[table];
-    for (let i = 0; i < f.length; i++) {
+    for (let i = from; i < f.length; i++) {
       this.reads++;
       yield [i, f[i]];
     }
   }
 
   flush() {}
+
+  size(table) {
+    return this.files[table].length;
+  }
+
+  /** size 뒤에 덧붙인 레코드를 모두 버린다 (요청 롤백) */
+  truncate(table, size) {
+    if (size < this.files[table].length) this.files[table].length = size;
+  }
 
   /** 파일 내용 (시각화용) */
   text(table) {

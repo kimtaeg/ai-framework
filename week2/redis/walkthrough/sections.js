@@ -8,7 +8,7 @@ window.WALKTHROUGH = {
       id: 'hash', group: '저장소 · 해시 테이블', file: 'week2/redis/hashtable.js',
       title: 'fnv1a · set — 해시 함수와 저장',
       summary: '키를 정수로 바꾸고(해시), 버킷 번호를 골라 그 버킷의 연결 리스트 맨 앞에 붙입니다. 이미 있는 키면 값만 바꿉니다.',
-      must: ['h ^= str.charCodeAt(i);', 'h = Math.imul(h, 0x01000193);', 'const i = this.hash(key) & t.mask;', 't.buckets[i] = { key, value, next: t.buckets[i] };'],
+      must: ['h ^= str.charCodeAt(i);', 'h = Math.imul(h, 0x01000193);', 'const i = h & t.mask;', 't.buckets[i] = { key, value, next: t.buckets[i] };'],
       chunks: [
         { code: `export function fnv1a(str) {
   let h = 0x811c9dc5;
@@ -20,11 +20,12 @@ window.WALKTHROUGH = {
 }`, note: '글자마다 XOR 로 섞고 큰 소수를 곱해 비트를 퍼뜨립니다. Math.imul 은 32비트 정수 곱셈(넘치는 부분 버림), >>> 0 은 부호 없는 정수로. 비슷한 키도 전혀 다른 값이 나와 버킷에 고르게 퍼집니다.' },
         { code: `set(key, value) {
   this.#rehashStep();
-  const found = this.#find(key, false);
+  const h = this.hash(key);   // 해시는 한 번만 계산해서 찾기와 넣기에 함께 쓴다
+  const found = this.#find(key, false, h);
   if (found) { found.value = value; return false; }
   this.#maybeGrow();`, note: '연산마다 리해시를 한 걸음 진행합니다. 같은 키가 있으면 값만 바꾸고 끝. 없으면 넣기 전에 "넣으면 부하율이 1 을 넘는가?" 를 확인해 확장을 시작합니다.' },
         { code: `  const t = this.tables[1] ?? this.tables[0];
-  const i = this.hash(key) & t.mask;
+  const i = h & t.mask;
   if (t.buckets[i]) this.stats.collisions++;
   t.buckets[i] = { key, value, next: t.buckets[i] };
   t.used++;
@@ -39,13 +40,11 @@ window.WALKTHROUGH = {
       summary: '확장 중에는 테이블이 두 개입니다. 찾을 때는 둘 다 보고, 연산이 올 때마다 옛 테이블의 버킷 하나를 새 테이블로 옮깁니다.',
       must: ['for (const t of this.tables) {', 'if (n.key === key) return n;', 'from.buckets[this.rehashIdx] = null;', 'this.tables = [to, null];'],
       chunks: [
-        { code: `#find(key, step = true) {
+        { code: `#find(key, step = true, h = this.hash(key)) {
   if (step) this.#rehashStep();
-  for (const t of this.tables) {
-    if (!t || t.used === 0) continue;
-    for (let n = t.buckets[this.hash(key) & t.mask]; n; n = n.next)
-      if (n.key === key) return n;
-  }
+  const [a, b] = this.tables;   // a = 지금(옛) 테이블, b = 리해시 중일 때의 새 테이블
+  if (a.used) for (let n = a.buckets[h & a.mask]; n; n = n.next) if (n.key === key) return n;
+  if (b && b.used) for (let n = b.buckets[h & b.mask]; n; n = n.next) if (n.key === key) return n;
   return null;
 }`, note: '옛 테이블 → 새 테이블 순서로 봅니다. 아직 안 옮긴 키는 옛 테이블에, 옮긴 키와 새로 넣은 키는 새 테이블에 있으니 둘 다 보면 절대 놓치지 않습니다. 체인은 키가 같을 때까지 따라갑니다.' },
         { code: `#rehashStep(steps = STEP) {
@@ -70,16 +69,16 @@ window.WALKTHROUGH = {
       id: 'lookup', group: '명령 · 만료', file: 'week2/redis/miniredis.js',
       title: 'command · #lookup — 명령 실행과 지연 삭제',
       summary: '모든 명령은 command() 한 곳으로 들어오고, 키를 읽는 모든 명령은 #lookup() 을 거칩니다. 만료된 값은 여기서 걸러집니다.',
-      must: ["const name = String(args[0]).toUpperCase();", "return this[`cmd_${name}`](a);", 'if (entry.expireAt !== null && entry.expireAt <= this.now()) {', 'this.stats.expiredLazy++;'],
+      must: ["const spec = SPECS.get(args[0]) ?? SPECS.get(String(args[0]).toUpperCase());", "const result = this[spec.fn](a);", 'if (entry.expireAt !== null && entry.expireAt <= this.now()) {', 'this.stats.expiredLazy++;'],
       chunks: [
         { code: `command(args) {
-  const name = String(args[0]).toUpperCase();
-  const spec = COMMANDS[name];
+  const spec = SPECS.get(args[0]) ?? SPECS.get(String(args[0]).toUpperCase());
   if (!spec) throw err(\`알 수 없는 명령 '\${args[0]}'\`);
-  const a = args.slice(1).map(String);
-  if (a.length < spec.min) throw err(\`'\${name}' 명령의 인자 개수가 부족합니다.\`);
-  return this[\`cmd_\${name}\`](a);
-}`, note: '명령 이름 → 규칙 표(COMMANDS)에서 최소 인자 수를 확인하고 cmd_SET 같은 메서드를 부릅니다. 동기 함수라서 실행 도중 다른 요청이 끼어들 수 없습니다 → 명령 하나는 원자적.' },
+  /* 인자 개수 검사 · 인자를 문자열 배열 a 로 */
+  const result = this[spec.fn](a);
+  if (spec.write && this.maxMemory && this.usedBytes > this.maxMemory) this.#evict();
+  return result;
+}`, note: '명령 이름 → 규칙 표(SPECS: COMMANDS 에 메서드 이름을 붙여 둔 것)에서 최소 인자 수를 확인하고 cmd_SET 같은 메서드를 부릅니다. 메모리 상한(maxMemory)을 넘었으면 쓰기 명령 뒤에 오래 안 쓴 키를 지웁니다. 동기 함수라서 실행 도중 다른 요청이 끼어들 수 없습니다 → 명령 하나는 원자적.' },
         { code: `#lookup(key) {
   const entry = this.data.get(key);
   if (!entry) return null;
@@ -142,7 +141,7 @@ return 'OK';`, note: 'NX(없을 때만)·XX(있을 때만) 조건이 안 맞으�
       title: 'AofFile · loadAof — 디스크 기록과 복원 (loadAof 는 miniredis.js)',
       summary: 'fsync 정책대로 파일 끝에 한 줄씩 쓰고, 재시작하면 처음부터 다시 실행합니다. 쓰다 만 마지막 줄은 버립니다.',
       // [파일, 줄] 형태는 그 파일에서 확인 (loadAof 는 miniredis.js 에 있음)
-      must: ["if (this.policy === 'always') {", 'fsyncSync(this.fd);', 'renameSync(tmp, this.path);', ['week2/redis/miniredis.js', 'if (i >= lines.length - 2) truncated = true;']],
+      must: ["if (this.policy === 'always') {", 'fsyncSync(this.fd);', 'renameSync(tmp, this.path);', ['week2/redis/miniredis.js', 'const truncated = badLast;']],
       chunks: [
         { code: `append(args) {
   const line = JSON.stringify(args) + '\\n';
@@ -162,12 +161,14 @@ return 'OK';`, note: 'NX(없을 때만)·XX(있을 때만) 조건이 안 맞으�
   renameSync(tmp, this.path);
   this.fd = openSync(this.path, 'a');
 }`, note: '재작성은 임시 파일에 다 쓰고 fsync 한 뒤 rename 으로 바꿔치기합니다. rename 은 원자적이라 쓰는 도중 죽어도 원래 파일이 멀쩡합니다.' },
-        { code: `lines.forEach((line, i) => {
+        { code: `for (const line of lines) {
+  if (badLast) { errors++; badLast = false; }   // 뒤에 줄이 더 있으면 "깨진 줄"
   let args;
   try { args = JSON.parse(line); }
-  catch { if (i >= lines.length - 2) truncated = true; else errors++; return; }
+  catch { badLast = true; continue; }
   this.command(args);
-});`, note: '복원은 줄마다 JSON 을 풀어 그대로 command() 로 실행합니다. replaying 동안에는 다시 AOF 에 쓰지 않습니다. 마지막 줄이 깨졌으면 "쓰다 죽은 줄" 로 보고 버립니다.' },
+}
+const truncated = badLast;   // 마지막 줄이 깨져 있으면 "쓰다 죽은 줄"`, note: '복원은 줄마다 JSON 을 풀어 그대로 command() 로 실행합니다. replaying 동안에는 다시 AOF 에 쓰지 않습니다. 마지막 줄이 깨졌으면 "쓰다 죽은 줄" 로 보고 버립니다.' },
       ],
       explain: { q: '서버가 갑자기 죽었다가 다시 켜지면 데이터는 어떻게 돌아오나요?', a: 'AOF 파일을 처음부터 읽어 한 줄씩 command() 로 다시 실행해 메모리 상태를 재구성합니다. 마지막 줄이 쓰다 만 상태면 버리고, 복원 후 현재 상태만 담은 파일로 원자적으로 재작성합니다. 잃는 양은 fsync 정책에 따라 0(always)~약 1초(everysec)입니다.' },
     },

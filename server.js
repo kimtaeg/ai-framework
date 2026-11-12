@@ -5,9 +5,12 @@
 //  - /api/demo/*     : 미니 레디스를 캐시로 쓰는 느린 상품 API (cache-aside 예시)
 //  - /api/sql        : 2주차 미니 DBMS API (스레드 풀, 데이터: week2/data/db)
 import { createServer } from 'node:http';
+import { randomInt } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import { readFileSync, existsSync } from 'node:fs';
 import { extname, join, normalize, resolve, sep } from 'node:path';
+import { gzip } from 'node:zlib';
+import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { handleChat } from './server/chat.js';
 import { openPersistentRedis } from './week2/redis/persistence.js';
@@ -28,6 +31,17 @@ const TYPES = {
   '.ico': 'image/x-icon',
   '.md': 'text/markdown; charset=utf-8',
 };
+
+const gzipAsync = promisify(gzip);
+const COMPRESSIBLE = new Set(['.html', '.js', '.css', '.json', '.svg', '.md']); // 글자로 된 파일만 압축 (이미지는 이미 압축돼 있다)
+const GZIP_MIN = 1024;       // 이보다 작으면 압축해도 이득이 없다
+const GZIP_CACHE_MAX = 300;  // 압축 결과를 기억해 두는 파일 수
+
+/** 같은 컴퓨터에서 온 요청인지 (127.0.0.1, ::1) */
+export function isLoopback(address) {
+  const a = String(address ?? '').replace(/^::ffff:/, '');
+  return a === '::1' || a.startsWith('127.');
+}
 
 /** .env 파일의 KEY=VALUE 를 환경 변수로 읽는다 (이미 설정된 값은 덮어쓰지 않음) */
 export function loadEnv(file = join(ROOT, '.env')) {
@@ -51,7 +65,7 @@ export function createWeek2(dataDir = join(ROOT, 'week2', 'data'), { fsync = 'ev
   let redis = null, db = null, client = null;
   const getRedis = () => {
     if (!redis) {
-      redis = openPersistentRedis(join(dataDir, 'redis.aof'), { fsync });
+      redis = openPersistentRedis(join(dataDir, 'redis.aof'), { fsync, hashSeed: randomInt(1, 0x7fffffff) });
       redis.redis.start();
     }
     return redis.redis;
@@ -79,7 +93,14 @@ export function createWeek2(dataDir = join(ROOT, 'week2', 'data'), { fsync = 'ev
   };
 }
 
-export function createApp({ week2 = createWeek2(), testlab = createTestLab({ root: ROOT }) } = {}) {
+/**
+ * @param {object} [opts]
+ * @param {boolean} [opts.allowRemoteApi]  /api/redis · /api/sql · /api/demo 를 다른 컴퓨터에서도 쓸 수 있게 할지.
+ *   기본은 같은 컴퓨터(localhost)만. 이 API 들은 로그인 없이 SQL 과 레디스 명령을 그대로 실행하므로,
+ *   열어 두면 같은 네트워크의 누구나 데이터를 넣거나 지울 수 있다. (열려면 환경 변수 ALLOW_REMOTE_API=1)
+ */
+export function createApp({ week2 = createWeek2(), testlab = createTestLab({ root: ROOT }), allowRemoteApi = process.env.ALLOW_REMOTE_API === '1' } = {}) {
+  const gzipCache = new Map(); // 파일 경로 → { etag, body } (같은 파일을 요청마다 다시 압축하지 않게)
   const server = createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://x');
@@ -89,16 +110,49 @@ export function createApp({ week2 = createWeek2(), testlab = createTestLab({ roo
         await handleChat(req, res);
         return;
       }
-      if (url.pathname.startsWith('/api/') && (await week2.handle(req, res, url.pathname)) !== false) return;
+      if (url.pathname.startsWith('/api/')) {
+        if (!allowRemoteApi && !isLoopback(req.socket.remoteAddress)) {
+          const body = JSON.stringify({ error: 'FORBIDDEN', message: '이 API 는 서버와 같은 컴퓨터에서만 쓸 수 있습니다. (다른 컴퓨터에 열려면 서버를 ALLOW_REMOTE_API=1 로 실행)' });
+          res.writeHead(403, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }).end(body);
+          return;
+        }
+        if ((await week2.handle(req, res, url.pathname)) !== false) return;
+      }
       const path = decodeURIComponent(url.pathname);
       let file = normalize(join(ROOT, path));
       if (!(file === ROOT || file.startsWith(ROOT + sep)) || isPrivate(file.slice(ROOT.length))) {
         res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Forbidden');
         return;
       }
-      if ((await stat(file).catch(() => null))?.isDirectory()) file = join(file, 'index.html');
-      const body = await readFile(file);
-      res.writeHead(200, { 'Content-Type': TYPES[extname(file)] ?? 'application/octet-stream', 'Cache-Control': 'no-cache' });
+      let info = await stat(file).catch(() => null);
+      if (info?.isDirectory()) {
+        file = join(file, 'index.html');
+        info = await stat(file);
+      }
+      if (!info) throw new Error('없는 파일');
+      // ETag = 파일의 크기와 고친 시각. 브라우저가 가진 사본과 같으면 본문 없이 304 만 보낸다 (다시 내려받지 않음)
+      const etag = `W/"${info.size.toString(16)}-${Math.floor(info.mtimeMs).toString(16)}"`;
+      const ext = extname(file);
+      const headers = { 'Content-Type': TYPES[ext] ?? 'application/octet-stream', 'Cache-Control': 'no-cache', ETag: etag };
+      if (req.headers['if-none-match'] === etag) {
+        res.writeHead(304, headers).end();
+        return;
+      }
+      let body = await readFile(file);
+      // 글자로 된 파일은 gzip 으로 줄여 보낸다 (번들 JS 는 보통 1/4 ~ 1/5 로 준다)
+      if (COMPRESSIBLE.has(ext) && body.length >= GZIP_MIN && /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''))) {
+        let hit = gzipCache.get(file);
+        if (!hit || hit.etag !== etag) {
+          hit = { etag, body: await gzipAsync(body) };
+          if (gzipCache.size >= GZIP_CACHE_MAX) gzipCache.delete(gzipCache.keys().next().value);
+          gzipCache.set(file, hit);
+        }
+        body = hit.body;
+        headers['Content-Encoding'] = 'gzip';
+        headers.Vary = 'Accept-Encoding';
+      }
+      headers['Content-Length'] = body.length;
+      res.writeHead(200, headers);
       res.end(body);
     } catch {
       if (!res.headersSent) res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -113,7 +167,9 @@ export function createApp({ week2 = createWeek2(), testlab = createTestLab({ roo
 // node server.js 로 직접 실행했을 때만 서버를 띄운다 (테스트에서는 createApp 만 가져다 씀)
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   loadEnv();
-  const PORT = 5200; 
+  // 포트와 주소는 환경 변수로 바꿀 수 있다 (예: PORT=8080 HOST=127.0.0.1 node server.js)
+  const PORT = Number(process.env.PORT) || 5200;
+  const HOST = process.env.HOST || undefined; // 안 주면 모든 주소 (학습 페이지는 다른 기기에서도 볼 수 있다. API 는 위에서 따로 막는다)
   const app = createApp();
   const stop = async () => {
     app.testlab.stopJob(); // 돌고 있던 테스트 작업도 끈다
@@ -122,7 +178,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   };
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
-  app.listen(PORT, () => {
+  app.listen(PORT, HOST, () => {
     console.log(`mini-react dev server → http://localhost:${PORT}`);
     console.log(process.env.GEMINI_API_KEY ? '학습 도우미 챗봇: 사용 가능' : '학습 도우미 챗봇: 꺼짐 (.env 에 GEMINI_API_KEY 를 넣으면 켜집니다)');
   });

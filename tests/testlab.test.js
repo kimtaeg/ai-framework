@@ -87,7 +87,8 @@ describe('잠금과 로그인', () => {
       assert.equal(r.status, 302, p);
       assert.equal(r.headers.get('location'), `/testlab/login.html?next=${encodeURIComponent(p)}`);
     }
-    for (const p of ['/testlab/main.js', '/bench/results.json', '/load/k6-mixed.js']) assert.equal((await fetch(s.base + p)).status, 401, p);
+    for (const p of ['/testlab/main.js', '/bench/results.json', '/load/k6-mixed.js', '/%62ench/results.json', '/BENCH/results.json']) assert.equal((await fetch(s.base + p)).status, 401, p);
+    for (const p of ['/%62ench/index.html', '/BENCH/index.html']) assert.equal((await fetch(s.base + p, { redirect: 'manual' })).status, 302, p);
     assert.equal((await fetch(s.base + '/testlab/login.html')).status, 200);
     assert.equal((await fetch(s.base + '/index.html')).status, 200, '다른 페이지는 그대로');
     assert.equal((await fetch(s.base + '/api/testlab/state')).status, 401);

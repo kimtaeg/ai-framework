@@ -10,19 +10,27 @@
  *                       그 뒤에 그 워커에게 가는 조회는 반드시 알림이 반영된 상태에서 실행된다.
  *  - 워커가 죽으면 새로 만들고, 처리 중이던 요청은 실패로 돌려준다.
  *  - 너무 오래 걸리는 요청(timeout)은 그 워커를 끝내고 새로 만든다.
+ *  - 묶음 처리 (maxBatch > 1): 일이 밀려 있으면 한 워커에게 여러 개를 한 번에 보낸다.
+ *      워커는 하나 끝낼 때마다 "다음 일 주세요" 를 기다리지 않고 받은 일을 이어서 처리한다
+ *      → 요청마다 드는 스레드 간 왕복(메시지 보내고 깨우기)이 줄어, 짧은 조회가 몰릴 때 처리량이 오른다.
+ *      한 워커가 가져가는 양은 "밀린 일 ÷ 워커 수" 까지만 (한 워커에 몰아주고 나머지가 노는 일이 없게).
  */
 import { Worker } from 'node:worker_threads';
 
 export class ThreadPool {
   /**
    * @param {string|URL} file  워커 스크립트
-   * @param {{ size?: number, workerData?: any, timeoutMs?: number }} [opts]
+   * @param {{ size?: number, workerData?: any, timeoutMs?: number, maxBatch?: number, canBatch?: (task: any) => boolean }} [opts]
+   *   maxBatch: 한 워커에 한 번에 보내는 일의 최대 개수 (기본 1 = 묶지 않음). 워커 스크립트가 'batch' 메시지를 처리해야 한다
+   *   canBatch: 묶어도 되는 일인지 (기본: 모두). 오래 걸리는 일은 묶지 않아야 다른 워커가 나눠 처리한다
    */
   constructor(file, opts = {}) {
     this.file = file;
     this.size = Math.max(1, opts.size ?? 4);
     this.workerData = opts.workerData;
     this.timeoutMs = opts.timeoutMs ?? 15000;
+    this.maxBatch = Math.max(1, opts.maxBatch ?? 1);
+    this.canBatch = opts.canBatch ?? (() => true);
     this.queue = [];
     this.workers = [];
     this.seq = 0;
@@ -45,10 +53,11 @@ export class ThreadPool {
         slot.ready = true;
         return this.#next();
       }
-      if (!slot.busy || m.seq !== slot.busy.seq) return;
-      const job = slot.busy;
-      clearTimeout(job.timer);
-      slot.busy = null;
+      const batch = slot.busy;
+      const job = batch?.jobs.get(m.seq);
+      if (!job) return;
+      batch.jobs.delete(m.seq);
+      const now = performance.now();
       slot.done++;
       if (m.error) {
         this.stats.failed++;
@@ -58,8 +67,16 @@ export class ThreadPool {
         job.reject(e);
       } else {
         this.stats.completed++;
-        job.resolve({ result: m.result, workerId: id, waitedMs: job.startedAt - job.enqueuedAt, execMs: performance.now() - job.startedAt });
+        // 묶음 안의 일은 앞의 일이 끝난 때부터 실행된 것으로 본다
+        job.resolve({ result: m.result, workerId: id, waitedMs: batch.lastAt - job.enqueuedAt, execMs: now - batch.lastAt });
       }
+      batch.lastAt = now;
+      if (batch.jobs.size) {
+        batch.timer.refresh(); // 남은 일에 다시 제한 시간을 준다 (제한 시간은 일 하나 기준)
+        return;
+      }
+      clearTimeout(batch.timer);
+      slot.busy = null;
       this.#next();
     });
     worker.on('error', (e) => this.#crash(slot, e));
@@ -75,8 +92,10 @@ export class ThreadPool {
     if (i === -1) return;
     if (slot.busy) {
       clearTimeout(slot.busy.timer);
-      this.stats.failed++;
-      slot.busy.reject(error);
+      for (const job of slot.busy.jobs.values()) {
+        this.stats.failed++;
+        job.reject(error);
+      }
       slot.busy = null;
     }
     slot.worker.removeAllListeners();
@@ -115,11 +134,21 @@ export class ThreadPool {
       }
       if (!slot) return;
       this.rr = (this.workers.indexOf(slot) + 1) % n;
-      const job = this.queue.shift();
-      job.startedAt = performance.now();
-      job.timer = setTimeout(() => this.#crash(slot, new Error(`요청이 ${this.timeoutMs}ms 안에 끝나지 않았습니다.`)), this.timeoutMs);
-      slot.busy = job;
-      slot.worker.postMessage({ type: 'task', seq: job.seq, task: job.task });
+      // 이 워커가 가져갈 개수: 밀린 일을 워커 수로 나눈 몫까지, 맨 앞부터 묶어도 되는 일이 이어지는 만큼
+      let take = 1;
+      if (this.maxBatch > 1 && this.canBatch(this.queue[0].task)) {
+        const share = Math.min(this.maxBatch, Math.ceil(this.queue.length / n));
+        while (take < share && this.canBatch(this.queue[take].task)) take++;
+      }
+      const picked = this.queue.splice(0, take);
+      const batch = {
+        jobs: new Map(picked.map((j) => [j.seq, j])),
+        lastAt: performance.now(),
+        timer: setTimeout(() => this.#crash(slot, new Error(`요청이 ${this.timeoutMs}ms 안에 끝나지 않았습니다.`)), this.timeoutMs),
+      };
+      slot.busy = batch;
+      if (take === 1) slot.worker.postMessage({ type: 'task', seq: picked[0].seq, task: picked[0].task });
+      else slot.worker.postMessage({ type: 'batch', tasks: picked.map((j) => ({ seq: j.seq, task: j.task })) });
     }
   }
 
@@ -153,8 +182,10 @@ export class ThreadPool {
     for (const w of this.workers) {
       if (!w.busy) continue;
       clearTimeout(w.busy.timer);
-      this.stats.failed++;
-      w.busy.reject(new Error('스레드 풀이 닫혔습니다 (실행 중이던 요청).'));
+      for (const job of w.busy.jobs.values()) {
+        this.stats.failed++;
+        job.reject(new Error('스레드 풀이 닫혔습니다 (실행 중이던 요청).'));
+      }
       w.busy = null;
     }
     await Promise.all(this.workers.map((w) => w.worker.terminate()));

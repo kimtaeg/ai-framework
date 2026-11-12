@@ -100,13 +100,35 @@ describe('API 서버 (스레드 풀 4개)', () => {
     assert.ok(ms < 900, `${ms.toFixed(0)}ms`);
   });
 
-  test('쓰는 동안 같은 테이블 읽기는 기다린다 (반쯤 쓴 데이터를 읽지 않게)', async () => {
+  test('기본(스냅샷 읽기): 쓰는 동안에도 조회는 기다리지 않고 직전까지의 내용을 본다', async () => {
     const slowWrite = post("INSERT INTO users (name) VALUES ('slow')", 300);
     await new Promise((r) => setTimeout(r, 50));
     const read = await post("SELECT id FROM users WHERE name = 'slow'");
-    assert.equal(read.body.results[0].rows.length, 1, '쓰기가 끝난 뒤에 읽어서 새 행이 보임');
-    assert.ok(read.body.lockMs > 100, `락 대기 ${read.body.lockMs.toFixed(0)}ms`);
+    assert.equal(read.body.results[0].rows.length, 0, '아직 끝나지 않은 쓰기는 보이지 않음');
+    assert.ok(read.body.lockMs < 100, `락 대기 ${read.body.lockMs.toFixed(0)}ms`);
     await slowWrite;
+    const after = await post("SELECT id FROM users WHERE name = 'slow'");
+    assert.equal(after.body.results[0].rows.length, 1, '쓰기가 끝난 뒤에는 보임');
+  });
+
+  test('--lock-reads (snapshotReads: false): 쓰는 동안 같은 테이블 읽기는 기다린다', async () => {
+    const lockDir = mkdtempSync(join(tmpdir(), 'minidb-lock-'));
+    const ls = await startDbServer({ port: 0, dir: lockDir, workers: 2, snapshotReads: false });
+    const lpost = async (sql, delayMs) => {
+      const r = await fetch(`http://127.0.0.1:${ls.port}/sql`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sql, delayMs }) });
+      return { status: r.status, body: await r.json() };
+    };
+    try {
+      const slowWrite = lpost("INSERT INTO users (name) VALUES ('slow')", 300);
+      await new Promise((r) => setTimeout(r, 50));
+      const read = await lpost("SELECT id FROM users WHERE name = 'slow'");
+      assert.equal(read.body.results[0].rows.length, 1, '쓰기가 끝난 뒤에 읽어서 새 행이 보임');
+      assert.ok(read.body.lockMs > 100, `락 대기 ${read.body.lockMs.toFixed(0)}ms`);
+      await slowWrite;
+    } finally {
+      await ls.close();
+      rmSync(lockDir, { recursive: true, force: true });
+    }
   });
 
   test('다른 테이블은 서로 막지 않는다', async () => {
@@ -137,10 +159,14 @@ describe('API 서버 (스레드 풀 4개)', () => {
     assert.equal((await fetch(`${base}/elsewhere`)).status, 404);
   });
 
-  test('실패한 요청 뒤에도 서버는 계속 정상 (락이 풀려 있음)', async () => {
+  test('실패한 요청 뒤에도 서버는 계속 정상 (락이 풀려 있음 · 앞 문장 INSERT 후 실패해도 id 중복 없음)', async () => {
     await post("INSERT INTO users (name, age) VALUES ('x', 'not-int')");
-    const ok = await post("INSERT INTO users (name) VALUES ('after-error')");
-    assert.equal(ok.status, 200);
+    const partial = await post("INSERT INTO users (name) VALUES ('saved-before-err'); SELECT nope FROM users");
+    assert.equal(partial.status, 400);
+    const more = await Promise.all(Array.from({ length: 8 }, (_, i) => post(`INSERT INTO users (name) VALUES ('after-err-${i}')`)));
+    for (const r of more) assert.equal(r.status, 200);
+    const allIds = (await post('SELECT id FROM users')).body.results[0].rows.map(([id]) => id);
+    assert.equal(new Set(allIds).size, allIds.length, 'id 중복 없음');
     assert.deepEqual(s.svc.locks.state().users, { readers: 0, writer: false, waiting: 0 });
   });
 

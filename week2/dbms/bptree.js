@@ -20,6 +20,7 @@ export class BPlusTree {
     this.order = order;
     this.maxKeys = order - 1;
     this.root = this.#leaf();
+    this.last = this.root; // 맨 오른쪽 리프 (가장 큰 키가 있는 곳)
     this.size = 0;
     this.height = 1;
     this.stats = { splits: 0 };
@@ -86,6 +87,16 @@ export class BPlusTree {
    */
   insert(key, value) {
     if (typeof key !== 'number' || Number.isNaN(key)) throw new TypeError('B+ 트리 키는 숫자여야 합니다.');
+    // 빠른 길: 지금까지의 어떤 키보다 크고(자동 증가 id 가 항상 그렇다) 맨 오른쪽 리프에 자리가 있으면
+    // 루트부터 내려가지 않고 그 리프 끝에 바로 붙인다. 쪼개야 할 때만 아래의 일반 경로로 간다.
+    const last = this.last;
+    const n = last.keys.length;
+    if (n > 0 && n < this.maxKeys && key > last.keys[n - 1]) {
+      last.keys.push(key);
+      last.values.push(value);
+      this.size++;
+      return;
+    }
     const path = [];
     const leaf = this.#findLeaf(key, path);
     const i = BPlusTree.lowerBound(leaf.keys, key);
@@ -100,6 +111,7 @@ export class BPlusTree {
     const mid = Math.ceil(leaf.keys.length / 2);
     const right = { leaf: true, keys: leaf.keys.splice(mid), values: leaf.values.splice(mid), next: leaf.next };
     leaf.next = right;
+    if (leaf === this.last) this.last = right;
     this.stats.splits++;
     // 리프 분할: 오른쪽의 첫 키를 "복사" 해서 부모로 올린다 (리프에도 그대로 남음 → B+ 트리의 특징)
     this.#insertIntoParent(leaf, right.keys[0], right, path);

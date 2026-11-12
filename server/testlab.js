@@ -17,7 +17,7 @@
 import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, statSync, rmSync, readFileSync, writeFileSync, renameSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, posix, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
@@ -483,16 +483,25 @@ export function createTestLab({ root = ROOT, passwordHash, jobs = DEFAULT_JOBS, 
       return json(res, 404, { error: '없는 주소' }), true;
     }
 
-    // --- 보호 경로의 정적 파일
-    if (PROTECTED.some((pre) => p === pre.slice(0, -1) || p.startsWith(pre)) && !PUBLIC_IN_LAB.has(p)) {
+    // --- 보호 경로의 정적 파일 (정적 파일 서빙과 동일하게 경로 디코딩·정규화 후 검사)
+    let decoded;
+    try {
+      decoded = decodeURIComponent(p);
+    } catch {
+      res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }).end('Bad Request');
+      return true;
+    }
+    const norm = posix.normalize(decoded.replace(/\\/g, '/'));
+    const normLower = norm.toLowerCase();
+    if (PROTECTED.some((pre) => normLower === pre.slice(0, -1) || normLower.startsWith(pre)) && !PUBLIC_IN_LAB.has(normLower)) {
       if (!getHash()) {
         res.writeHead(503, { 'Content-Type': 'text/plain; charset=utf-8' }).end('실험실 비밀번호가 설정되지 않았습니다. 서버 폴더에서: node server/testlab.js --set-password');
         return true;
       }
       if (authed(req)) return false; // 로그인됨 → 정적 파일 그대로
-      const isPage = p.endsWith('/') || p.endsWith('.html') || p === '/testlab' || p === '/bench' || p === '/load';
+      const isPage = normLower.endsWith('/') || normLower.endsWith('.html') || normLower === '/testlab' || normLower === '/bench' || normLower === '/load';
       if (isPage && req.method === 'GET') {
-        res.writeHead(302, { Location: `/testlab/login.html?next=${encodeURIComponent(p)}`, 'Cache-Control': 'no-store' }).end();
+        res.writeHead(302, { Location: `/testlab/login.html?next=${encodeURIComponent(norm)}`, 'Cache-Control': 'no-store' }).end();
       } else {
         res.writeHead(401, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }).end('로그인이 필요합니다.');
       }

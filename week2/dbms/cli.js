@@ -27,7 +27,12 @@ export function runCli(argv, { out = (s) => process.stdout.write(s + '\n'), err 
     args.splice(i, 2);
     return v;
   };
-  const dataDir = resolve(take('--data', 'week2/data/db'));
+  const dataArg = take('--data', 'week2/data/db');
+  if (!dataArg || dataArg.startsWith('--')) {
+    err('오류: --data 뒤에 데이터 폴더를 지정하세요.');
+    return 1;
+  }
+  const dataDir = resolve(dataArg);
   const json = args.includes('--json');
   if (json) args.splice(args.indexOf('--json'), 1);
   const [cmd, ...rest] = args;

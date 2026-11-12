@@ -55,9 +55,9 @@ const NAMES = ['redis', 'db', 'sql', 'print', 'sleep', 'time', 'HashTable', 'BPl
  */
 export async function runCode(code, env, opts = {}) {
   const logs = [];
-  let stopped = false; // 시간 제한에 걸리면 true → sleep/print 가 코드를 멈춘다 (뒤에서 계속 도는 것 방지)
+  let isStopped = false; // 시간 제한에 걸리면 true → sleep/print 가 코드를 멈춘다 (뒤에서 계속 도는 것 방지)
   const checkStop = () => {
-    if (stopped) throw new Error('시간 제한으로 실행을 멈췄습니다.');
+    if (isStopped) throw new Error('시간 제한으로 실행을 멈췄습니다.');
   };
   const push = (type, text) => {
     checkStop();
@@ -90,9 +90,9 @@ export async function runCode(code, env, opts = {}) {
     const limit = opts.timeoutMs ?? 15000;
     let timer;
     run.catch(() => {}); // 멈춘 뒤 나오는 에러는 무시
-    await Promise.race([run, new Promise((_, no) => { timer = setTimeout(() => { stopped = true; no(new Error(`${limit / 1000}초 안에 끝나지 않았습니다.`)); }, limit); })]).finally(() => clearTimeout(timer));
+    await Promise.race([run, new Promise((_, no) => { timer = setTimeout(() => { isStopped = true; no(new Error(`${limit / 1000}초 안에 끝나지 않았습니다.`)); }, limit); })]).finally(() => clearTimeout(timer));
   } catch (e) {
-    if (stopped) {
+    if (isStopped) {
       error = { message: e.message, line: null };
       logs.push({ type: 'error', text: `✗ ${e.message}` });
       opts.onLog?.(logs.at(-1));

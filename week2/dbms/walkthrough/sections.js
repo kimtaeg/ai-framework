@@ -93,7 +93,7 @@ window.WALKTHROUGH = {
   for (const [, loc] of t.index.range(plan.lo, plan.hi)) { take(this.storage.read(t.name, loc)); ... }
 } else {
   for (const [, line] of this.storage.scan(t.name)) { take(line); ... }
-}`, note: '어느 경로든 읽은 줄은 take() 로 들어가 모든 WHERE 조건 검사 → 열 선택. 계획은 "어떤 줄을 읽을지" 만 정하고 조건 검사는 공통이라, 인덱스를 써도 다른 조건이 함께 적용됩니다. take() 는 조건에 쓰는 열만 먼저 꺼내 검사하고, 맞는 줄만 전체를 디코딩합니다 (전체 읽기에서 대부분의 줄은 탈락하므로 훨씬 빠름).' },
+}`, note: '어느 경로든 읽은 줄은 take() 로 들어가 모든 WHERE 조건 검사 → 열 선택. 계획은 "어떤 줄을 읽을지" 만 정하고 조건 검사는 공통이라, 인덱스를 써도 다른 조건이 함께 적용됩니다. take() 는 조건에 쓰는 열만 먼저 꺼내 검사하고, 맞는 줄만 전체를 디코딩합니다 (전체 읽기에서 대부분의 줄은 탈락하므로 훨씬 빠름). 범위가 9줄을 넘으면 한 줄씩 read() 하는 대신 그 위치부터 64KB 씩 이어 읽습니다 (id 순서 = 파일 순서). API 서버의 워커는 autoIndex 옵션을 켜서, id 가 아닌 열의 = 조건도 처음 한 번만 전체를 읽고 다음부터는 해시 인덱스(값 → 위치)로 그 줄만 읽습니다.' },
       ],
       explain: { q: 'WHERE id = ? 와 WHERE email = ? 는 내부에서 어떻게 다르게 실행되나요?', a: 'choosePlan 이 id 의 = 조건을 보면 index-lookup 을 골라 B+ 트리에서 위치를 찾고 그 줄 하나만 읽습니다. email 은 인덱스가 없어서 full-scan 으로 파일을 처음부터 끝까지 읽으며 비교합니다. 100만 건에서 0.038ms 대 1초로 약 2만 7천 배 차이가 났습니다.' },
     },
@@ -190,18 +190,19 @@ window.WALKTHROUGH = {
       id: 'pool', group: 'Phase 3 · API 서버', file: 'week2/dbms/pool.js',
       title: 'ThreadPool — 일 나눠 주기와 알림',
       summary: '요청은 큐에 넣고, 쉬는 워커를 돌아가며 찾아 맡깁니다. 워커가 죽으면 새로 만들고, 너무 오래 걸리면 끊습니다.',
-      must: ['const job = this.queue.shift();', "slot.worker.postMessage({ type: 'task', seq: job.seq, task: job.task });", "for (const w of this.workers) if (w.id !== except) w.worker.postMessage({ type: 'notify', message });"],
+      must: ['const picked = this.queue.splice(0, take);', "if (take === 1) slot.worker.postMessage({ type: 'task', seq: picked[0].seq, task: picked[0].task });", "for (const w of this.workers) if (w.id !== except) w.worker.postMessage({ type: 'notify', message });"],
       chunks: [
         { code: `#next() {
   while (this.queue.length) {
     /* rr 부터 돌며 ready && !busy 인 워커 찾기 */
     if (!slot) return;
-    const job = this.queue.shift();
-    job.timer = setTimeout(() => this.#crash(slot, new Error(...)), this.timeoutMs);
-    slot.busy = job;
-    slot.worker.postMessage({ type: 'task', seq: job.seq, task: job.task });
+    /* take = 이 워커가 가져갈 개수: 밀린 일 ÷ 워커 수 (최대 maxBatch) */
+    const picked = this.queue.splice(0, take);
+    slot.busy = batch;   // { jobs, timer: setTimeout(() => this.#crash(slot, new Error(...)), this.timeoutMs) }
+    if (take === 1) slot.worker.postMessage({ type: 'task', seq: picked[0].seq, task: picked[0].task });
+    else slot.worker.postMessage({ type: 'batch', tasks: picked.map((j) => ({ seq: j.seq, task: j.task })) });
   }
-}`, note: '쉬는 워커가 있는 동안 큐에서 꺼내 보냅니다. 모두 바쁘면 그대로 큐에 남고, 워커가 결과를 보내오면 다시 #next(). 시간 제한을 넘기면 그 워커를 끝내고 새로 만들어 서버 전체가 멈추지 않게 합니다.' },
+}`, note: '쉬는 워커가 있는 동안 큐에서 꺼내 보냅니다. 일이 밀려 있으면 한 워커에 여러 개를 묶어 보내, 요청마다 드는 스레드 간 왕복을 줄입니다. 모두 바쁘면 그대로 큐에 남고, 워커가 결과를 보내오면 다시 #next(). 시간 제한을 넘기면 그 워커를 끝내고 새로 만들어 서버 전체가 멈추지 않게 합니다.' },
         { code: `broadcast(message, except = -1) {
   for (const w of this.workers) if (w.id !== except) w.worker.postMessage({ type: 'notify', message });
 }`, note: '모든 워커에 알림. 워커 하나가 받은 메시지는 보낸 순서대로 처리되므로, 알림을 먼저 보내면 그 뒤에 그 워커에게 가는 조회는 반드시 알림이 반영된 다음에 실행됩니다.' },
@@ -212,12 +213,12 @@ window.WALKTHROUGH = {
       id: 'service', group: 'Phase 3 · API 서버', file: 'week2/dbms/service.js',
       title: 'createDbService.query — 락 · 실행 · 인덱스 공유',
       summary: 'API 서버의 중심. 파싱으로 읽기/쓰기를 판단하고, 락을 잡고, 워커에 실행을 맡기고, 새 인덱스를 다른 워커에 알린 뒤 락을 풉니다.',
-      must: ['const { writes, reads } = Database.analyze(sql);', 'const release = await locks.acquire({ read: reads, write: writes });', "if (res.type === 'insert' && res.entries.length) pool.broadcast({ type: 'index', table: res.table, entries: res.entries }, r.workerId);", 'release();'],
+      must: ['const { writes, reads } = Database.analyze(sql, params ?? null);', 'const release = await locks.acquire({ read: reads, write: writes });', "if (res.type === 'insert' && res.entries.length) pool.broadcast({ type: 'index', table: res.table, entries: res.entries }, r.workerId);", 'release();'],
       chunks: [
-        { code: `const { writes, reads } = Database.analyze(sql);   // 문법 에러는 여기서 바로
+        { code: `const { writes, reads } = Database.analyze(sql, params ?? null);   // 문법 에러는 여기서 바로
 const release = await locks.acquire({ read: reads, write: writes });
 try {
-  const r = await pool.run({ sql, delayMs });`, note: '메인 스레드에서 먼저 파싱해 어떤 테이블을 읽고 쓰는지 알아냅니다. 문법이 틀리면 워커를 쓰지도 않고 400. 그다음 테이블별 읽기/쓰기 락을 잡고 워커에게 맡깁니다.' },
+  const r = await pool.run({ sql, delayMs });`, note: '메인 스레드에서 먼저 파싱해 어떤 테이블을 읽고 쓰는지 알아냅니다. 문법이 틀리면 워커를 쓰지도 않고 400. 그다음 테이블별 읽기/쓰기 락을 잡고 워커에게 맡깁니다. 기본 설정(snapshotReads)에서는 LockManager 가 읽기 락을 건너뛰어 조회가 쓰기를 기다리지 않습니다 — 워커가 확정된 끝 위치까지만 읽기 때문에 반쯤 쓴 행은 보이지 않습니다.' },
         { code: `  for (const res of r.result) {
     if (res.type === 'insert' && res.entries.length)
       pool.broadcast({ type: 'index', table: res.table, entries: res.entries }, r.workerId);

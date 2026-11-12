@@ -11,6 +11,7 @@
  *  "DB" 는 일부러 latencyMs 만큼 기다리는 가짜 저장소다. (실제 DB 조회·외부 API 호출 비용을 흉내)
  */
 import { readJson } from './api.js';
+import { createSingleFlight } from './client.js';
 
 export const SEED_PRODUCTS = [
   { id: 1, name: '기계식 키보드', price: 89000, stock: 12 },
@@ -27,7 +28,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * 네트워크를 거치지 않아 빠르지만, 서버가 여러 대면 서로 공유되지 않고 서버를 다시 켜면 사라진다.
  */
 export class LocalCache {
-  constructor({ now = () => Date.now() } = {}) { this.map = new Map(); this.now = now; }
+  constructor({ now = () => Date.now() } = {}) { this.map = new Map(); this.now = now; this.flights = createSingleFlight(); }
   async get(key) {
     const e = this.map.get(key);
     if (!e) return null;
@@ -42,8 +43,12 @@ export class LocalCache {
   async getOrLoad(key, loader, opts = {}) {
     const cached = await this.get(key);
     if (cached !== null) return { value: JSON.parse(cached), hit: true };
-    const value = await loader();
-    await this.set(key, JSON.stringify(value), opts);
+    // 같은 키를 동시에 놓친 요청들은 loader 를 한 번만 실행하고 결과를 함께 받는다 (캐시 스탬피드 방어)
+    const { value } = await this.flights.run(key, async () => {
+      const v = await loader();
+      await this.set(key, JSON.stringify(v), opts);
+      return v;
+    });
     return { value, hit: false };
   }
 }
@@ -64,6 +69,7 @@ export function createProductApi(opts = {}) {
   const db = new Map(SEED_PRODUCTS.map((p) => [p.id, { ...p }])); // 가짜 DB (캐시가 아니라 원본이라 Map 사용)
   const counters = { dbQueries: 0 };
   const localCache = new LocalCache(); // ?cache=local 비교용
+  const flights = createSingleFlight(); // 상품 한 건 조회의 캐시 스탬피드 방어 (같은 상품을 동시에 놓쳐도 DB 는 한 번)
 
   async function dbFind(id) {
     counters.dbQueries++;
@@ -110,8 +116,12 @@ export function createProductApi(opts = {}) {
             // 없는 상품도 짧게 캐시해 둔다 (negative caching) → 없는 id 로 DB 를 계속 두드리는 것을 막음
             return v === null ? done(404, { error: 'NOT_FOUND' }, 'HIT') : done(200, v, 'HIT'), true;
           }
-          const p = await dbFind(id);
-          await cache.set(key, JSON.stringify(p), { ttl: p ? ttl : 5, tags: ['products'] });
+          // 캐시 종류(미니 레디스 / 메모리)마다 따로 묶는다 — 서로 다른 캐시에 저장하므로
+          const { value: p } = await flights.run(`${cache === localCache ? 'local' : 'redis'}:${key}`, async () => {
+            const found = await dbFind(id);
+            await cache.set(key, JSON.stringify(found), { ttl: found ? ttl : 5, tags: ['products'] });
+            return found;
+          });
           return p ? done(200, p, 'MISS') : done(404, { error: 'NOT_FOUND' }, 'MISS'), true;
         }
         if (req.method === 'PUT') {
