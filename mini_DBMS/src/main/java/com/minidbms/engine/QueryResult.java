@@ -6,8 +6,8 @@ import java.util.List;
 /**
  * 문장 하나의 실행 결과.
  *
- * @param columns      SELECT가 돌려주는 컬럼 이름(스키마 표기). INSERT는 빈 목록
- * @param rows         SELECT 결과 행. 값은 Long, String, null(NULL). INSERT는 빈 목록
+ * @param columns      SELECT가 돌려주는 컬럼 이름(스키마 표기). INSERT는 ["id"]
+ * @param rows         SELECT 결과 행. 값은 Long, String, null(NULL). INSERT는 부여된 id 한 행 [[id]]
  * @param affectedRows INSERT는 삽입한 행 수, SELECT는 반환한 행 수
  */
 public record QueryResult(Type type, List<String> columns, List<List<Object>> rows, long affectedRows, long elapsedMs) {

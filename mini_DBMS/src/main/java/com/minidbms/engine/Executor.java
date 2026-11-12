@@ -46,11 +46,13 @@ final class Executor {
             record[targets[i]] = toStoredValue(insert.values().get(i), schema.column(targets[i]), schema);
         }
         // 검증이 모두 끝난 뒤에 id를 뽑는다. 실패한 INSERT가 id를 소모하지 않게 하려고.
-        record[table.idIndex()] = table.nextId();
+        long id = table.nextId();
+        record[table.idIndex()] = id;
 
         table.table().file().append(RecordCodec.encode(record));
         table.table().file().flush();
-        return new QueryResult(QueryResult.Type.INSERT, List.of(), List.of(), 1, 0);
+        // JDBC의 generated keys처럼 부여한 id를 결과 행으로 돌려준다.
+        return new QueryResult(QueryResult.Type.INSERT, List.of(TableState.ID_COLUMN), List.of(List.of(id)), 1, 0);
     }
 
     /** values[i]가 들어갈 스키마 컬럼 인덱스를 돌려준다. */

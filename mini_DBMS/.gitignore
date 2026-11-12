@@ -1,5 +1,7 @@
 .gradle/
 build/
-data/
+# 실행하면 생기는 .tbl은 제외하고 예제 스키마만 남긴다.
+data/*
+!data/*.schema
 *.iml
 .idea/

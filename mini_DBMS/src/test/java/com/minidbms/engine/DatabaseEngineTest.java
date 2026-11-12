@@ -67,6 +67,8 @@ class DatabaseEngineTest {
         QueryResult insert = one("INSERT INTO users VALUES ('kim', 30)");
         assertEquals(QueryResult.Type.INSERT, insert.type());
         assertEquals(1, insert.affectedRows());
+        assertEquals(List.of("id"), insert.columns());
+        assertEquals(List.of(row(1L)), insert.rows());
 
         one("INSERT INTO users VALUES ('lee', 20)");
         QueryResult select = one("SELECT * FROM users");

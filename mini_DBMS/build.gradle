@@ -33,6 +33,7 @@ test {
 
 // java -jar 한 번으로 실행되도록 런타임 의존성(Jackson)까지 jar 안에 풀어 넣는다.
 jar {
+    archiveFileName = 'mini-dbms.jar'
     manifest {
         attributes 'Main-Class': 'com.minidbms.cli.Main'
     }
