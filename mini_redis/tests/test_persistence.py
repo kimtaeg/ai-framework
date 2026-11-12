@@ -6,6 +6,9 @@ tmp_path: pytest 가 테스트마다 새로 만들어 주는 빈 임시 폴더 �
 import json
 import logging
 import os
+import stat
+import sys
+import time
 
 import httpx
 import pytest
@@ -148,6 +151,37 @@ def test_incr_on_key_with_ttl_keeps_absolute_expiry(aof_path, clock):
     assert restore(aof_path, clock).get("c") is None
 
 
+def test_persist_after_ttl_survives_restart(aof_path, clock):
+    # SET(10초 뒤 만료) → PERSIST 순서로 기록된 키는, 원래 만료 시각이 지난 뒤 재시작해도 살아 있어야 한다
+    r = MiniRedis(clock=clock, aof=AOF(aof_path, fsync="always"))
+    r.set("k", "v", ttl=10)
+    clock.advance(5)
+    r.persist("k")
+    r.aof.close()
+    clock.advance(100)
+    restored = restore(aof_path, clock)
+    assert restored.get("k") == "v"
+    assert restored.ttl("k") == -1
+
+
+def test_expireat_extends_after_original_expiry(aof_path, clock):
+    # SET(10초) → EXPIREAT(100초 뒤) 순서. 20초 뒤 재시작해도 늘린 만료 시각 기준으로 살아 있어야 한다
+    r = MiniRedis(clock=clock, aof=AOF(aof_path, fsync="always"))
+    r.set("k", "v", ttl=10)
+    r.expire("k", 100)
+    r.aof.close()
+    clock.advance(20)
+    restored = restore(aof_path, clock)
+    assert restored.get("k") == "v"
+    assert restored.ttl("k") == 80
+
+
+def test_invalid_expire_at_in_file_raises(aof_path, clock):
+    write_file(aof_path, '{"cmd":"SET","args":["a",1,"내일"]}\n')
+    with pytest.raises(AOFCorruptError):
+        restore(aof_path, clock)
+
+
 # ===========================================================================
 # 손상된 파일
 # ===========================================================================
@@ -210,6 +244,18 @@ def test_everysec_buffers_until_flush(aof_path, clock):
         assert f.read().strip() == '{"cmd":"SET","args":["a",1]}'
 
 
+def test_everysec_flushes_by_itself(aof_path, clock):
+    # 서버 앱 없이 직접 써도 AOF 자체 flush 스레드가 주기마다 디스크에 기록한다
+    r = MiniRedis(clock=clock, aof=AOF(aof_path, fsync="everysec", flush_interval=0.05))
+    r.set("a", 1)
+    deadline = time.time() + 2
+    while line_count(aof_path) == 0 and time.time() < deadline:
+        time.sleep(0.01)
+    assert line_count(aof_path) == 1           # flush() 를 부르지 않았는데도 기록됨
+    r.aof.close()
+    assert r.aof._flusher is None              # close 하면 스레드도 정리
+
+
 def test_always_and_no_write_immediately(aof_path, clock):
     for policy in ("always", "no"):
         path = aof_path + "." + policy
@@ -217,6 +263,50 @@ def test_always_and_no_write_immediately(aof_path, clock):
         r.set("a", 1)
         assert line_count(path) == 1               # flush 를 기다리지 않고 바로 파일에 보임
         r.aof.close()
+
+
+# ===========================================================================
+# 파일 권한 (다른 사용자가 AOF 내용을 읽지 못하게)
+# ===========================================================================
+posix_only = pytest.mark.skipif(sys.platform == "win32", reason="POSIX 권한 비트는 Windows 에서 의미가 다름")
+
+
+@posix_only
+def test_new_aof_is_owner_only(aof_path, clock):
+    old_umask = os.umask(0o022)                # 흔한 기본값: 새 파일이 644(모두 읽기 가능)가 되는 설정
+    try:
+        r = MiniRedis(clock=clock, aof=AOF(aof_path, fsync="always"))
+        r.set("secret", "pw")
+        r.aof.close()
+    finally:
+        os.umask(old_umask)
+    assert stat.S_IMODE(os.stat(aof_path).st_mode) == 0o600
+
+
+@posix_only
+def test_rewrite_keeps_permissions(aof_path, clock):
+    r = MiniRedis(clock=clock, aof=AOF(aof_path, fsync="always"))
+    r.set("a", 1)
+    os.chmod(aof_path, 0o640)                  # 운영자가 일부러 바꿔 둔 권한
+    r.aof.rewrite(r)
+    assert stat.S_IMODE(os.stat(aof_path).st_mode) == 0o640
+    r.aof.close()
+
+
+@posix_only
+def test_rewrite_new_file_is_owner_only(aof_path, clock):
+    r = MiniRedis(clock=clock, aof=AOF(aof_path))
+    r.set("a", 1)                              # everysec: 아직 파일이 없을 수도 있음 → rewrite 가 새로 만든다
+    old_umask = os.umask(0o022)
+    try:
+        os.makedirs(os.path.dirname(aof_path), exist_ok=True)
+        if os.path.exists(aof_path):
+            os.remove(aof_path)
+        r.aof.rewrite(r)
+    finally:
+        os.umask(old_umask)
+    assert stat.S_IMODE(os.stat(aof_path).st_mode) == 0o600
+    r.aof.close()
 
 
 def test_invalid_fsync_policy():

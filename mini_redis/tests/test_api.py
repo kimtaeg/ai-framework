@@ -3,6 +3,7 @@
 httpx.AsyncClient + ASGITransport: 실제 서버(포트)를 띄우지 않고 FastAPI 앱을 메모리 안에서 직접 호출한다.
 """
 
+import asyncio
 from urllib.parse import quote
 
 import httpx
@@ -393,3 +394,69 @@ async def test_demo_unknown_product_not_cached(demo, client):
     r = await c.get("/products/5000")
     assert r.status_code == 404
     assert (await client.get("/keys/product:5000")).status_code == 404     # 에러 응답은 캐시하지 않음
+
+
+async def test_demo_stale_get_does_not_survive_put(app, client):
+    # 경합 재현: 캐시 미스 GET 이 원본에서 v1 을 읽고 느리게(0.2초) 돌아오는 사이,
+    # PUT 이 원본을 v2 로 고치고 캐시를 지운다. Lock 이 없으면 GET 이 뒤늦게 v1 을 저장해 60초간 옛 값이 남는다.
+    origin_app = slow_api.create_app(delay=0.2, write_delay=0)
+    redis_http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://redis")
+    origin_http = httpx.AsyncClient(transport=httpx.ASGITransport(app=origin_app), base_url="http://origin")
+    cached_app = cached_api.create_app(cache=AsyncMiniRedisClient(http_client=redis_http), origin=origin_http)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=cached_app), base_url="http://cached") as c:
+        get_task = asyncio.create_task(c.get("/products/9"))   # v1 을 읽는 중인 GET
+        await asyncio.sleep(0.05)                               # GET 이 원본 응답을 기다리는 시점
+        put = await c.put("/products/9", json={"price": 1})    # Lock 때문에 GET 이 끝날 때까지 기다린다
+        assert put.status_code == 200 and put.json()["version"] == 2
+        assert (await get_task).json()["version"] == 1          # GET 은 수정 전 값을 받았지만
+        after = await c.get("/products/9")
+        assert after.json()["version"] == 2                     # 캐시에는 옛 값이 남지 않았다
+        assert after.json()["price"] == 1
+    await redis_http.aclose()
+    await origin_http.aclose()
+
+
+async def test_demo_concurrent_misses_call_origin_once(app):
+    origin_app = slow_api.create_app(delay=0.1)
+    redis_http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://redis")
+    origin_http = httpx.AsyncClient(transport=httpx.ASGITransport(app=origin_app), base_url="http://origin")
+    cached_app = cached_api.create_app(cache=AsyncMiniRedisClient(http_client=redis_http), origin=origin_http)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=cached_app), base_url="http://cached") as c:
+        responses = await asyncio.gather(*(c.get("/products/4") for _ in range(10)))
+    assert all(r.status_code == 200 for r in responses)
+    assert origin_app.state.calls == 1                          # cache stampede 없음: 원본은 한 번만
+    assert sorted(r.headers["X-Cache"] for r in responses) == ["HIT"] * 9 + ["MISS"]
+    await redis_http.aclose()
+    await origin_http.aclose()
+
+
+async def test_cached_api_closes_only_clients_it_created():
+    injected_cache = AsyncMiniRedisClient("http://127.0.0.1:1")
+    cached_app = cached_api.create_app(cache=injected_cache)    # origin 은 앱이 직접 만든다
+    async with cached_app.router.lifespan_context(cached_app):
+        pass
+    assert cached_app.state.origin.is_closed                    # 직접 만든 클라이언트는 닫고
+    assert not injected_cache._http.is_closed                   # 주입받은 클라이언트는 그대로 둔다
+    await injected_cache.aclose()
+
+    injected_origin = httpx.AsyncClient(base_url="http://127.0.0.1:1")
+    cached_app = cached_api.create_app(origin=injected_origin)  # 반대로 cache 만 직접 만든다
+    async with cached_app.router.lifespan_context(cached_app):
+        pass
+    assert cached_app.state.cache._http.is_closed
+    assert not injected_origin.is_closed
+    await injected_origin.aclose()
+
+
+def test_running_server_cleans_up_on_startup_timeout(app):
+    import threading
+    import time
+
+    before = threading.active_count()
+    with pytest.raises(RuntimeError):
+        with running_server(app, startup_timeout=0):   # 시작을 기다리지 못하고 바로 시간 초과
+            pass
+    deadline = time.time() + 5
+    while threading.active_count() > before and time.time() < deadline:
+        time.sleep(0.01)
+    assert threading.active_count() == before          # 뒤늦게 시작한 서버 스레드까지 정리됨

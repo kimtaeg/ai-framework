@@ -12,6 +12,7 @@
 import argparse
 import asyncio
 import json
+import math
 import os
 import platform
 import sys
@@ -35,7 +36,7 @@ def percentile(sorted_values: list[float], p: float) -> float:
     """정렬된 값에서 p 백분위수 (nearest-rank 방식). p95 = 100개 중 95번째로 느린 값."""
     if not sorted_values:
         return 0.0
-    rank = max(1, round(p / 100 * len(sorted_values)))  # 1부터 세는 순위
+    rank = max(1, math.ceil(p / 100 * len(sorted_values)))  # 1부터 세는 순위. nearest-rank 는 올림 (11개의 p95 = 11번째)
     return sorted_values[rank - 1]
 
 
@@ -173,12 +174,26 @@ def print_hashtable_table(h: dict) -> None:
     print(f"{'배율':<12} {h['put_ratio']:>9.1f}x {h['get_ratio']:>9.1f}x")
 
 
-def main() -> None:
+def positive_int(text: str) -> int:
+    """argparse 용 타입: 1 이상의 정수만 허용.
+
+    0 이면 Semaphore(0) 에서 영원히 기다리거나(동시성), 측정값이 없어 0으로 나누게 된다(요청 수).
+    """
+    try:
+        value = int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"정수가 아닙니다: {text!r}")
+    if value < 1:
+        raise argparse.ArgumentTypeError(f"1 이상이어야 합니다: {value}")
+    return value
+
+
+def main(argv=None) -> None:
     parser = argparse.ArgumentParser(description="Mini Redis 벤치마크")
-    parser.add_argument("--requests", type=int, default=200)
-    parser.add_argument("--concurrency", type=int, default=10)
+    parser.add_argument("--requests", type=positive_int, default=200)
+    parser.add_argument("--concurrency", type=positive_int, default=10)
     parser.add_argument("--only-hashtable", action="store_true", help="HTTP 비교는 건너뛰고 자료구조 비교만")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)  # argv=None 이면 실제 명령줄 인자를 읽는다 (테스트는 리스트를 넘긴다)
 
     result = {
         "measured_at": time.strftime("%Y-%m-%d %H:%M:%S"),

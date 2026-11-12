@@ -4,7 +4,7 @@ Python 내장 `dict` 없이 **해시 테이블을 직접 구현**해서 만든 �
 마지막에는 느린 API 앞에 캐시로 붙였을 때의 성능 차이를 측정했습니다.
 
 - 언어/스택: Python 3.11+ (개발 환경 3.13.9), FastAPI, uvicorn, Pydantic v2, pytest, httpx
-- 테스트: 123개 (통과 122 + 의도된 실패 시연 xfail 1)
+- 테스트: 155개 (통과 154 + 의도된 실패 시연 xfail 1)
 
 ---
 
@@ -38,16 +38,22 @@ pip install -r mini_redis/requirements.txt
 ```
 
 ### 서버 실행 순서 (터미널 3개)
+`source` 로 켠 가상환경은 **그 터미널에만** 적용됩니다. 새 터미널을 열 때마다 먼저 활성화하세요.
+(안 하면 `uvicorn` 을 찾지 못하거나 다른 환경의 패키지를 쓰게 됩니다)
 ```bash
-# 1) Mini Redis — 포트 8000 (반드시 워커 1개)
+# 터미널 1) Mini Redis — 포트 8000 (반드시 워커 1개)
+source mini_redis/.venv/bin/activate
 uvicorn mini_redis.server.app:app --workers 1 --port 8000
 
-# 2) 느린 원본 API — 포트 8001
+# 터미널 2) 느린 원본 API — 포트 8001
+source mini_redis/.venv/bin/activate
 uvicorn mini_redis.demo.slow_api:app --port 8001
 
-# 3) 캐시를 붙인 API — 포트 8002
+# 터미널 3) 캐시를 붙인 API — 포트 8002
+source mini_redis/.venv/bin/activate
 uvicorn mini_redis.demo.cached_api:app --port 8002
 ```
+벤치마크·테스트를 돌리는 터미널에서도 똑같이 활성화합니다.
 
 | 환경 변수 | 기본값 | 설명 |
 |---|---|---|
@@ -82,30 +88,31 @@ python -m mini_redis.demo.race_demo                        # 서버 쪽 incr 과
 ```
 mini_redis/
 ├── core/                    ← 웹을 전혀 모르는 순수 Python (단독 테스트 가능)
-│   ├── hashtable.py         해시 테이블: Node, HashTable, fnv1a_64, MISSING 센티넬
+│   ├── hashtable.py         해시 테이블: Node, HashTable, fnv1a_64(+seed), mix64, MISSING 센티넬
 │   ├── store.py             MiniRedis: set/get/delete/expire/ttl/persist/incr/keys/delete_pattern/flush_all/stats
-│   │                        + AOF 전용 apply_command/snapshot, active 만료용 sample_expire
+│   │                        + AOF 전용 apply_command/purge_expired/snapshot, active 만료용 sample_expire
 │   ├── expiry.py            active_expire_cycle: 표본 20개, 25% 초과면 반복, 최대 25ms
-│   └── persistence.py       AOF: append/flush/close/replay/rewrite, AOFCorruptError
+│   └── persistence.py       AOF: append/flush/close/replay/rewrite, everysec flush 스레드, AOFCorruptError
 ├── server/                  ← FastAPI 껍데기 (검증 + 변환만)
-│   ├── app.py               create_app: 저장소 1개, lifespan(replay·백그라운드 태스크·종료 flush), 에러 형식 통일
+│   ├── app.py               create_app: 저장소 1개, lifespan(replay·active 만료 태스크·종료 close), 에러 형식 통일
 │   ├── routes.py            엔드포인트 13개, 의존성 get_store/valid_key, 크기 제한
 │   ├── schemas.py           Pydantic 요청/응답 모델 (strict 정수 검증)
 │   └── thread_server.py     running_server: 실제 uvicorn 을 스레드로 (테스트·데모용)
 ├── client.py                MiniRedisClient(동기) / AsyncMiniRedisClient(비동기), MiniRedisUnavailable
 ├── demo/
 │   ├── slow_api.py          0.5초 걸리는 원본 상품 API (포트 8001)
-│   ├── cached_api.py        Cache-Aside 캐시 API (포트 8002): HIT / MISS / BYPASS
+│   ├── cached_api.py        Cache-Aside 캐시 API (포트 8002): HIT / MISS / BYPASS, 상품별 asyncio.Lock
 │   └── race_demo.py         GET→SET 유실, Lock 유무 비교 시연
 ├── bench/
 │   └── benchmark.py         캐시 유무 비교 + HashTable vs dict → bench/result.json
 ├── tests/
 │   ├── fakes.py             FakeClock (가짜 시계)
-│   ├── test_hashtable.py    22개
-│   ├── test_store.py        23개
-│   ├── test_persistence.py  19개
-│   ├── test_api.py          49개
-│   └── test_concurrency.py  10개
+│   ├── test_hashtable.py    29개
+│   ├── test_store.py        27개
+│   ├── test_persistence.py  26개
+│   ├── test_api.py          53개
+│   ├── test_concurrency.py  10개
+│   └── test_bench.py        10개 (벤치마크 도우미)
 └── requirements.txt
 ```
 
@@ -136,13 +143,13 @@ MiniRedis.set()  ─ core/store.py           ┐
    │  ⑦ _log("SET", key, value, expire_at)  │
    ▼                                        │
 HashTable.put() ─ core/hashtable.py         │
-   │  fnv1a_64(key) & (capacity-1) → 버킷   │
+   │  mix64(fnv1a_64(key, seed)) & (cap-1)  │
    │  체인 검색 → 덮어쓰기 or 앞에 삽입       │
    │  size > capacity×0.75 → _resize(2배)   │
    ▼                                        │
 AOF.append() ─ core/persistence.py          │
    │  {"cmd":"SET","args":[...]} 한 줄       │
-   │  always: 즉시 fsync / everysec: 버퍼     ┘
+   │  always: 즉시 fsync / everysec: 버퍼    ┘
    ▼
 응답 {"key": "user:1", "value": {...}, "ttl": 60}
 ```
@@ -166,23 +173,25 @@ uvicorn 시작
    │
    ▼
 lifespan 시작 부분 (아직 요청을 받지 않음)
-   │  ① aof.replay(store)  ── AOF 파일을 처음부터 읽어 store.apply_command() 로 재실행
-   │       · 절대 만료 시각이 이미 지난 키는 버림
+   │  ① aof.replay(store)  ── AOF 파일을 한 줄씩 읽어 store.apply_command() 로 재실행
    │       · 마지막 줄이 잘려 있으면 경고 후 잘라냄, 중간이 깨졌으면 AOFCorruptError 로 시작 중단
-   │  ② asyncio.create_task(aof_flush_loop)     ── everysec 일 때 1초마다 aof.flush()
-   │  ③ asyncio.create_task(active_expire_loop) ── 100ms 마다 active_expire_cycle()
+   │       · 다 읽은 뒤 store.purge_expired() ── 꺼져 있는 동안 만료된 키를 한 번에 버림
+   │  ② asyncio.create_task(active_expire_loop) ── 100ms 마다 active_expire_cycle()
    ▼
 yield  ──────────── 이 동안 요청 처리 ────────────
    │
-   │   이벤트 루프 (스레드 1개)
-   │   ┌───────────────────────────────────────────────────────────┐
-   │   │ 요청A 처리 │ 요청B 처리 │ active 만료 │ 요청C │ fsync │ ...   │
-   │   └───────────────────────────────────────────────────────────┘
+   │   이벤트 루프 (스레드 1개) ── 저장소를 만지는 건 이 스레드뿐
+   │   ┌──────────────────────────────────────────────────────┐
+   │   │ 요청A 처리 │ 요청B 처리 │ active 만료 │ 요청C │ ...        │
+   │   └──────────────────────────────────────────────────────┘
    │     ↑ 한 번에 하나씩만 실행. 전환은 await 지점에서만 일어남
+   │
+   │   aof-flush 스레드 (everysec 일 때, AOF 가 첫 기록 때 스스로 띄움)
+   │     1초마다 AOF Lock 을 잡고 파일 버퍼만 flush + fsync (저장소 데이터는 건드리지 않음)
    ▼
 lifespan 종료 부분 (SIGTERM / Ctrl+C)
-   │  ④ 백그라운드 태스크 cancel
-   │  ⑤ aof.close() ── 버퍼에 남은 명령을 fsync 하고 파일 닫기
+   │  ③ active 만료 태스크 cancel
+   │  ④ aof.close() ── flush 스레드 정지, 남은 버퍼를 fsync 하고 파일 닫기
    ▼
 종료
 ```
@@ -206,14 +215,17 @@ GET /products/7  (포트 8002)
    │
    ├─ cache.get("product:7")  ── Mini Redis(8000)
    │     ├─ 연결 실패(MiniRedisUnavailable) → slow_api 호출 → X-Cache: BYPASS
-   │     ├─ 값 있음                         → 바로 반환       → X-Cache: HIT   (약 13ms)
+   │     ├─ 값 있음                         → 바로 반환       → X-Cache: HIT   (약 17ms)
    │     └─ 없음
-   │           └─ slow_api(8001) 호출 (0.5초)
-   │                 └─ cache.set("product:7", 상품, ttl=60) → X-Cache: MISS (약 500ms)
+   │           └─ async with product_lock(7):            ← 상품 7 의 미스·수정은 한 줄로
+   │                 ├─ cache.get 한 번 더 → 앞 요청이 채웠으면 X-Cache: HIT
+   │                 └─ slow_api(8001) 호출 (0.5초)
+   │                       └─ cache.set("product:7", 상품, ttl=60) → X-Cache: MISS (약 500ms)
    │
 PUT /products/7
-   ├─ slow_api 원본 수정 (version+1)
-   └─ cache.delete("product:7")  → 다음 GET 은 MISS 로 최신 값을 다시 캐시
+   └─ async with product_lock(7):                  ← 진행 중인 미스 GET 이 저장을 끝낸 뒤에
+         ├─ slow_api 원본 수정 (version+1)
+         └─ cache.delete("product:7")  → 다음 GET 은 MISS 로 최신 값을 다시 캐시
 ```
 
 ---
@@ -234,17 +246,20 @@ _buckets (list, 크기 = capacity, 항상 2의 거듭제곱)
 | 설계 | 내용 | 이유 |
 |---|---|---|
 | 분리 체이닝 | 같은 버킷에 들어온 키는 단일 연결 리스트로 잇고, 새 노드는 맨 앞에 넣음 | 구현이 단순하고 삭제가 쉬움 (개방 주소법은 삭제 표시가 필요) |
-| FNV-1a 64비트 | 시작값 `0xcbf29ce484222325`에 바이트마다 `XOR → ×0x100000001b3 → & 64비트 마스크`. 키는 UTF-8 바이트로 변환 | 짧은 코드로 고른 분포. 내장 `hash()`는 실행마다 값이 바뀌어 재현이 안 됨 |
-| 비트 AND 인덱스 | `hash & (capacity - 1)` | 용량이 2의 거듭제곱이면 `%`와 결과가 같고 더 빠름 |
-| 리사이징 | `size > capacity × 0.75`이면 2배로 늘리고 전체 rehash. 노드 객체는 재사용하고 `next`만 바꿈 | 체인을 짧게 유지. 키는 "원래 칸" 또는 "원래 칸 + 옛 용량"으로만 이동 |
+| FNV-1a 64비트 | 시작값 `0xcbf29ce484222325`에 바이트마다 `XOR → ×0x100000001b3 → & 64비트 마스크`. 키는 UTF-8 바이트로 변환 | 짧은 코드로 고른 분포. `fnv1a_64(key)`(seed 0)는 공개 테스트 벡터와 같은 표준값 |
+| 해시 seed + `mix64` | 테이블마다 `secrets.randbits(64)` seed를 시작값에 XOR하고, MurmurHash3의 fmix64로 64비트를 섞은 뒤 인덱스를 구함 | **해시 충돌 DoS 방어**: seed가 고정이면 공격자가 같은 버킷에 몰리는 키를 미리 만들어 체인을 O(n)으로 늘릴 수 있음. FNV 하위 비트는 시작값 하위 비트에만 좌우되므로 섞기도 필요 |
+| 비트 AND 인덱스 | `mix64(fnv1a_64(key, seed)) & (capacity - 1)` | 용량이 2의 거듭제곱이면 `%`와 결과가 같고 더 빠름 |
+| 리사이징 | `size > capacity × 0.75`이면 2배로 늘리고 전체 rehash. 노드 객체는 재사용하고 `next`만 바꿈 | 체인을 짧게 유지 |
+| 축소 | `size < capacity × 0.1`이면 절반으로 줄임 (처음 용량 밑으로는 안 줄임) | 많이 넣고 대부분 지운 뒤 빈 버킷만 남아 `random_key()`·`keys()`가 빈칸을 오래 훑는 문제 방지 |
 | `MISSING` 센티넬 | `object()`로 만든 유일한 객체 | `None`을 값으로 저장할 수 있게 하려고. `get(k, MISSING) is MISSING`이면 키 없음 |
-| `random_key()` | 무작위 버킷에서 시작해 비어 있지 않은 버킷을 찾고, 그 체인에서 하나를 고름 | Active 만료의 표본 추출용. 한 바퀴 안에 반드시 끝남 |
+| `random_key()` | 무작위 버킷을 최대 32번 찔러보고, 실패하면 무작위 위치부터 순서대로 찾은 뒤 그 체인에서 하나를 고름 | Active 만료의 표본 추출용. 축소 덕분에 부하율이 0.1 이상이라 대부분 몇 번 안에 끝남 |
 
 시간 복잡도
 | 연산 | 평균 | 최악 | 설명 |
 |---|---|---|---|
-| `put` / `get` / `remove` / `contains` | O(1) | O(n) | 최악은 모든 키가 한 버킷에 몰릴 때 |
-| `_resize` | O(n) | O(n) | 용량을 2배씩 키우므로 `put` 비용을 나눠 보면 O(1) (분할 상환) |
+| `put` / `get` / `remove` / `contains` | O(1) | O(n) | 최악은 모든 키가 한 버킷에 몰릴 때 (seed 를 모르면 의도적으로 만들기 어려움) |
+| `_resize` | O(n) | O(n) | 용량을 2배씩 키우고(0.75) 절반씩 줄이므로(0.1) 사이 간격이 넓어 `put`/`remove` 비용을 나눠 보면 O(1) (분할 상환) |
+| `random_key` | O(1) | O(capacity) | 최악은 32번 찔러 모두 빈 버킷일 때 |
 | `keys()` | O(n + capacity) | | 제너레이터라 메모리는 O(1) |
 
 ### 5-2. 동시성: 싱글 스레드인데 왜 안전한가
@@ -252,7 +267,7 @@ _buckets (list, 크기 = capacity, 항상 2의 거듭제곱)
 1. **uvicorn 워커 1개**: 프로세스가 하나라서 저장소도 하나입니다. 워커가 여러 개면 프로세스마다 저장소가 따로 생깁니다.
 2. **모든 엔드포인트와 의존성은 `async def`**: FastAPI는 일반 `def` 함수를 스레드 풀에서 실행합니다. 그러면 여러 스레드가 동시에 저장소를 건드립니다. `async def`는 이벤트 루프 스레드 하나에서만 실행됩니다. 자세한 설명은 `server/routes.py` 상단 주석에 있습니다.
 3. **저장소 메서드에는 `await`가 없음**: 이벤트 루프는 `await`에서만 다른 코루틴으로 넘어갑니다. 그래서 `MiniRedis.incr()`이 실행되는 동안에는 다른 요청이 절대 끼어들지 못합니다. Redis의 싱글 스레드 모델과 같은 원리입니다.
-4. **백그라운드 태스크도 같은 루프**: `active_expire_loop`와 `aof_flush_loop`는 스레드가 아니라 asyncio 태스크입니다. 저장소와 동시에 실행되지 않습니다.
+4. **active 만료도 같은 루프**: `active_expire_loop`는 스레드가 아니라 asyncio 태스크라서 요청 처리와 동시에 실행되지 않습니다. 유일한 다른 스레드는 everysec용 `aof-flush` 스레드인데, 이 스레드는 저장소 데이터를 건드리지 않고 AOF 파일 버퍼만 AOF Lock 안에서 flush합니다.
 5. **`threading.Lock` 안전망**: 누군가 저장소를 스레드에서 직접 쓰더라도 안전하게 하려고 모든 공개 메서드를 `with self._lock:`으로 감쌌습니다. 공개 메서드끼리는 서로 부르지 않고 Lock 없는 내부 도우미(`_expire_if_needed`, `_delete`)를 씁니다. `Lock`은 같은 스레드가 두 번 잡으면 데드락이 나기 때문입니다. 잠그는 순서는 항상 저장소 Lock → AOF Lock입니다.
 6. **서버 쪽 `incr`**: 서버가 요청 하나를 원자적으로 처리해도, 클라이언트가 GET 후 SET으로 증가시키면 두 요청 사이에 다른 요청이 끼어듭니다. 읽기·수정·쓰기를 요청 하나로 묶은 것이 `POST /keys/{key}/incr`입니다.
 
@@ -273,6 +288,7 @@ _buckets (list, 크기 = capacity, 항상 2의 거듭제곱)
 - **Lazy 만료**: 키를 다루는 모든 메서드가 먼저 `_expire_if_needed()`를 호출합니다. `now >= expire_at`이면 삭제하고 없는 키로 처리합니다.
 - **Active 만료**: Lazy만 있으면 다시 읽지 않는 키가 메모리에 계속 남습니다. 그래서 100ms마다 `active_expire_cycle()`이 표본 20개를 검사하고, 만료 비율이 25%를 넘으면 반복합니다. 한 번에 최대 25ms로 제한해서 요청이 오래 멈추지 않게 합니다.
 - **`ttl()` 반환값**: -2는 키 없음, -1은 만료 없음, 그 외에는 남은 초를 **올림**한 값입니다. 0.3초 남은 키가 0을 돌려주면 이미 사라진 키처럼 보이기 때문입니다.
+- **유한한 TTL만 허용**: `inf`는 올림 계산에서 `OverflowError`를, `nan`은 비교가 항상 거짓이라 키가 바로 지워지는 문제를 만듭니다. 그래서 `_check_ttl()`이 `math.isfinite`로 거절합니다.
 - Redis와 같은 규칙: `set`은 기존 TTL을 지우고, `incr`은 TTL을 유지하고, `persist`는 TTL을 제거하고, `expire(key, 0 이하)`는 키를 즉시 삭제합니다.
 
 ### 5-4. 데이터 무효화 5가지
@@ -285,7 +301,17 @@ _buckets (list, 크기 = capacity, 항상 2의 거듭제곱)
 | ④ 전체 삭제 | `POST /flush` | `flush_all()` | 배포·스키마 변경 등으로 전부 버릴 때 |
 | ⑤ 덮어쓰기 | `PUT /keys/{k}` | `set()` | 새 값을 바로 넣을 때. 이전 TTL도 함께 사라짐 |
 
-cached_api는 수정 시 캐시를 **갱신하지 않고 삭제**합니다. 갱신 방식은 동시에 들어온 두 수정의 순서가 꼬이면 옛 값이 캐시에 남을 수 있기 때문입니다. 삭제하면 다음 조회가 원본에서 최신 값을 가져갑니다.
+cached_api는 수정 시 캐시를 **갱신하지 않고 삭제**합니다. 갱신 방식은 동시에 들어온 두 수정의 순서가 꼬이면 옛 값이 캐시에 남을 수 있기 때문입니다.
+
+**삭제만으로는 부족한 경우 — GET과 PUT의 경합**
+```
+GET(미스) ── 원본에서 v1 읽음 ─────────────(느린 응답)──────────── cache.set(v1)  ← 옛 값 부활!
+PUT       ──────────── 원본 v2 로 수정 → cache.delete ──
+```
+캐시 미스 GET이 수정 전 값(v1)을 읽은 뒤 늦게 돌아오면, PUT이 캐시를 지운 **뒤에** v1을 다시 저장할 수 있습니다. 그러면 `CACHE_TTL`(60초) 동안 옛 값이 나갑니다.
+그래서 cached_api는 **상품별 `asyncio.Lock`**(`product_lock()`)으로 "미스 GET의 원본 조회와 저장"과 "PUT의 수정과 삭제"를 한 줄로 세웁니다. PUT은 진행 중인 미스 GET이 저장을 끝낸 뒤에 실행되므로 그 삭제가 마지막이 됩니다.
+Lock을 얻은 뒤 캐시를 한 번 더 확인하므로, 같은 상품을 동시에 처음 요청할 때 원본을 여러 번 부르는 cache stampede도 함께 막힙니다. HIT 경로는 Lock을 잡지 않아 빠릅니다.
+**한계**: 이 Lock은 cached_api 프로세스 하나 안에서만 유효합니다. cached_api를 여러 대로 늘리거나 다른 서비스가 원본을 직접 고치면 같은 경합이 다시 생길 수 있습니다. 그때는 분산 락이나 버전 비교가 필요하고, 그 전까지는 TTL이 최후의 안전망입니다.
 
 ### 5-5. AOF 영속화 (`core/persistence.py`)
 
@@ -306,10 +332,14 @@ data/appendonly.aof
   | 정책 | 동작 | 유실 가능 범위 | 속도 |
   |---|---|---|---|
   | `always` | 명령마다 `flush()` + `os.fsync()` | 없음 | 가장 느림 |
-  | `everysec` (기본) | 버퍼에 모았다가 `aof_flush_loop`가 1초마다 fsync | 최대 1초 | 빠름 |
+  | `everysec` (기본) | 버퍼에 모았다가 AOF의 `aof-flush` 스레드가 1초마다 fsync | 목표 주기 1초. 디스크가 느려 fsync가 오래 걸리면 더 길어질 수 있음 | 빠름 |
   | `no` | 명령마다 OS에만 넘기고 fsync는 OS가 알아서 | OS가 죽으면 유실 | 가장 빠름 |
 
+  - everysec flush는 **AOF가 스스로 띄우는 백그라운드 스레드**(`AOF._start_flusher`)가 합니다. 서버 앱 없이 `MiniRedis(aof=AOF(...))`로 직접 써도 1초 주기가 지켜집니다. 또 이벤트 루프가 rewrite 같은 동기 작업으로 잠깐 막혀도 flush는 멈추지 않습니다.
+- **파일 권한**: 새 AOF는 `os.open(..., 0o600)`으로 만들어 소유자만 읽을 수 있습니다(AOF에는 값이 그대로 들어 있습니다). rewrite 파일은 기존 AOF의 권한을 물려받으므로 `os.replace`로 바꿔도 권한 제한이 사라지지 않습니다.
 - **replay**: 서버가 요청을 받기 **전에** `store.apply_command()`로 다시 실행합니다. 이 메서드는 `_log`를 부르지 않으므로 같은 줄이 다시 쌓이지 않습니다.
+  - 파일을 **한 줄씩** 읽습니다. AOF가 아무리 커도 메모리에는 한 줄만 올라갑니다.
+  - 재생 중에는 만료 시각이 이미 지났어도 기록된 그대로 둡니다. `SET k (10초 뒤 만료)` 다음에 `PERSIST k`가 오면 뒤 줄이 키를 살리기 때문입니다. 모든 줄을 실행한 **뒤에** `store.purge_expired()`가 지난 키를 한 번에 버립니다.
   - 마지막 줄이 깨졌으면 기록 도중 죽은 흔적으로 보고, 경고를 남긴 뒤 `os.truncate`로 잘라냅니다. 그대로 두면 다음 기록이 깨진 줄 뒤에 붙어서 파일 중간이 깨진 상태가 됩니다.
   - 중간 줄이 깨졌으면 `AOFCorruptError`를 내고 시작하지 않습니다.
 - **rewrite (`POST /admin/rewrite-aof`)**:
@@ -405,15 +435,17 @@ async 앱 안에서는 `AsyncMiniRedisClient`를 쓰고 `await r.get(...)`처럼
 
 | 파일 | 종류 | 개수 | 다루는 내용 |
 |---|---|---|---|
-| `test_hashtable.py` | 단위 | 22 | FNV-1a 공개 테스트 벡터, put/get/remove, 덮어쓰기 시 개수 유지, None 값과 `MISSING` 구분, **강제 충돌**(같은 버킷 키 5개), 체인 **맨 앞/중간/끝 삭제**, **13번째 put에서 용량 32**, 용량이 항상 2의 거듭제곱, 1만 개 삽입 후 절반 삭제, 한글·이모지·가족 이모지(ZWJ)·빈 문자열 키, `random_key` |
-| `test_store.py` | 단위 | 23 | `FakeClock`으로 **9.9초에는 있음 / 10초에는 없음**, 조회 순간 내부에서도 삭제됨, 덮어쓰면 TTL 제거, persist, expire(없는 키, 0 이하), ttl -2/-1/올림, incr(신규·누적·문자열 "5"·실수·만료 후 1부터·TTL 유지), 패턴(`*`, `?`, 대소문자 구분, 만료 제외), hits/misses, **AOF 기록 형식**(절대 시각, 실패한 쓰기는 기록 안 함) |
-| `test_persistence.py` | 단위+통합 | 19 | 여러 명령 후 replay하면 같은 상태, FLUSHALL, JSON 줄 형식, replay가 다시 기록하지 않음, **30초 다운 후 TTL 70초**, 다운 중 만료된 키 버림, **마지막 줄 잘림 → 경고·잘라냄·이어쓰기 가능**, 줄바꿈만 빠진 줄, **중간 줄 손상 → 에러**, 모르는 명령, everysec 버퍼/always·no 즉시 기록, **rewrite 후 줄 수 감소·상태 동일·임시 파일 없음**, 앱 lifespan(시작 시 replay, 종료 시 flush), rewrite API |
-| `test_api.py` | 기능 | 49 | 모든 엔드포인트의 정상 응답과 상태 코드, 에러 형식 통일, 의존성 교체, **빈 키 / 512자 OK / 513자 400**, 한글·이모지·공백·슬래시·`..`·`%`·`?`·`#`·앞뒤 공백 키, 예약 접미사, **ttl 0·음수·"10"·1.5·true → 422**, **1MB 경계**(정확히 1MB는 OK, 초과는 413, 한글은 바이트로 계산), 잘못된 JSON 400, value 누락, **null 저장 후 조회 200**, **만료 키 404**, 없는 경로 404·405, 실제 uvicorn으로 클라이언트 왕복·에러 변환·연결 실패, **데모: MISS → HIT → PUT → MISS**, 캐시 다운 시 BYPASS, 없는 상품은 캐시 안 함 |
+| `test_hashtable.py` | 단위 | 29 | FNV-1a 공개 테스트 벡터, **seed가 다르면 버킷 배치가 달라짐·충돌 키가 다른 seed에선 흩어짐**, **대량 삭제 후 축소·축소 후 random_key**, put/get/remove, 덮어쓰기 시 개수 유지, None 값과 `MISSING` 구분, **강제 충돌**(같은 버킷 키 5개), 체인 **맨 앞/중간/끝 삭제**, **13번째 put에서 용량 32**, 용량이 항상 2의 거듭제곱, 1만 개 삽입 후 절반 삭제, 한글·이모지·가족 이모지(ZWJ)·빈 문자열 키, `random_key` |
+| `test_store.py` | 단위 | 27 | **inf·-inf·nan TTL 거절**, `FakeClock`으로 **9.9초에는 있음 / 10초에는 없음**, 조회 순간 내부에서도 삭제됨, 덮어쓰면 TTL 제거, persist, expire(없는 키, 0 이하), ttl -2/-1/올림, incr(신규·누적·문자열 "5"·실수·만료 후 1부터·TTL 유지), 패턴(`*`, `?`, 대소문자 구분, 만료 제외), hits/misses, **AOF 기록 형식**(절대 시각, 실패한 쓰기는 기록 안 함) |
+| `test_persistence.py` | 단위+통합 | 26 | **SET(TTL) → PERSIST 후 원래 만료 시각이 지나 재시작해도 살아 있음**, **SET → EXPIREAT 연장 후 재시작**, **새 AOF 0600·rewrite가 기존 권한 유지**, **everysec 자체 flush 스레드**, 여러 명령 후 replay하면 같은 상태, FLUSHALL, JSON 줄 형식, replay가 다시 기록하지 않음, **30초 다운 후 TTL 70초**, 다운 중 만료된 키 버림, **마지막 줄 잘림 → 경고·잘라냄·이어쓰기 가능**, 줄바꿈만 빠진 줄, **중간 줄 손상 → 에러**, 모르는 명령, everysec 버퍼/always·no 즉시 기록, **rewrite 후 줄 수 감소·상태 동일·임시 파일 없음**, 앱 lifespan(시작 시 replay, 종료 시 flush), rewrite API |
+| `test_api.py` | 기능 | 53 | 모든 엔드포인트의 정상 응답과 상태 코드, 에러 형식 통일, 의존성 교체, **빈 키 / 512자 OK / 513자 400**, 한글·이모지·공백·슬래시·`..`·`%`·`?`·`#`·앞뒤 공백 키, 예약 접미사, **ttl 0·음수·"10"·1.5·true → 422**, **1MB 경계**(정확히 1MB는 OK, 초과는 413, 한글은 바이트로 계산), 잘못된 JSON 400, value 누락, **null 저장 후 조회 200**, **만료 키 404**, 없는 경로 404·405, 실제 uvicorn으로 클라이언트 왕복·에러 변환·연결 실패, **데모: MISS → HIT → PUT → MISS**, 캐시 다운 시 BYPASS, 없는 상품은 캐시 안 함, **느린 GET과 PUT 경합 후에도 옛 값이 남지 않음**, **동시 미스 10개 → 원본 호출 1번**, 주입받은 클라이언트는 닫지 않음, 서버 시작 시간 초과 시 스레드 정리 |
+| `test_bench.py` | 단위 | 10 | nearest-rank 백분위수 올림(11개의 p95 = 11번째), `--requests 0`·`--concurrency 0`·음수 거절 |
 | `test_concurrency.py` | 동시성 | 10 | Active 만료(**만료 100 + 생존 100 → 만료 키만 삭제**, 만료 없는 키 무시, 비율 높으면 반복, 25ms 제한, 비율 낮으면 한 묶음), lifespan 백그라운드 청소, **incr 1000개 동시 요청 → 1~1000이 한 번씩**, set/get 500개 섞어서, 스레드 8개 Lock 안전망, **GET→SET 유실 (xfail strict)** |
 
 테스트를 만들면서 알게 된 것
 - `httpx.ASGITransport`는 네트워크 없이 앱을 직접 호출합니다. 그래서 요청 하나가 중간에 멈추지 않고 끝까지 실행되고, `gather`로 1000개를 보내도 실제로는 한 줄로 처리됩니다(유실 0번). 그래서 동시성 테스트는 `server/thread_server.py`의 `running_server()`로 **실제 uvicorn 서버**를 띄우고 소켓으로 보냅니다.
-- 시간은 모두 `FakeClock`으로 움직입니다. `time.sleep`을 쓰는 테스트는 없습니다.
+- 시간은 모두 `FakeClock`으로 움직입니다. 저장소 TTL 테스트에서 `time.sleep`으로 기다리는 경우는 없습니다.
+- 경합 테스트(`test_demo_stale_get_does_not_survive_put`, `test_demo_concurrent_misses_call_origin_once`)는 Lock을 아무 일도 하지 않는 가짜로 바꾸면 실패하는 것까지 확인했습니다. 즉, 테스트가 실제로 경합을 잡아냅니다.
 
 ---
 
@@ -423,25 +455,25 @@ async 앱 안에서는 `AsyncMiniRedisClient`를 쓰고 `await r.get(...)`처럼
 
 | 구분 | 평균 | p50 | p95 | 처리량 | 히트율 | 원본 호출 |
 |---|---:|---:|---:|---:|---:|---:|
-| (a) slow_api 직접 (캐시 없음) | 503.1 ms | 502.7 ms | 507.5 ms | 19.9 req/s | - | 200 |
-| (b) cached_api, 빈 캐시에서 시작 | 68.7 ms | 12.7 ms | 531.9 ms | 124.9 req/s | 89.5% | 21 |
-| (c) cached_api, 캐시가 채워진 상태 | 19.0 ms | 13.2 ms | 44.9 ms | 519.1 req/s | 100% | 0 |
+| (a) slow_api 직접 (캐시 없음) | 504.8 ms | 503.1 ms | 528.0 ms | 19.8 req/s | - | 200 |
+| (b) cached_api, 빈 캐시에서 시작 | 73.8 ms | 17.2 ms | 558.2 ms | 134.6 req/s | 90.0% | 20 |
+| (c) cached_api, 캐시가 채워진 상태 | 22.9 ms | 16.9 ms | 52.8 ms | 430.8 req/s | 100% | 0 |
 
 해석
-- **평균 응답 시간 7.3배 단축(503 → 69ms), 처리량 6.3배(20 → 125 req/s)**, 원본 호출은 200번에서 21번으로 **89.5% 감소**했습니다.
-- (b)의 **p50은 12.7ms인데 p95는 532ms**입니다. 요청 대부분은 캐시에서 나오지만, 처음 상품을 볼 때(MISS)는 원본 속도 그대로라 꼬리 지연이 남습니다. 캐시는 평균을 줄여 주지만 콜드 스타트는 없애지 못합니다. 캐시가 다 차면 (c)처럼 p95도 45ms로 내려갑니다.
-- 고유 상품은 20개인데 MISS는 21번이었습니다. 같은 키를 동시에 요청하면, 첫 요청이 캐시를 채우기 전에 두 번째 요청도 원본으로 갑니다(**cache stampede**). 실제 서비스라면 키별 잠금이나 미리 채워 두기(warm-up)로 해결합니다.
-- HIT에도 약 13ms가 걸리는 이유는 요청이 cached_api와 Mini Redis를 거치며 HTTP를 두 번 타고, 두 서버가 모두 Python이기 때문입니다. 실제 Redis는 TCP 바이너리 프로토콜과 C 구현이라 이보다 훨씬 빠릅니다.
+- **평균 응답 시간 6.8배 단축(505 → 74ms), 처리량 6.8배(20 → 135 req/s)**, 원본 호출은 200번에서 20번으로 **90% 감소**했습니다.
+- (b)의 **p50은 17.2ms인데 p95는 558ms**입니다. 요청 대부분은 캐시에서 나오지만, 처음 상품을 볼 때(MISS)는 원본 속도 그대로라 꼬리 지연이 남습니다. 캐시는 평균을 줄여 주지만 콜드 스타트는 없애지 못합니다. 캐시가 다 차면 (c)처럼 p95도 53ms로 내려갑니다.
+- 고유 상품 20개에 MISS도 정확히 20번입니다. Lock을 넣기 전 첫 측정에서는 21번이었습니다. 같은 키를 동시에 요청하면 첫 요청이 캐시를 채우기 전에 두 번째 요청도 원본으로 갔기 때문입니다(**cache stampede**). 상품별 Lock과 Lock 안의 재확인으로 없앴습니다.
+- HIT에도 약 17ms가 걸리는 이유는 요청이 cached_api와 Mini Redis를 거치며 HTTP를 두 번 타고, 두 서버가 모두 Python이기 때문입니다. 실제 Redis는 TCP 바이너리 프로토콜과 C 구현이라 이보다 훨씬 빠릅니다.
 
 HashTable vs dict (10만 건)
 | | put | get |
 |---|---:|---:|
-| 직접 만든 `HashTable` | 360.8 ms | 110.9 ms |
-| 내장 `dict` | 14.4 ms | 4.5 ms |
-| 배율 | 25.1배 느림 | 24.6배 느림 |
+| 직접 만든 `HashTable` | 600.2 ms | 178.4 ms |
+| 내장 `dict` | 19.1 ms | 5.5 ms |
+| 배율 | 31.4배 느림 | 32.4배 느림 |
 
-- `dict`는 C로 구현돼 있고 해시값을 문자열 객체에 캐시합니다. 우리 `fnv1a_64()`는 매번 Python 반복문으로 바이트를 하나씩 계산합니다. 이 차이가 대부분입니다.
-- 그래도 조회 한 번이 약 1.1µs입니다. HTTP 요청 한 번(약 13ms)에 비하면 1만분의 1 수준이라, 실제 서버 성능에서 병목은 자료구조가 아니라 네트워크와 프레임워크입니다.
+- `dict`는 C로 구현돼 있고 해시값을 문자열 객체에 캐시합니다. 우리 `fnv1a_64()`는 매번 Python 반복문으로 바이트를 하나씩 계산하고, 충돌 DoS 방어용 `mix64()`도 더해집니다. seed를 넣기 전에는 약 25배였습니다.
+- 그래도 조회 한 번이 약 1.8µs입니다. HTTP 요청 한 번(약 17ms)에 비하면 1만분의 1 수준이라, 실제 서버 성능에서 병목은 자료구조가 아니라 네트워크와 프레임워크입니다.
 
 ---
 
@@ -459,7 +491,7 @@ HashTable vs dict (10만 건)
 
 ### 서버가 죽으면 데이터는 어떻게 되나요?
 > 쓰기 명령이 성공할 때마다 AOF 파일에 JSON 한 줄로 덧붙입니다. 서버가 다시 켜지면 요청을 받기 전에 이 파일을 처음부터 재실행해서 상태를 복구합니다.
-> 기본 정책 everysec는 1초마다 fsync하므로 최악의 경우 1초치를 잃습니다. always 정책은 `kill -9`로 죽여도 마지막 명령까지 복구되는 것을 확인했습니다.
+> 기본 정책 everysec는 AOF의 백그라운드 스레드가 1초마다 fsync하므로, 목표대로라면 잃는 것은 약 1초치입니다(디스크가 느리면 더 길어질 수 있습니다). always 정책은 `kill -9`로 죽여도 마지막 명령까지 복구되는 것을 확인했습니다.
 > 만료 시각을 절대 시각으로 기록하므로 30초 동안 꺼져 있었다면 TTL은 남은 시간으로 복구되고, 그동안 만료된 키는 버려집니다.
 > 기록 도중 죽어서 마지막 줄이 잘렸으면 그 줄만 버리고, 중간이 깨졌으면 서버를 띄우지 않고 알립니다. 파일이 커지면 rewrite로 살아 있는 키만 남겨 원자적으로 교체합니다.
 
@@ -472,10 +504,11 @@ HashTable vs dict (10만 건)
 | 통신 | HTTP + JSON (FastAPI) | TCP 위의 RESP 바이너리 프로토콜. 파이프라이닝, Pub/Sub 지원 |
 | 구현 언어/속도 | Python, 요청당 수 ms | C, 초당 수십만 요청 |
 | 자료형 | 값은 JSON 하나 (문자열·숫자·객체·배열) | String, List, Hash, Set, Sorted Set, Stream, Bitmap, HyperLogLog 등과 전용 명령 |
-| 해시 테이블 리사이징 | 한 번에 전체 rehash (그 순간 O(n) 멈춤) | **점진적 rehash**: 테이블 두 개를 두고 명령마다 조금씩 옮김. 줄어들 때도 축소 |
+| 해시 테이블 리사이징 | 한 번에 전체 rehash (그 순간 O(n) 멈춤), 0.1 미만이면 축소 | **점진적 rehash**: 테이블 두 개를 두고 명령마다 조금씩 옮김. 줄어들 때도 축소 |
 | 영속화 | AOF만 (JSON 줄) | **RDB 스냅샷**(fork 후 바이너리 덤프) + AOF + 둘을 섞은 방식 |
 | AOF rewrite | 저장소 Lock을 잡고 동기로 처리 (그동안 요청 대기) | fork한 자식 프로세스가 쓰고, 그동안 쌓인 명령은 rewrite 버퍼에 모았다가 합침 |
-| everysec fsync | 이벤트 루프에서 직접 실행 | 백그라운드 스레드(bio)에서 실행 |
+| everysec fsync | AOF가 띄운 백그라운드 스레드 (fsync 동안 AOF Lock을 잡아 그사이 기록은 대기) | 백그라운드 스레드(bio). 메인 스레드는 기록을 계속하고, fsync가 오래 밀리면 경고 |
+| 해시 충돌 방어 | FNV-1a + 무작위 seed + fmix64 섞기 | SipHash (암호학적으로 설계된 키 해시) |
 | 메모리 제한 | 없음 | `maxmemory` + **eviction 정책**(LRU, LFU, random, volatile-ttl 등) |
 | 만료 | lazy + active (표본 20개, 25%, 25ms) | 같은 아이디어. 키 수와 CPU에 따라 더 정교하게 조절 |
 | 원자적 묶음 | `incr` 하나 | `MULTI/EXEC` 트랜잭션, Lua 스크립트, `WATCH` |
@@ -556,17 +589,20 @@ async def lifespan(app): ...
 ### async / await
 ```python
 # server/app.py
-async def active_expire_loop(store, interval):   # async def = 코루틴 함수. 호출해도 바로 실행되지 않고 '예약'된다
+async def active_expire_loop(store, interval):   # async def = 코루틴 함수. 호출하면 '코루틴 객체'만 생기고 아무것도 실행되지 않는다
     while True:
         await asyncio.sleep(interval)    # await = "여기서 잠깐 쉴게, 그동안 다른 일 해" → 이벤트 루프가 다른 요청 처리
         active_expire_cycle(store)       # await 가 없는 일반 호출 → 끝날 때까지 누구도 끼어들지 못함
 
-task = asyncio.create_task(active_expire_loop(store, 0.1))   # 백그라운드에서 돌리기 시작 (스레드 아님)
+coro = active_expire_loop(store, 0.1)   # 아직 실행도, 예약도 안 됨 (객체만 만들어짐)
+task = asyncio.create_task(coro)         # 이벤트 루프에 예약 → 백그라운드에서 돌기 시작 (스레드 아님)
+# 또는: await coro                       # 지금 이 자리에서 실행하고 끝날 때까지 기다림
 task.cancel()                                                # 취소
 
 # tests/test_concurrency.py
 responses = await asyncio.gather(*coros)  # 여러 코루틴을 동시에 실행하고 모두 기다림 (CompletableFuture.allOf)
 ```
+- 코루틴은 `await`하거나 `asyncio.create_task()`에 넘겨야 비로소 실행됩니다. 실수로 `active_expire_loop(store, 0.1)`처럼 호출만 하면 아무 일도 일어나지 않고, Python이 "never awaited" 경고를 냅니다.
 - 핵심은 **`await`에서만 다른 코루틴으로 넘어간다**는 점입니다. 이것이 이 프로젝트 동시성 설계의 근거입니다.
 - `async with`, `async def __aenter__`(client.py `AsyncMiniRedisClient`)는 `with`의 비동기 버전입니다.
 

@@ -23,7 +23,6 @@ from .routes import ApiError, router
 logger = logging.getLogger("mini_redis")
 
 ACTIVE_EXPIRE_INTERVAL = 0.1  # 100ms 마다 만료 키 청소
-AOF_FLUSH_INTERVAL = 1.0      # everysec: 1초마다 디스크에 기록
 
 # 프레임워크 기본 에러(없는 경로, 허용 안 된 메서드)를 우리 에러 코드로 바꾸는 표
 HTTP_ERROR_CODES = {404: "NOT_FOUND", 405: "METHOD_NOT_ALLOWED"}  # 응답 변환용 상수 표 (저장소 데이터 아님)
@@ -53,20 +52,6 @@ async def active_expire_loop(store: MiniRedis, interval: float) -> None:
             logger.exception("active expiration 실패")
 
 
-async def aof_flush_loop(aof: AOF, interval: float) -> None:
-    """everysec 정책: 1초마다 버퍼를 디스크에 기록 (같은 이벤트 루프라 요청 처리와 겹치지 않음).
-
-    fsync 는 디스크를 기다리는 블로킹 호출이라 그동안 요청이 잠깐 멈춘다.
-    진짜 Redis 는 이 일을 별도 백그라운드 스레드에 맡긴다. 여기서는 단순함을 택했다.
-    """
-    while True:
-        await asyncio.sleep(interval)
-        try:
-            aof.flush()
-        except Exception:
-            logger.exception("AOF flush 실패")
-
-
 def default_store() -> MiniRedis:
     """실제 서버용 저장소: AOF 를 붙여서 만든다. 환경 변수로 경로·정책을 바꿀 수 있다.
 
@@ -83,7 +68,6 @@ def create_app(
     store: MiniRedis | None = None,
     active_expire: bool = True,
     expire_interval: float = ACTIVE_EXPIRE_INTERVAL,
-    aof_flush_interval: float = AOF_FLUSH_INTERVAL,
 ) -> FastAPI:
     """앱을 만든다. 테스트는 가짜 시계를 넣은 store 를 넘겨서 독립된 앱을 만든다.
 
@@ -103,8 +87,8 @@ def create_app(
             logger.info("AOF 복구 완료: 명령 %d개", count)
 
         tasks = []
-        if aof is not None and aof.fsync == "everysec":
-            tasks.append(asyncio.create_task(aof_flush_loop(aof, aof_flush_interval)))
+        # everysec 의 1초 flush 는 AOF 가 자체 백그라운드 스레드로 한다 (core/persistence.py AOF._start_flusher)
+        # → 이벤트 루프가 잠깐 막혀도 flush 가 멈추지 않는다
         if active_expire:
             # create_task: 코루틴을 백그라운드에서 돌리기 시작 (스레드를 만드는 게 아니라 같은 루프에 예약)
             tasks.append(asyncio.create_task(active_expire_loop(store, expire_interval)))

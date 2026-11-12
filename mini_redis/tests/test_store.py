@@ -132,6 +132,23 @@ def test_invalid_ttl(r):
         r.set("k", "v", ttl="10")
 
 
+@pytest.mark.parametrize("ttl", [float("inf"), float("-inf"), float("nan")])
+def test_non_finite_ttl_rejected(r, ttl):
+    with pytest.raises(ValueError):
+        r.set("k", "v", ttl=ttl)
+    r.set("k", "v")
+    with pytest.raises(ValueError):
+        r.expire("k", ttl)
+    assert r.ttl("k") == -1           # 거절된 TTL 은 적용되지 않음
+
+
+def test_finite_float_ttl_still_works(r, clock):
+    r.set("k", "v", ttl=1.5)
+    assert r.ttl("k") == 2
+    clock.advance(1.5)
+    assert r.get("k") is None
+
+
 def test_ttl_values(r, clock):
     assert r.ttl("missing") == -2
     r.set("forever", 1)

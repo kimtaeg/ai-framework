@@ -26,12 +26,16 @@ def running_server(app, startup_timeout: float = 5.0):
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)  # daemon: 메인 프로그램이 끝나면 같이 종료
     thread.start()
-    deadline = time.time() + startup_timeout
-    while not server.started:  # 서버가 요청을 받을 준비가 될 때까지 대기
-        if time.time() > deadline:
-            raise RuntimeError("서버가 시작되지 않았습니다")
-        time.sleep(0.01)
+    # 시작 대기까지 try 안에 넣는다: 제한 시간을 넘겨 예외가 나도 finally 가 실행되어,
+    # 뒤늦게 시작한 서버 스레드와 소켓까지 정리된다
     try:
+        deadline = time.time() + startup_timeout
+        while not server.started:  # 서버가 요청을 받을 준비가 될 때까지 대기
+            if not thread.is_alive():
+                raise RuntimeError("서버 스레드가 시작 중에 종료되었습니다")
+            if time.time() > deadline:
+                raise RuntimeError("서버가 시작되지 않았습니다")
+            time.sleep(0.01)
         yield f"http://127.0.0.1:{port}"
     finally:
         server.should_exit = True  # 서버에 종료 신호 → lifespan 종료 코드도 실행됨

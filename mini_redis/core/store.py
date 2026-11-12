@@ -70,6 +70,10 @@ class MiniRedis:
         # bool 은 Python에서 int 의 자식이라 True 가 1로 통과해버리므로 따로 막는다
         if isinstance(ttl, bool) or not isinstance(ttl, (int, float)):
             raise TypeError("ttl은 숫자(초)여야 합니다")
+        # inf(무한대)는 ttl() 의 올림 계산에서 OverflowError 를, nan(숫자 아님)은 비교가 항상 거짓이라
+        # 키가 바로 지워지는 문제를 만든다 → 유한한 값만 받는다
+        if not math.isfinite(ttl):
+            raise ValueError("ttl은 유한한 숫자여야 합니다")
 
     # ==================================================================
     # 공개 메서드 (모두 with self._lock: 으로 감싼다)
@@ -236,30 +240,27 @@ class MiniRedis:
     def apply_command(self, cmd: str, *args) -> None:
         """AOF 한 줄을 다시 실행한다 (복구 전용). _log 를 부르지 않으므로 AOF 에 다시 기록되지 않는다.
 
-        만료 시각은 절대 시각이라, 서버가 꺼져 있던 동안 지난 키는 여기서 바로 버려진다.
-        → 재시작해도 TTL 이 처음부터 다시 늘어나지 않는다.
+        만료 시각이 이미 지났어도 여기서는 지우지 않고 기록된 그대로 저장한다.
+        이유: 뒤에 오는 줄이 그 키를 살릴 수 있다. 예) SET k v (10초 뒤 만료) → PERSIST k.
+              SET 단계에서 지워버리면 PERSIST 가 살릴 키가 없어 영속화한 키가 사라진다.
+        지난 키는 모든 줄을 다 실행한 뒤 purge_expired() 가 한 번에 버린다 (AOF.replay 가 호출).
+        만료 시각은 절대 시각 그대로이므로 재시작해도 TTL 이 처음부터 다시 늘어나지 않는다.
         """
         with self._lock:
-            now = self._clock()
             if cmd == "SET":
                 if len(args) not in (2, 3):
                     raise ValueError(f"SET 인자 개수가 잘못됨: {len(args)}")
                 key, value = args[0], args[1]
                 expire_at = args[2] if len(args) == 3 else None
                 self._expires.remove(key)              # SET 은 이전 TTL 을 지운다 (set() 과 같은 규칙)
-                if expire_at is not None and expire_at <= now:
-                    self._data.remove(key)             # 이미 만료 시각이 지남 → 덮어쓴 결과가 '없음'
-                    return
                 self._data.put(key, value)
                 if expire_at is not None:
+                    self._check_expire_at(expire_at)
                     self._expires.put(key, expire_at)
             elif cmd == "EXPIREAT":
                 key, expire_at = args
-                if not self._data.contains(key):
-                    return
-                if expire_at <= now:
-                    self._delete(key)
-                else:
+                self._check_expire_at(expire_at)
+                if self._data.contains(key):           # 없는 키에 만료를 거는 줄은 무시 (라이브 expire 와 같음)
                     self._expires.put(key, expire_at)
             elif cmd == "PERSIST":
                 (key,) = args                           # 인자가 정확히 1개인지 확인하면서 꺼내기
@@ -274,6 +275,25 @@ class MiniRedis:
                 self._expires = HashTable()
             else:
                 raise ValueError(f"알 수 없는 명령: {cmd}")
+
+    @staticmethod
+    def _check_expire_at(expire_at) -> None:
+        """AOF 에서 읽은 만료 시각이 정상 숫자인지 (손상된 파일 방어)."""
+        if isinstance(expire_at, bool) or not isinstance(expire_at, (int, float)) or not math.isfinite(expire_at):
+            raise ValueError(f"만료 시각이 올바르지 않음: {expire_at!r}")
+
+    def purge_expired(self) -> int:
+        """만료 시각이 지난 키를 모두 지우고 개수를 돌려준다. AOF 복구가 끝난 직후 한 번 호출한다.
+
+        복구 직후에 전부 훑는 이유: 서버가 꺼져 있던 동안 만료된 키가 메모리를 차지하지 않게 하려고.
+        (평소에는 lazy/active 만료가 조금씩 지우므로 이렇게 전체를 훑지 않는다)
+        """
+        with self._lock:
+            removed = 0
+            for key in list(self._expires.keys()):   # 만료가 걸린 키만 검사하면 충분
+                if self._expire_if_needed(key):
+                    removed += 1
+            return removed
 
     def snapshot(self, callback=None):
         """살아 있는 모든 키를 [(key, value, expire_at 또는 None), ...] 로 만든다.

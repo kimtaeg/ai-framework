@@ -8,13 +8,16 @@ from mini_redis.core.hashtable import MISSING, HashTable, fnv1a_64
 # ---------------------------------------------------------------------------
 # 테스트 도우미
 # ---------------------------------------------------------------------------
-def colliding_keys(target_index: int, count: int, capacity: int = 16) -> list[str]:
-    """용량 capacity 에서 같은 버킷(target_index)에 들어가는 키를 count 개 찾는다."""
+SEED = 12345  # 충돌 테스트용 고정 seed (seed 를 알아야 같은 버킷에 들어갈 키를 미리 찾을 수 있다)
+
+
+def colliding_keys(table: HashTable, target_index: int, count: int) -> list[str]:
+    """table 의 현재 용량에서 같은 버킷(target_index)에 들어가는 키를 count 개 찾는다."""
     found = []
     i = 0
     while len(found) < count:
         k = f"key{i}"
-        if fnv1a_64(k) & (capacity - 1) == target_index:  # 테이블과 같은 인덱스 공식
+        if table._index(k) == target_index:  # 테이블이 실제로 쓰는 인덱스 공식 (seed 포함)
             found.append(k)
         i += 1
     return found
@@ -89,8 +92,8 @@ def test_capacity_must_be_power_of_two():
 # 충돌
 # ---------------------------------------------------------------------------
 def test_forced_collision_all_found_and_removed():
-    t = HashTable()
-    keys = colliding_keys(target_index=3, count=5)  # 5개 → 부하율 5/16 이라 리사이징 없음
+    t = HashTable(seed=SEED)
+    keys = colliding_keys(t, target_index=3, count=5)  # 5개 → 부하율 5/16 이라 리사이징 없음
     for i, k in enumerate(keys):
         t.put(k, i)
 
@@ -107,8 +110,8 @@ def test_forced_collision_all_found_and_removed():
 
 @pytest.mark.parametrize("position", ["head", "middle", "tail"])
 def test_remove_node_in_chain(position):
-    t = HashTable()
-    for k in colliding_keys(target_index=7, count=3):
+    t = HashTable(seed=SEED)
+    for k in colliding_keys(t, target_index=7, count=3):
         t.put(k, k.upper())
     chain = chain_keys(t, 7)  # 실제 체인 순서 [head, middle, tail]
     victim = {"head": chain[0], "middle": chain[1], "tail": chain[2]}[position]
@@ -165,6 +168,67 @@ def test_10000_items_then_remove_half():
     assert len(t) == n // 2
     for i in range(n):
         assert t.contains(f"user:{i}") == (i % 2 == 1)
+
+
+# ---------------------------------------------------------------------------
+# 해시 seed (충돌 DoS 방어)
+# ---------------------------------------------------------------------------
+def test_seed_changes_bucket_layout():
+    keys = [f"k{i}" for i in range(64)]
+    a, b = HashTable(seed=1), HashTable(seed=2)
+    # seed 가 다르면 같은 키도 다른 버킷으로 간다 → 한 테이블용으로 만든 충돌 키가 다른 테이블에선 흩어진다
+    assert [a._index(k) for k in keys] != [b._index(k) for k in keys]
+
+
+def test_collision_keys_scatter_with_another_seed():
+    victim = HashTable(seed=SEED)
+    attack = colliding_keys(victim, target_index=0, count=12)  # seed 를 아는 공격자가 만든 키
+    other = HashTable(seed=SEED + 1)                           # 실제 서버는 seed 를 모른다
+    assert len({other._index(k) for k in attack}) > 1
+
+
+def test_default_seed_is_random():
+    assert HashTable()._seed != HashTable()._seed
+
+
+def test_same_seed_is_deterministic():
+    assert HashTable(seed=7)._index("abc") == HashTable(seed=7)._index("abc")
+
+
+# ---------------------------------------------------------------------------
+# 축소 (희소 테이블)
+# ---------------------------------------------------------------------------
+def test_shrink_after_mass_delete():
+    t = HashTable()
+    for i in range(1000):
+        t.put(f"k{i}", i)
+    assert t.capacity == 2048
+    for i in range(995):
+        t.remove(f"k{i}")
+    assert t.capacity == 32                      # 5개 / 32칸 = 0.156 ≥ 0.1 → 여기서 멈춤 (16이면 0.31)
+    assert t.load_factor >= 0.1
+    for i in range(995, 1000):
+        assert t.get(f"k{i}") == i               # 축소(rehash) 후에도 남은 키는 그대로
+    assert t.random_key() in {f"k{i}" for i in range(995, 1000)}
+
+
+def test_no_shrink_below_initial_capacity():
+    t = HashTable(capacity=64)
+    t.put("a", 1)
+    t.remove("a")
+    assert t.capacity == 64
+
+
+def test_random_key_after_shrink_stays_cheap():
+    t = HashTable()
+    for i in range(100_000):
+        t.put(f"k{i}", i)
+    for i in range(99_990):
+        t.remove(f"k{i}")
+    # 축소 덕분에 버킷 배열이 키 수에 맞게 작아져서, 빈 버킷만 잔뜩 훑는 일이 없다
+    assert t.capacity <= 128
+    for _ in range(100):
+        assert t.random_key() is not None
 
 
 def test_keys_generator_returns_all():

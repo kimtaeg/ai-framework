@@ -4,7 +4,8 @@ Python 내장 dict / collections 를 쓰지 않고 직접 구현한다.
 버킷 배열은 평범한 list(= C의 배열)이고, 각 버킷은 Node 로 이어진 단일 연결 리스트다.
 """
 
-import random  # random_key() 에서 무작위 버킷을 고르기 위해 사용
+import random   # random_key() 에서 무작위 버킷을 고르기 위해 사용
+import secrets  # 테이블마다 예측할 수 없는 해시 seed 를 만들기 위해 사용 (random 보다 안전한 난수)
 
 # ---------------------------------------------------------------------------
 # FNV-1a 64비트 해시 상수 (표준값)
@@ -15,6 +16,8 @@ MASK_64 = 0xFFFFFFFFFFFFFFFF              # Python int는 크기 제한이 없�
 
 INITIAL_CAPACITY = 16  # 초기 버킷 수 (2의 거듭제곱이어야 & 연산으로 인덱스를 구할 수 있음)
 MAX_LOAD_FACTOR = 0.75  # 이 값을 "초과"하면 용량을 2배로 늘린다
+MIN_LOAD_FACTOR = 0.1   # 이 값보다 작아지면 용량을 절반으로 줄인다 (Redis 도 10% 미만이면 축소)
+RANDOM_PROBES = 32      # random_key() 가 무작위 버킷을 찔러보는 최대 횟수 (실패하면 순서대로 찾음)
 
 # "키 없음"을 나타내는 센티넬 객체.
 # 값으로 None 을 저장할 수 있으므로 None 만으로는 "없음"과 "값이 None"을 구분할 수 없다.
@@ -22,12 +25,29 @@ MAX_LOAD_FACTOR = 0.75  # 이 값을 "초과"하면 용량을 2배로 늘린다
 MISSING = object()
 
 
-def fnv1a_64(key: str) -> int:
-    """문자열을 UTF-8 바이트로 바꾼 뒤 FNV-1a 64비트 해시를 계산한다."""
-    h = FNV_OFFSET_BASIS_64
+def fnv1a_64(key: str, seed: int = 0) -> int:
+    """문자열을 UTF-8 바이트로 바꾼 뒤 FNV-1a 64비트 해시를 계산한다.
+
+    seed=0 이면 표준 FNV-1a 와 같은 값이다. seed 를 주면 시작값에 섞어서 테이블마다 다른 해시가 나온다.
+    """
+    h = FNV_OFFSET_BASIS_64 ^ seed    # 시작값에 비밀 seed 를 XOR → seed 를 모르면 결과를 미리 계산할 수 없음
     for byte in key.encode("utf-8"):  # 한글·이모지도 바이트 단위로 처리됨
         h ^= byte                     # 1) 먼저 XOR (FNV-1a 는 XOR → 곱셈 순서)
         h = (h * FNV_PRIME_64) & MASK_64  # 2) 소수를 곱하고 64비트로 자름 (C의 uint64 오버플로 흉내)
+    return h
+
+
+def mix64(h: int) -> int:
+    """64비트 값의 모든 비트를 골고루 섞는다 (MurmurHash3 의 fmix64 finalizer).
+
+    인덱스는 해시의 하위 비트만 쓰는데, FNV 의 하위 비트는 시작값의 하위 비트에만 영향을 받는다.
+    이 함수로 상위 비트까지 섞어 두면, seed 전체를 모르는 한 어느 버킷에 들어갈지 예측할 수 없다.
+    """
+    h ^= h >> 33
+    h = (h * 0xFF51AFD7ED558CCD) & MASK_64
+    h ^= h >> 33
+    h = (h * 0xC4CEB9FE1A85EC53) & MASK_64
+    h ^= h >> 33
     return h
 
 
@@ -45,12 +65,17 @@ class Node:
 class HashTable:
     """문자열 키 → 임의의 값 을 저장하는 해시 테이블."""
 
-    def __init__(self, capacity: int = INITIAL_CAPACITY):
+    def __init__(self, capacity: int = INITIAL_CAPACITY, seed: int | None = None):
         # 용량은 반드시 2의 거듭제곱: n & (n - 1) == 0 이면 2의 거듭제곱
         if capacity < 1 or capacity & (capacity - 1) != 0:
             raise ValueError("capacity는 2의 거듭제곱이어야 합니다")
         self._buckets = [None] * capacity  # 각 칸은 연결 리스트의 head 노드 (비어 있으면 None)
         self._size = 0                     # 저장된 키 개수
+        self._min_capacity = capacity      # 축소해도 이보다 작아지지 않음
+        # 해시 seed: 테이블마다 무작위 64비트. 공격자가 "같은 버킷에 몰리는 키"를 미리 만들어
+        # 체인을 길게 늘이는 해시 충돌 DoS 공격을 막는다. (Python dict 와 Redis 도 같은 이유로 seed 를 쓴다)
+        # 테스트는 seed 를 고정해서 결과를 재현할 수 있다.
+        self._seed = secrets.randbits(64) if seed is None else seed
 
     # ------------------------------------------------------------------
     # 내부 도우미
@@ -60,7 +85,8 @@ class HashTable:
         if not isinstance(key, str):
             raise TypeError("키는 문자열(str)이어야 합니다")
         cap = len(self._buckets) if capacity is None else capacity
-        return fnv1a_64(key) & (cap - 1)
+        # 같은 테이블은 put/get/remove/rehash 모두 같은 seed 를 쓰므로 항상 같은 버킷을 가리킨다
+        return mix64(fnv1a_64(key, self._seed)) & (cap - 1)
 
     def _resize(self, new_capacity: int) -> None:
         """버킷 배열을 새로 만들고 모든 노드를 새 위치로 옮긴다(rehash)."""
@@ -119,6 +145,11 @@ class HashTable:
                 else:
                     prev.next = node.next           # 중간/끝 노드 삭제: 앞 노드가 나를 건너뛰게
                 self._size -= 1
+                # 많이 넣었다가 대부분 지우면 빈 버킷만 잔뜩 남는다 → 절반으로 축소
+                # (빈 배열이 크면 random_key() 와 keys() 가 빈칸을 오래 훑게 된다)
+                cap = len(self._buckets)
+                if cap > self._min_capacity and self._size < cap * MIN_LOAD_FACTOR:
+                    self._resize(cap // 2)
                 return True
             prev = node
             node = node.next
@@ -167,18 +198,28 @@ class HashTable:
         if self._size == 0:
             return None
         cap = len(self._buckets)
-        start = random.randrange(cap)            # 무작위 시작 위치
-        for step in range(cap):                  # 빈 버킷이면 다음 칸으로 (최악이어도 한 바퀴면 반드시 찾음)
+        # 1) 무작위 버킷을 최대 RANDOM_PROBES 번 찔러본다. 축소 덕분에 부하율이 0.1 이상이라 거의 여기서 끝난다.
+        for _ in range(RANDOM_PROBES):
+            head = self._buckets[random.randrange(cap)]
+            if head is not None:
+                return self._random_in_chain(head)
+        # 2) 운이 나빴으면 무작위 위치에서 시작해 다음 칸으로 (한 바퀴 안에 반드시 찾음)
+        start = random.randrange(cap)
+        for step in range(cap):
             head = self._buckets[(start + step) & (cap - 1)]  # & (cap-1) 은 끝에서 0으로 되돌아가는 % cap
             if head is not None:
-                # 체인 길이를 센 뒤 그중 하나를 무작위로 고른다
-                length = 0
-                node = head
-                while node is not None:
-                    length += 1
-                    node = node.next
-                node = head
-                for _ in range(random.randrange(length)):
-                    node = node.next
-                return node.key
+                return self._random_in_chain(head)
         return None  # _size > 0 이면 여기 오지 않음 (안전장치)
+
+    @staticmethod
+    def _random_in_chain(head: Node) -> str:
+        """체인 길이를 센 뒤 그중 하나를 무작위로 고른다."""
+        length = 0
+        node = head
+        while node is not None:
+            length += 1
+            node = node.next
+        node = head
+        for _ in range(random.randrange(length)):
+            node = node.next
+        return node.key
