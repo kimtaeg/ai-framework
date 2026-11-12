@@ -6,7 +6,7 @@ Java 17로 직접 구현한 파일 기반 미니 DBMS. 외부 라이브러리는
 |---|---|---|
 | 1 | 파일 기반 SQL 처리기 (INSERT, SELECT, CLI) | ✅ |
 | 2 | 메모리 B+ 트리 id 인덱스 + 100만 건 성능 비교 | ✅ |
-| 3 | JDK HttpServer + ThreadPoolExecutor API 서버 | |
+| 3 | JDK HttpServer + ThreadPoolExecutor API 서버 | 진행 중 (동시성 · 서버 골격 · /health) |
 
 ## 빠른 시작
 
@@ -24,6 +24,7 @@ java -jar build/libs/mini-dbms.jar repl --data ./data
 | `repl [--data DIR]` | 대화형. `;`가 나올 때까지 여러 줄 입력, `.exit` 또는 EOF로 종료 |
 | `generate --table T --count N [--seed 42]` | 대용량 테스트 데이터 생성 ([아래](#대용량-데이터-생성)) |
 | `bench --table T [--queries 1000]` | 인덱스 조회 vs 선형 탐색 벤치마크 → `bench-result.md` ([아래](#벤치마크)) |
+| `serve [--port 8080] [--threads 8] [--queue 1000]` | HTTP API 서버 ([아래](#api-서버)) |
 
 - `--data` 기본값은 `./data`. 디렉터리가 미리 있어야 한다.
 - 한 문장이 실패해도 `ERROR: ...`를 출력하고 다음 문장을 계속 실행한다. run 모드는 `[line N]`으로 문장 위치를 알려준다.
@@ -215,6 +216,37 @@ java -jar build/libs/mini-dbms.jar bench --table users [--queries 1000] [--scan-
 테스트(`ConcurrencyTest`, `TableConcurrencyTest`)는 16스레드 × 1만 INSERT → id 1~160000 연속·중복 없음, INSERT/SELECT 혼합 시 항상 완전한 레코드, 재시작 후 파일·인덱스 일치를 확인한다.
 각 락을 일부러 빼면(쓰기 락 · computeIfAbsent · 읽기 락 · 스캔의 flush) 해당 테스트가 실패하는 것도 확인했다.
 
+## API 서버
+
+```bash
+java -jar build/libs/mini-dbms.jar serve --port 8080 --threads 8 [--max-threads 8] --queue 1000 --data ./data
+curl localhost:8080/health
+# {"status":"UP","uptimeMs":544,"pool":{"coreThreads":8,"maxThreads":8,"poolSize":1,"activeThreads":1,"queued":0,"queueCapacity":1000,"rejected":0}}
+```
+
+| 경로 | 응답 |
+|---|---|
+| `GET /health` | 200, 상태와 워커 풀 현황 |
+| `/health`에 다른 메서드 | 405 `METHOD_NOT_ALLOWED` (`Allow: GET`) |
+| 그 외 경로 | 404 `NOT_FOUND` (JSON) |
+| 워커·큐가 모두 찼을 때 | 503 `SERVER_BUSY` (`Retry-After: 1`) |
+| 핸들러의 예상 못 한 오류 | 500 `INTERNAL_ERROR` |
+
+### 워커 풀과 503
+
+`ThreadPoolExecutor(core=--threads, max=--max-threads, ArrayBlockingQueue(--queue))`, 스레드 이름 `db-worker-N`.
+요청은 core 스레드 → 큐 → (큐가 차면) max까지 스레드 추가 → 거절 순으로 처리된다. 큐가 유한해야 과부하가 503으로 드러난다.
+
+**거절된 요청에 응답을 보내는 방법**: HttpServer의 dispatcher 스레드는 연결마다 내부 Runnable을 만들어 `executor.execute()`에 넘기는데,
+HTTP 요청을 읽어 `HttpExchange`를 만드는 일은 그 Runnable 안에서 일어난다. 그래서 `RejectedExecutionHandler`가 받는 시점에는 응답을 쓸 대상이 없고,
+예외를 던지면 클라이언트는 상태 코드 없이 연결이 끊긴다(실험: `HTTP/1.1 header parser received no bytes`).
+
+`BusyRejectionHandler`는 거절된 Runnable을 **호출한 dispatcher 스레드에서 ThreadLocal "거절됨" 표시를 단 채로 바로 실행**한다.
+그러면 요청 파싱과 핸들러 호출이 그 자리에서 일어나고, 모든 핸들러를 감싼 가드가 표시를 보고 DB 작업 없이 503 JSON만 쓴다.
+헤더를 읽고 작은 응답을 쓰는 비용이라 dispatcher를 오래 붙잡지 않는다. 한계: 헤더를 아주 느리게 보내는 클라이언트가 있으면 그동안 dispatcher가 묶인다.
+
+종료(Ctrl+C)하면 새 연결을 그만 받고 처리 중인 요청을 최대 3초 기다린 뒤 엔진을 닫는다(버퍼 flush).
+
 ## 처리 흐름
 
 ```mermaid
@@ -259,6 +291,7 @@ src/main/java/com/minidbms/
 ├── sql/parser/   Parser, ast/(Statement, InsertStatement, SelectStatement, ExplainStatement, Condition, Operator, Literal)
 ├── engine/       DatabaseEngine(유일한 진입점), Executor, Planner, Plan, AccessPath, QueryResult
 ├── bench/        DataGenerator(generate 명령), UserRowGenerator, Benchmark(bench 명령)
+├── server/       ApiServer, ThreadPoolFactory, BusyRejectionHandler, ServeCommand(serve 명령), ServerConfig, Json
 ├── storage/      Schema, Column, ColumnType, SchemaLoader, RecordCodec, TableFile, Table
 ├── index/        BPlusTree, Node, InternalNode, LeafNode
 └── common/       DbException과 하위 예외
