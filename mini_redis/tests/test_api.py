@@ -3,19 +3,16 @@
 httpx.AsyncClient + ASGITransport: 실제 서버(포트)를 띄우지 않고 FastAPI 앱을 메모리 안에서 직접 호출한다.
 """
 
-import socket
-import threading
-import time
 from urllib.parse import quote
 
 import httpx
 import pytest
-import uvicorn
 
 from mini_redis.client import MiniRedisClient, MiniRedisError, MiniRedisUnavailable
 from mini_redis.core.store import MiniRedis
 from mini_redis.server.app import create_app
 from mini_redis.server.routes import MAX_VALUE_BYTES, get_store
+from mini_redis.server.thread_server import running_server
 from mini_redis.tests.fakes import FakeClock
 
 # 이 파일의 async 테스트를 anyio(asyncio) 이벤트 루프에서 실행하라는 표시
@@ -284,26 +281,10 @@ async def test_unknown_route_and_method(client):
 # 실제 uvicorn 서버를 백그라운드 스레드에서 띄워서 진짜 HTTP(소켓)로 통신해 본다.
 # → URL 인코딩된 한글·슬래시 키가 실제 서버에서도 제대로 디코딩되는지까지 확인된다.
 # ===========================================================================
-def free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))  # 0번 포트 = OS 가 비어 있는 포트를 골라줌
-        return s.getsockname()[1]
-
-
 @pytest.fixture
 def server_url(app):
-    port = free_port()
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
-    thread = threading.Thread(target=server.run, daemon=True)  # daemon: 테스트가 끝나면 같이 종료
-    thread.start()
-    deadline = time.time() + 5
-    while not server.started:  # 서버가 요청을 받을 준비가 될 때까지 대기
-        if time.time() > deadline:
-            raise RuntimeError("테스트 서버가 시작되지 않았습니다")
-        time.sleep(0.01)
-    yield f"http://127.0.0.1:{port}"
-    server.should_exit = True  # 서버에 종료 신호
-    thread.join(timeout=5)
+    with running_server(app) as url:
+        yield url
 
 
 @pytest.fixture

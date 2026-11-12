@@ -207,6 +207,24 @@ class MiniRedis:
                 result.append(key)
         return result
 
+    def sample_expire(self, sample_size: int) -> tuple[int, int]:
+        """만료가 걸린 키 중 최대 sample_size 개를 무작위로 뽑아 만료된 것을 지운다 (Active expiration 한 묶음).
+
+        반환: (뽑은 수, 그중 만료돼서 지운 수). 반복 여부 판단은 expiry.py 가 한다.
+        같은 키가 두 번 뽑힐 수도 있다(복원 추출). Redis 도 정확한 표본보다 '빠르고 대충'을 택한다.
+        """
+        with self._lock:
+            sampled = 0
+            expired = 0
+            for _ in range(sample_size):
+                key = self._expires.random_key()  # 만료가 걸린 키만 들어 있는 테이블에서 뽑는다
+                if key is None:                   # 만료 걸린 키가 하나도 없음
+                    break
+                sampled += 1
+                if self._expire_if_needed(key):   # lazy 와 같은 삭제 로직 재사용 (expired 통계도 같이 증가)
+                    expired += 1
+            return sampled, expired
+
     def flush_all(self) -> None:
         """모든 키 삭제. 통계(hits/misses)는 Redis 처럼 유지한다."""
         with self._lock:
