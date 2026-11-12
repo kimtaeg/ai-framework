@@ -64,6 +64,31 @@ public final class BPlusTree<K extends Comparable<K>, V> {
         return root;
     }
 
+    /** 트리 모양 요약. 벤치마크·디버깅용 */
+    public record Stats(long keys, int height, long internalNodes, long leafNodes, int order) {
+        public long nodes() {
+            return internalNodes + leafNodes;
+        }
+    }
+
+    /** 모든 노드를 한 번 훑어 센다(O(노드 수)). 자주 부르는 용도가 아니다. */
+    public Stats stats() {
+        long[] counts = new long[2]; // [내부, 리프]
+        countNodes(root, counts);
+        return new Stats(size, height, counts[0], counts[1], order);
+    }
+
+    private static <K extends Comparable<K>, V> void countNodes(Node<K, V> node, long[] counts) {
+        if (node.isLeaf()) {
+            counts[1]++;
+            return;
+        }
+        counts[0]++;
+        for (Node<K, V> child : ((InternalNode<K, V>) node).children) {
+            countNodes(child, counts);
+        }
+    }
+
     // ---- 조회 ----
 
     public Optional<V> search(K key) {

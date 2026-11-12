@@ -5,7 +5,7 @@ Java 17로 직접 구현한 파일 기반 미니 DBMS. 외부 라이브러리는
 | Phase | 내용 | 상태 |
 |---|---|---|
 | 1 | 파일 기반 SQL 처리기 (INSERT, SELECT, CLI) | ✅ |
-| 2 | 메모리 B+ 트리 id 인덱스 + 100만 건 성능 비교 | 진행 중 (B+ 트리 · Table 연결 · Planner) |
+| 2 | 메모리 B+ 트리 id 인덱스 + 100만 건 성능 비교 | ✅ |
 | 3 | JDK HttpServer + ThreadPoolExecutor API 서버 | |
 
 ## 빠른 시작
@@ -23,6 +23,7 @@ java -jar build/libs/mini-dbms.jar repl --data ./data
 | `run <file.sql> [--data DIR]` | 파일의 문장을 순서대로 실행. 마지막 `;`는 생략 가능 |
 | `repl [--data DIR]` | 대화형. `;`가 나올 때까지 여러 줄 입력, `.exit` 또는 EOF로 종료 |
 | `generate --table T --count N [--seed 42]` | 대용량 테스트 데이터 생성 ([아래](#대용량-데이터-생성)) |
+| `bench --table T [--queries 1000]` | 인덱스 조회 vs 선형 탐색 벤치마크 → `bench-result.md` ([아래](#벤치마크)) |
 
 - `--data` 기본값은 `./data`. 디렉터리가 미리 있어야 한다.
 - 한 문장이 실패해도 `ERROR: ...`를 출력하고 다음 문장을 계속 실행한다. run 모드는 `[line N]`으로 문장 위치를 알려준다.
@@ -175,6 +176,27 @@ java -jar build/libs/mini-dbms.jar generate --table users --count 1000000 [--see
 | `generate --batch 1` | 약 5 s |
 | `generate --out` 후 `run` | 내보내기 1.8 s + 실행 6.7 s (문장마다 execute·flush, 출력 100만 줄) |
 
+## 벤치마크
+
+```bash
+java -jar build/libs/mini-dbms.jar generate --table users --count 1000000
+java -jar build/libs/mini-dbms.jar bench --table users [--queries 1000] [--scan-queries 5] [--warmup 500] [--out bench-result.md]
+```
+
+| 항목 | SQL | 경로 |
+|---|---|---|
+| A | `WHERE id = ?` | INDEX_LOOKUP |
+| B | `WHERE id = ?` + `setIndexEnabled(false)` | FULL_SCAN |
+| C | `WHERE email = ?` | FULL_SCAN |
+
+- 대상 행은 파일 순서 기준 앞(처음 1%)·중간(가운데 1%)·끝(마지막 1%)에서 무작위로 고른다.
+- 항목마다 세 위치의 워밍업을 먼저 끝낸 뒤 잰다(처음 재는 위치만 JIT가 덜 된 상태로 측정되는 것을 막음).
+- 스캔(B, C)은 100만 건에서 한 번에 1초 이상이라 `--queries` 대신 `--scan-queries`(기본 5회)만 잰다.
+- 매 쿼리마다 실행 경로와 찾은 id를 확인해서, 의도와 다른 경로로 잰 숫자가 나오지 않게 한다.
+
+100만 건 결과(전체는 [`bench-result.md`](bench-result.md)): A 평균 **0.025 ms**, B 약 1,350 ms, C 약 1,220 ms — 약 5만 배.
+트리는 order 128, 높이 4, 노드 15,869개이고 테이블 로딩(인덱스 재구성)에 약 2.4 s가 걸린다.
+
 ## 처리 흐름
 
 ```mermaid
@@ -218,7 +240,7 @@ src/main/java/com/minidbms/
 ├── sql/lexer/    Lexer, Token, TokenType
 ├── sql/parser/   Parser, ast/(Statement, InsertStatement, SelectStatement, ExplainStatement, Condition, Operator, Literal)
 ├── engine/       DatabaseEngine(유일한 진입점), Executor, Planner, Plan, AccessPath, QueryResult
-├── bench/        DataGenerator(generate 명령), UserRowGenerator
+├── bench/        DataGenerator(generate 명령), UserRowGenerator, Benchmark(bench 명령)
 ├── storage/      Schema, Column, ColumnType, SchemaLoader, RecordCodec, TableFile, Table
 ├── index/        BPlusTree, Node, InternalNode, LeafNode
 └── common/       DbException과 하위 예외

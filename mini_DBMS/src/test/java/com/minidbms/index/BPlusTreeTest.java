@@ -268,4 +268,14 @@ class BPlusTreeTest {
         assertTrue(tree.height() >= 7 && tree.height() <= 14, "height=" + tree.height());
         BPlusTreeInvariants.check(tree);
     }
+
+    @Test
+    void stats는_키_높이_노드_수를_센다() {
+        BPlusTree<Integer, String> tree = treeOf(3, 1, 2, 3, 4, 5, 6, 7);
+        // dump: 루트[5] · 내부[3],[7] · 리프 4개
+        BPlusTree.Stats stats = tree.stats();
+        assertEquals(new BPlusTree.Stats(7, 3, 3, 4, 3), stats);
+        assertEquals(7, stats.nodes());
+        assertEquals(new BPlusTree.Stats(0, 1, 0, 1, 5), new BPlusTree<Integer, String>(5).stats());
+    }
 }

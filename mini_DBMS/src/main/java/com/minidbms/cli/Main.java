@@ -1,5 +1,6 @@
 package com.minidbms.cli;
 
+import com.minidbms.bench.Benchmark;
 import com.minidbms.bench.DataGenerator;
 
 import java.io.BufferedReader;
@@ -29,7 +30,8 @@ public final class Main {
             사용법:
               java -jar mini-dbms.jar run <file.sql> [--data ./data]
               java -jar mini-dbms.jar repl [--data ./data]
-              java -jar mini-dbms.jar generate --table users --count 1000000 [--seed 42] [--data ./data]""";
+              java -jar mini-dbms.jar generate --table users --count 1000000 [--seed 42] [--data ./data]
+              java -jar mini-dbms.jar bench --table users [--queries 1000] [--data ./data]""";
 
     private Main() {
     }
@@ -46,6 +48,9 @@ public final class Main {
         if (args.length > 0 && args[0].equals("generate")) {
             // 생성기는 옵션이 많아서 인자 해석을 bench 패키지에 맡긴다.
             return DataGenerator.run(Arrays.copyOfRange(args, 1, args.length), out, err);
+        }
+        if (args.length > 0 && args[0].equals("bench")) {
+            return Benchmark.run(Arrays.copyOfRange(args, 1, args.length), out, err);
         }
         Arguments parsed;
         try {

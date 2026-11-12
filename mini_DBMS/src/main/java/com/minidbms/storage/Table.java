@@ -127,6 +127,11 @@ public final class Table implements Closeable {
         return idIndex;
     }
 
+    /** id 인덱스의 크기·높이·노드 수 */
+    public BPlusTree.Stats idIndexStats() {
+        return idIndex.stats();
+    }
+
     /** 다음 INSERT가 받을 id */
     public long nextId() {
         return nextId;
