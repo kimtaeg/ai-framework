@@ -1,0 +1,1084 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>시스템 아키텍처 원리 학습 실험실 · miniReact</title>
+  <link rel="stylesheet" href="../styles/base.css" />
+  <style>
+    .lab-container {
+      max-width: 1040px;
+      margin: 0 auto;
+      padding: 30px 20px 80px;
+    }
+    .hero-title {
+      font-size: 30px;
+      margin: 0 0 10px;
+    }
+    .hero-title span { color: var(--accent); }
+    .hero-desc {
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.6;
+      margin-bottom: 28px;
+    }
+
+    /* 탭 네비게이션 */
+    .lab-tabs {
+      display: flex;
+      gap: 8px;
+      border-bottom: 2px solid var(--border);
+      margin-bottom: 28px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+    .tab-btn {
+      padding: 10px 18px;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 14.5px;
+      font-weight: 700;
+      cursor: pointer;
+      border-radius: 8px 8px 0 0;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+      transition: all .2s ease;
+      white-space: nowrap;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+      background: var(--accent-weak);
+    }
+
+    /* 실험 카드 박스 */
+    .exp-panel { display: none; }
+    .exp-panel.active { display: block; }
+
+    .exp-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+      margin-bottom: 24px;
+    }
+    .exp-header {
+      margin-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 14px;
+    }
+    .exp-tag {
+      font: 700 11px var(--mono);
+      background: var(--accent-weak);
+      color: var(--accent);
+      padding: 3px 8px;
+      border-radius: 6px;
+      display: inline-block;
+      margin-bottom: 8px;
+    }
+    .exp-header h2 {
+      font-size: 20px;
+      margin: 0 0 6px;
+    }
+    .exp-header p {
+      color: var(--muted);
+      font-size: 13.5px;
+      margin: 0;
+      line-height: 1.5;
+    }
+
+    /* 인터랙티브 다이어그램 듀얼 뷰 */
+    .dual-canvas {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 768px) {
+      .dual-canvas { grid-template-columns: 1fr; }
+    }
+
+    .memory-box {
+      background: var(--surface-2);
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+      position: relative;
+      transition: all .25s ease;
+    }
+    .memory-box.active-target {
+      border-color: var(--accent);
+      box-shadow: 0 0 16px rgba(79, 91, 213, 0.2);
+    }
+    .memory-title {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .memory-badge {
+      font: 700 11px var(--mono);
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .badge-browser { background: #e0f2fe; color: #0284c7; }
+    .badge-dbms { background: #dcfce7; color: #16a34a; }
+    .badge-redis { background: #fee2e2; color: #dc2626; }
+
+    .memory-content {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 12px;
+      min-height: 110px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    /* 깨달음 안내 상자 (Aha! Callout) */
+    .aha-box {
+      background: #f8fafc;
+      border-left: 4px solid var(--accent);
+      padding: 16px;
+      border-radius: 0 8px 8px 0;
+      margin-top: 18px;
+      font-size: 13.5px;
+      line-height: 1.6;
+      color: var(--text);
+    }
+    @media (prefers-color-scheme: dark) {
+      .aha-box { background: #1a1d29; border-left-color: var(--accent); }
+    }
+    .aha-box strong { color: var(--accent); }
+
+    /* 이론 심층 분석 & 디펜스 섹션 */
+    .theory-deepdive {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 22px;
+      margin-top: 24px;
+    }
+    .theory-deepdive h3 {
+      font-size: 16px;
+      margin: 0 0 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
+    }
+    .theory-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+    @media (max-width: 768px) {
+      .theory-grid { grid-template-columns: 1fr; }
+    }
+    .theory-item {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .theory-item h4 {
+      font-size: 14px;
+      margin: 0 0 6px;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .theory-item p {
+      font-size: 12.8px;
+      color: var(--muted);
+      line-height: 1.55;
+      margin: 0;
+    }
+    .defense-box {
+      background: linear-gradient(135deg, rgba(79, 91, 213, 0.08) 0%, rgba(31, 157, 107, 0.08) 100%);
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-size: 13.5px;
+      line-height: 1.6;
+    }
+    .defense-box strong {
+      display: block;
+      color: var(--accent);
+      margin-bottom: 6px;
+      font-size: 13px;
+      letter-spacing: .03em;
+    }
+
+    /* 버튼 스타일 */
+    .action-btn {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all .15s ease;
+    }
+    .action-btn:hover {
+      border-color: var(--accent);
+      background: var(--accent-weak);
+      color: var(--accent);
+    }
+    .action-btn.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .action-btn.primary:hover {
+      background: #424ebf;
+      color: #fff;
+    }
+
+    /* 퀴즈/선택지 태그 */
+    .quiz-options {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px;
+      margin: 16px 0;
+    }
+    .quiz-card {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      cursor: pointer;
+      transition: all .2s ease;
+      text-align: center;
+    }
+    .quiz-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+    .quiz-card.correct {
+      border-color: var(--ok);
+      background: rgba(31, 157, 107, 0.1);
+    }
+    .quiz-card.wrong {
+      border-color: var(--danger);
+      background: rgba(214, 69, 69, 0.1);
+    }
+
+    /* 코드 비교창 */
+    .code-view {
+      background: #181a24;
+      color: #e6e8f0;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      padding: 14px;
+      border-radius: 8px;
+      overflow-x: auto;
+      line-height: 1.5;
+      min-height: 100px;
+    }
+
+    /* 하이브리드 아일랜드 컴포넌트 전용 스타일 */
+    .island-container {
+      background: var(--surface);
+      border: 2px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .zone-ssr {
+      background: rgba(31, 157, 107, 0.05);
+      border: 2px dashed var(--ok);
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 16px;
+      position: relative;
+    }
+    .zone-csr {
+      background: rgba(79, 91, 213, 0.05);
+      border: 2px dashed var(--accent);
+      border-radius: 10px;
+      padding: 16px;
+      position: relative;
+    }
+    .zone-tag {
+      font: 700 11px var(--mono);
+      padding: 2px 8px;
+      border-radius: 4px;
+      display: inline-block;
+      margin-bottom: 8px;
+    }
+    .tag-ssr { background: var(--ok); color: #fff; }
+    .tag-csr { background: var(--accent); color: #fff; }
+
+    .metric-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 14px;
+      font-size: 13.5px;
+    }
+    .metric-table th, .metric-table td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+    }
+    .metric-table th { color: var(--muted); font-size: 12px; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../index.html">mini<span>React</span></a>
+    <nav>
+      <a href="../index.html">홈</a>
+      <a href="./index.html" aria-current="page">원리 학습 실험실</a>
+      <a href="../week2/redis/index.html">미니 레디스</a>
+      <a href="../week2/dbms/phase1/index.html">미니 DBMS</a>
+    </nav>
+  </header>
+
+  <main class="lab-container">
+    <div style="margin-bottom: 24px;">
+      <h1 class="hero-title">실제로 만져보며 깨닫는 <span>시스템 원리 실험실</span></h1>
+      <p class="hero-desc">
+        오늘 나눈 대화의 5가지 핵심 질문(F12의 비밀, DBMS의 존재 이유, 데이터 저장소 분리, 렌더링 방식의 실체, 하이브리드 분업)을<br>
+        직접 버튼을 누르고 화면과 메모리의 변화를 눈으로 보면서 직관적으로 이해합니다.
+      </p>
+    </div>
+
+    <!-- 5대 실험실 탭 -->
+    <div class="lab-tabs">
+      <button class="tab-btn active" onclick="switchTab(0)">🧪 실험 1: F12 수정과 새로고침(F5)의 비밀</button>
+      <button class="tab-btn" onclick="switchTab(1)">🗂️ 실험 2: 어떤 데이터를 어디에 넣을까? (적재적소)</button>
+      <button class="tab-btn" onclick="switchTab(2)">👁️ 실험 3: 검색 로봇의 눈 vs 사용자의 눈 (렌더링 비교)</button>
+      <button class="tab-btn" onclick="switchTab(3)">🔌 실험 4: 내 컴퓨터의 진짜 서버와 통신해보기</button>
+      <button class="tab-btn" onclick="switchTab(4)" style="color: var(--ok); font-weight: 800;">⚡ 실험 5: 하이브리드 분업 (중요한 건 SSR + 버튼만 CSR)</button>
+    </div>
+
+    <!-- ======================================================== 실험 1: F12와 새로고침 -->
+    <div class="exp-panel active" id="panel-0">
+      <div class="exp-box">
+        <div class="exp-header">
+          <span class="exp-tag">EXPERIMENT 1 · CLIENT VS SERVER TRUTH</span>
+          <h2>"웹사이트를 F12로 고치고 새로고침하면 왜 원래대로 돌아올까?"</h2>
+          <p>
+            아래의 두 상자를 보세요. 왼쪽은 <strong>내 컴퓨터 브라우저의 화면(복사본)</strong>이고, 오른쪽은 <strong>은행 전산실의 DBMS 금고(진짜 원본)</strong>입니다.<br>
+            F12로 화면 숫자를 고쳐보고, 새로고침을 눌러서 데이터가 어디서 어떻게 복원되는지 확인해 보세요.
+          </p>
+        </div>
+
+        <div class="dual-canvas">
+          <div class="memory-box" id="box-browser">
+            <div class="memory-title">
+              <span>💻 내 컴퓨터 브라우저 (리액트가 그린 화면)</span>
+              <span class="memory-badge badge-browser">임시 복사본 (휘발성)</span>
+            </div>
+            <div class="memory-content" id="browser-screen">
+              <div style="font-size: 13px; color: var(--muted); margin-bottom: 4px;">카카오뱅크 통장 잔액</div>
+              <div style="font-size: 26px; font-weight: 800; font-family: var(--mono); color: var(--text);" id="client-balance-display">
+                10,000원
+              </div>
+              <div style="font-size: 11px; color: var(--muted); margin-top: 6px;" id="client-status-text">
+                * 서버에서 복사해 온 데이터입니다.
+              </div>
+            </div>
+          </div>
+
+          <div class="memory-box" id="box-dbms">
+            <div class="memory-title">
+              <span>🏛️ 은행 서버 DBMS 금고 (NVMe SSD)</span>
+              <span class="memory-badge badge-dbms">진짜 원본 (SSOT)</span>
+            </div>
+            <div class="memory-content">
+              <div style="font-size: 13px; color: var(--muted); margin-bottom: 4px;">account 테이블 원본 행 (Row)</div>
+              <div style="font-size: 26px; font-weight: 800; font-family: var(--mono); color: var(--ok);" id="server-db-balance">
+                10,000원
+              </div>
+              <div style="font-size: 11px; color: var(--muted); margin-top: 6px;">
+                * WAL 로그와 B+ Tree로 잠겨 있는 진짜 원본입니다.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+          <button class="action-btn" onclick="tamperF12()">
+            🛠️ 1단계: F12 개발자 도구로 화면을 '10억 원'으로 낙서하기
+          </button>
+          <button class="action-btn primary" onclick="simulateF5()">
+            🔄 2단계: 새로고침 (F5) 누르기
+          </button>
+          <button class="action-btn" onclick="resetExp1()">
+            ↩️ 처음 상태로 리셋
+          </button>
+        </div>
+
+        <div class="aha-box" id="exp1-aha">
+          💡 <strong>깨달음 포인트</strong>: [1단계]를 누르면 내 브라우저 화면의 글자는 10억 원으로 바뀌지만, <strong>오른쪽 은행 금고(DBMS)의 진짜 원본은 1원도 바뀌지 않는 것</strong>을 확인할 수 있습니다. 이제 [2단계 새로고침]을 누르면 무슨 일이 일어나는지 확인해 보세요!
+        </div>
+
+        <div class="theory-deepdive">
+          <h3>🎓 이 실험을 통해 반드시 이해해야 하는 핵심 원리</h3>
+          <div class="theory-grid">
+            <div class="theory-item">
+              <h4>1. 클라이언트 비신뢰 원칙 (Never Trust Client)</h4>
+              <p>
+                브라우저(F12)에서 조작할 수 있는 모든 데이터는 신뢰할 수 없습니다. 따라서 결제 금액, 잔액, 할인율, 관리자 권한 검증은 절대로 리액트(프론트엔드) 화면에 맡겨선 안 되며, <strong>오직 백엔드 서버와 DBMS에서만 최종 검증</strong>해야 합니다.
+              </p>
+            </div>
+            <div class="theory-item">
+              <h4>2. 단일 진실 원천 (Single Source of Truth, SSOT)</h4>
+              <p>
+                브라우저 화면은 '빔프로젝터 스크린(복사본)'에 불과하며, 데이터의 '필름 원판(진짜 원본)'은 오직 DBMS 금고에 있습니다. 새로고침(F5) 시 브라우저는 힙(Heap) 메모리를 비우고 서버의 진짜 금고에서 데이터를 다시 긁어오므로 원상복구됩니다.
+              </p>
+            </div>
+          </div>
+          <div class="defense-box">
+            <strong>🎙️ 면접 & 구술 디펜스 모범 답변:</strong>
+            "F12로 DOM 텍스트 노드를 변조해도 이는 로컬 단말기 브라우저 탭 프로세스의 RAM 힙 영역만 고친 것에 불과하며, 원격 서버나 디스크에는 아무 패킷도 전달되지 않습니다. 새로고침 시 브라우저는 Page Unload 이벤트와 함께 메모리를 해제하고, 서버 DBMS의 단일 진실 원천(SSOT)으로부터 데이터를 재조회하므로 무결성이 보장된 원래 데이터로 복원됩니다."
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ======================================================== 실험 2: 데이터 배치 퀴즈 -->
+    <div class="exp-panel" id="panel-1">
+      <div class="exp-box">
+        <div class="exp-header">
+          <span class="exp-tag">EXPERIMENT 2 · POLYGLOT PERSISTENCE</span>
+          <h2>"DBMS에 모든 정보를 다 넣으면 안 되는 이유"</h2>
+          <p>
+            아래에 등장하는 데이터 카드를 보고, <strong>어느 저장소에 넣어야 시스템이 터지지 않고 안전할지</strong> 직접 선택해 보세요.<br>
+            잘못 넣었을 때 컴퓨터 시스템에 어떤 참사가 일어나는지 즉시 피드백을 보여드립니다.
+          </p>
+        </div>
+
+        <div style="background: var(--surface-2); border-radius: 10px; padding: 18px; margin-bottom: 20px;">
+          <div style="font-size: 12px; color: var(--muted); font-weight: 700;">질문 <span id="quiz-num">1</span> / 4</div>
+          <div style="font-size: 18px; font-weight: 800; margin: 8px 0;" id="quiz-question">
+            "스마트폰 SMS로 도착한 '3분 유효기간 1회용 인증번호 (6자리)'"
+          </div>
+          <div style="font-size: 13px; color: var(--muted);" id="quiz-desc">
+            이 데이터는 어디에 저장하는 것이 가장 현명할까요?
+          </div>
+        </div>
+
+        <div class="quiz-options" id="quiz-options-container"></div>
+        <div class="aha-box" id="quiz-feedback" style="display: none;"></div>
+        <div style="margin-top: 16px; text-align: right;">
+          <button class="action-btn" id="quiz-next-btn" style="display: none;" onclick="nextQuiz()">다음 문제 풀기 ➔</button>
+        </div>
+
+        <div class="theory-deepdive">
+          <h3>🎓 이 실험을 통해 반드시 이해해야 하는 핵심 원리</h3>
+          <div class="theory-grid">
+            <div class="theory-item">
+              <h4>1. 버퍼 풀 오염 방지 (Buffer Pool Cache Pollution)</h4>
+              <p>
+                RDBMS는 디스크 읽기를 줄이기 위해 메모리에 '버퍼 풀'을 둡니다. 100MB 동영상 같은 큰 파일을 DB에 넣으면 버퍼 풀 메모리가 통째로 오염되어 계좌 테이블 같은 중요한 쿼리 속도가 10배 느려집니다. 동영상은 S3에 넣고 DB에는 URL 주소(문자열 50바이트)만 보관해야 합니다.
+              </p>
+            </div>
+            <div class="theory-item">
+              <h4>2. 데이터 수명 주기와 비용 분리 (RAM vs NVMe)</h4>
+              <p>
+                3분짜리 SMS 인증번호는 정전이 나도 복구될 필요가 없습니다. 이런 쓰레기 데이터를 무거운 NVMe SSD에 B+ Tree 인덱스를 쪼개가며 쓸 이유가 없습니다. 초단기 데이터는 <strong>Redis의 TTL(Time-To-Live) 메모리 만료</strong>로 자동 소멸시켜야 디스크 I/O가 낭비되지 않습니다.
+              </p>
+            </div>
+          </div>
+          <div class="defense-box">
+            <strong>🎙️ 면접 & 구술 디펜스 모범 답변:</strong>
+            "모든 데이터를 한 DB에 넣는 것은 심각한 안티 패턴입니다. 데이터의 크기, 수명 주기, 트랜잭션 요구 수준(ACID)에 따라 저장소를 분리하는 '폴리글랏 퍼시스턴스'가 필수적입니다. 절대 손실되면 안 되는 핵심 장부만 RDBMS에 두고, 대용량 바이너리는 S3, 휘발성 임시 데이터는 Redis로 분리해야 DB 버퍼 풀 오염과 디스크 I/O 병목을 막을 수 있습니다."
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ======================================================== 실험 3: 검색 로봇 vs 사용자 -->
+    <div class="exp-panel" id="panel-2">
+      <div class="exp-box">
+        <div class="exp-header">
+          <span class="exp-tag">EXPERIMENT 3 · RENDERING PERSPECTIVES</span>
+          <h2>"렌더링 방식에 따라 구글 검색 로봇과 사람은 서로 다른 화면을 본다?"</h2>
+          <p>
+            CSR(리액트 기본형)과 SSR(서버 조리형) 버튼을 번갈아 눌러보세요.<br>
+            <strong>"사람의 눈에 보이는 완성된 화면"</strong>과 <strong>"구글/네이버 검색 로봇이 읽어가는 실제 HTML 코드"</strong>가 어떻게 다른지 나란히 비교합니다.
+          </p>
+        </div>
+
+        <div style="margin-bottom: 16px; display: flex; gap: 10px;">
+          <button class="action-btn active" id="btn-render-csr" onclick="showRenderDiff('csr')">📱 1. CSR (Client-Side Rendering / 리액트)</button>
+          <button class="action-btn" id="btn-render-ssr" onclick="showRenderDiff('ssr')">🍲 2. SSR (Server-Side Rendering / 넥스트)</button>
+        </div>
+
+        <div class="dual-canvas">
+          <div class="memory-box">
+            <div class="memory-title">
+              <span>👤 일반 사용자의 모니터에 보이는 화면</span>
+              <span class="memory-badge" id="user-render-badge" style="background:#e0f2fe; color:#0369a1;">브라우저 화면</span>
+            </div>
+            <div class="memory-content" id="user-view-content" style="background: var(--surface);"></div>
+          </div>
+
+          <div class="memory-box">
+            <div class="memory-title">
+              <span>🤖 구글/네이버 검색 로봇이 읽는 HTML 소스</span>
+              <span class="memory-badge" id="bot-render-badge" style="background:#fee2e2; color:#b91c1c;">검색 엔진 시선</span>
+            </div>
+            <pre class="code-view" id="bot-view-code"></pre>
+          </div>
+        </div>
+
+        <div class="aha-box" id="render-aha"></div>
+
+        <div class="theory-deepdive">
+          <h3>🎓 이 실험을 통해 반드시 이해해야 하는 핵심 원리</h3>
+          <div class="theory-grid">
+            <div class="theory-item">
+              <h4>1. 초기 HTML 페이로드(Payload)의 치명적 차이</h4>
+              <p>
+                CSR은 서버가 빈 껍데기 <code>&lt;div id="root"&gt;&lt;/div&gt;</code>만 던져주고 브라우저가 JS를 돌려 화면을 그립니다. 반면 검색 로봇은 JS를 무겁게 실행하지 않고 첫 HTML 텍스트만 긁어가기 때문에 CSR은 빈 백지로 인식되어 검색 결과에서 누락됩니다.
+              </p>
+            </div>
+            <div class="theory-item">
+              <h4>2. 은총알은 없다 (No Silver Bullet / 트레이드오프)</h4>
+              <p>
+                그렇다고 모든 페이지를 SSR로 만들면 서버 CPU가 매번 HTML을 조립하느라 서버 비용이 폭증합니다. 따라서 검색 노출이 생명인 <strong>쇼핑몰/뉴스</strong>는 <strong>SSR</strong>을 쓰고, 검색이 필요 없는 <strong>사내 어드민/노션</strong>은 가벼운 <strong>순수 CSR</strong>을 써야 합니다.
+              </p>
+            </div>
+          </div>
+          <div class="defense-box">
+            <strong>🎙️ 면접 & 구술 디펜스 모범 답변:</strong>
+            "CSR은 클라이언트가 번들 JS를 다운로드하고 실행(Hydration)한 뒤에야 DOM이 생성되므로, 초기 수신된 HTML 스트림만 인덱싱하는 검색 크롤러에게 빈 화면을 제공하는 구조적 한계(SEO 취약성)가 있습니다. 반면 SSR은 서버에서 완성된 HTML 텍스트를 스트리밍하므로 크롤러 색인과 첫 화면 표시(FCP)에 유리하지만, 서버 CPU 부하가 증가하므로 비즈니스 도메인에 맞게 기술을 선택해야 합니다."
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ======================================================== 실험 4: 실제 서버와 통신 -->
+    <div class="exp-panel" id="panel-3">
+      <div class="exp-box">
+        <div class="exp-header">
+          <span class="exp-tag">EXPERIMENT 4 · REAL NETWORK PROBE</span>
+          <h2>"내 컴퓨터의 진짜 백엔드 서버(Node.js)에 요청을 날려보자"</h2>
+          <p>
+            가짜 시뮬레이션이 아닙니다. 지금 이 페이지가 돌아가는 실제 로컬 서버(포트 5200)에 진짜 HTTP 통신을 날려,<br>
+            <strong>내가 만든 미니 레디스/DBMS API가 실제로 살아서 응답하는지</strong> 터미널 창처럼 결과를 검증합니다.
+          </p>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+          <div>
+            <label style="font-size: 12px; font-weight: 700; color: var(--muted); display: block; margin-bottom: 4px;">저장할 키 (Key)</label>
+            <input type="text" id="real-key-input" value="user:session:jungler" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); font-family: var(--mono); background: var(--surface-2); color: var(--text);" />
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 700; color: var(--muted); display: block; margin-bottom: 4px;">저장할 값 (Value)</label>
+            <input type="text" id="real-val-input" value="혜성_로그인_성공" style="width: 100%; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); font-family: var(--mono); background: var(--surface-2); color: var(--text);" />
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; margin-bottom: 16px;">
+          <button class="action-btn primary" onclick="sendRealRedisSet()">⚡ 1. miniRedis에 진짜 저장 (POST /api/redis)</button>
+          <button class="action-btn" onclick="sendRealRedisGet()">🔍 2. miniRedis에서 진짜 읽기 (GET /api/redis)</button>
+          <button class="action-btn" onclick="sendRealSql()">🏛️ 3. miniDBMS에 진짜 SQL 전송 (POST /api/sql)</button>
+        </div>
+
+        <div style="font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 6px;">실제 HTTP 통신 결과 (Raw JSON Response)</div>
+        <pre class="code-view" id="real-response-box" style="min-height: 120px;">// 버튼을 누르면 실제 내 컴퓨터 백엔드 서버의 JSON 응답이 여기에 출력됩니다...</pre>
+
+        <div class="theory-deepdive">
+          <h3>🎓 이 실험을 통해 반드시 이해해야 하는 핵심 원리</h3>
+          <div class="theory-grid">
+            <div class="theory-item">
+              <h4>1. 프론트엔드와 백엔드의 물리적 격리</h4>
+              <p>
+                리액트(브라우저)와 백엔드(Node.js 서버)는 완전히 다른 프로세스입니다. 둘 사이의 유일한 대화 통로는 표준 HTTP 네트워크 패킷(JSON)뿐입니다. 브라우저가 직접 C++ 메모리나 디스크 포인터를 열 수 없기 때문에 웹 서버가 중간에서 관제탑 역할을 합니다.
+              </p>
+            </div>
+            <div class="theory-item">
+              <h4>2. 실제 파일 시스템 쓰기의 실체</h4>
+              <p>
+                위 버튼을 눌렀을 때 마법이 일어난 것이 아닙니다. <code>POST /api/redis</code>는 내 컴퓨터의 <code>week2/data/redis.aof</code> 파일에 텍스트 명령어를 덧붙였고, <code>POST /api/sql</code>은 miniDBMS의 B+ Tree가 <code>week2/data/db</code> 파일의 바이트 블록을 수정한 것입니다.
+              </p>
+            </div>
+          </div>
+          <div class="defense-box">
+            <strong>🎙️ 면접 & 구술 디펜스 모범 답변:</strong>
+            "웹 시스템의 본질은 네트워크 경계를 넘나드는 무상태(Stateless) HTTP 프로토콜 규약입니다. 클라이언트의 UI 인터랙션이 HTTP 요청으로 직렬화되어 백엔드로 전달되고, 백엔드 이벤트 루프가 이를 수신하여 인메모리 해시테이블과 디스크 B+ Tree 자료구조에 바이트 단위로 영속화하는 파이프라인 전체를 제어할 수 있어야 진정한 풀스택 시스템 아키텍처를 이해한 것입니다."
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ======================================================== 실험 5: 하이브리드 분업 (RSC) -->
+    <div class="exp-panel" id="panel-4">
+      <div class="exp-box">
+        <div class="exp-header">
+          <span class="exp-tag" style="background:#dcfce7; color:#15803d;">EXPERIMENT 5 · HYBRID ISLAND ARCHITECTURE</span>
+          <h2>"형님의 아이디어 직접 구현: 중요한 부분만 SSR + 인터랙션만 CSR"</h2>
+          <p>
+            <strong>"모든 걸 SSR로 하지 말고, 검색에 걸려야 하는 핵심 상품 정보만 서버에서 가볍게 조리하고(SSR),<br>
+            좋아요 버튼이나 팝업창 같은 건 브라우저에 외주(CSR)를 주면 비용도 아끼고 로딩도 빨라지지 않나?"</strong><br>
+            그 혁신적인 아이디어를 실제 쿠팡 스타일 컴포넌트로 구현하여 그 위력을 직접 확인해 봅니다.
+          </p>
+        </div>
+
+        <!-- 하이브리드 컴포넌트 라이브 뷰 -->
+        <div class="island-container">
+          <div style="font-size: 13px; font-weight: 700; color: var(--muted); margin-bottom: 12px; display: flex; justify-content: space-between;">
+            <span>📦 쿠팡 스타일 하이브리드 상품 카드</span>
+            <span style="color: var(--ok); font-family: var(--mono);">React Server Components (RSC) 실시간 분업 가동 중</span>
+          </div>
+
+          <!-- 구역 1: 서버 조리 영역 (SSR) -->
+          <div class="zone-ssr">
+            <span class="zone-tag tag-ssr">🟢 서버 조리 구역 (SSR / JS 번들 용량 0 KB)</span>
+            <div style="font-size: 18px; font-weight: 800; margin-bottom: 4px;">나이키 에어포스 1 '07 LV8 빈티지</div>
+            <div style="font-size: 22px; font-weight: 800; color: var(--ok); font-family: var(--mono); margin-bottom: 8px;">139,000원 <span style="font-size: 13px; color: var(--muted); font-weight: normal;">(로켓배송 · 무료반품)</span></div>
+            <div style="font-size: 13px; color: var(--muted); line-height: 1.5;">
+              • 특징: 클래식한 천연 가죽 갑피와 나이키 에어 쿠셔닝의 완벽한 조화.<br>
+              • 이 구역은 <strong>서버에서 순수 HTML 텍스트로 완성</strong>되어 내려오므로, 구글/네이버 검색 로봇이 0.001초 만에 긁어갈 수 있습니다!
+            </div>
+          </div>
+
+          <!-- 구역 2: 브라우저 조리 영역 (CSR Island) -->
+          <div class="zone-csr">
+            <span class="zone-tag tag-csr">🟡 브라우저 조리 구역 (CSR 'use client' 독립 섬)</span>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+              <button class="action-btn" id="hybrid-like-btn" onclick="clickLike()" style="background: var(--surface);">
+                ❤️ 찜하기 (<span id="hybrid-like-count" style="font-weight: 700; color: var(--danger);">142</span>)
+              </button>
+              <button class="action-btn primary" onclick="clickCart()">
+                🛒 장바구니 담기
+              </button>
+              <span id="cart-toast" style="font-size: 13px; color: var(--ok); font-weight: 600; display: none;">
+                ✅ 장바구니에 상품을 담았습니다!
+              </span>
+            </div>
+            <div style="font-size: 12px; color: var(--muted); margin-top: 8px;">
+              * 이 버튼들만 <code>'use client'</code>로 지정되어 브라우저 리액트가 클릭 이벤트를 처리합니다. (검색 로봇은 쳐다보지도 않음!)
+            </div>
+          </div>
+        </div>
+
+        <!-- 비교 메트릭 표 -->
+        <div style="margin-bottom: 20px;">
+          <div style="font-size: 15px; font-weight: 700; margin-bottom: 8px;">📊 형님의 하이브리드 분업 vs 기존 방식 성능 비교</div>
+          <table class="metric-table">
+            <thead>
+              <tr>
+                <th>비교 지표</th>
+                <th style="color: var(--danger);">🔴 기존 전체 CSR 방식</th>
+                <th style="color: var(--ok); font-weight: 800;">🟢 형님의 하이브리드 분업 방식</th>
+                <th>개선 효과</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="font-weight: 600;">다운로드 JS 번들 크기</td>
+                <td style="color: var(--danger);">2,450 KB (무거움)</td>
+                <td style="color: var(--ok); font-weight: 700;">18 KB (극소량)</td>
+                <td><strong style="color: var(--ok);">92% 대폭 다이어트</strong></td>
+              </tr>
+              <tr>
+                <td style="font-weight: 600;">첫 화면 뜨는 시간 (FCP)</td>
+                <td style="color: var(--danger);">850 ms (흰 화면 대기)</td>
+                <td style="color: var(--ok); font-weight: 700;">15 ms (즉시 표시)</td>
+                <td><strong style="color: var(--ok);">56배 고속 렌더링</strong></td>
+              </tr>
+              <tr>
+                <td style="font-weight: 600;">서버 CPU 연산 비용</td>
+                <td>0원 (브라우저가 다 함)</td>
+                <td style="color: var(--ok); font-weight: 700;">매우 저렴 (핵심 글자만 조립)</td>
+                <td>서버 과부하 원천 차단</td>
+              </tr>
+              <tr>
+                <td style="font-weight: 600;">검색 엔진 최적화 (SEO)</td>
+                <td style="color: var(--danger);">❌ 실패 (빈 껍데기 백지)</td>
+                <td style="color: var(--ok); font-weight: 700;">✅ 100% 최상단 노출 완벽</td>
+                <td><strong style="color: var(--ok);">매출 직결</strong></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="theory-deepdive">
+          <h3>🎓 이 실험을 통해 반드시 이해해야 하는 핵심 원리</h3>
+          <div class="theory-grid">
+            <div class="theory-item">
+              <h4>1. 컴포넌트 단위 분업 (RSC: React Server Components)</h4>
+              <p>
+                과거에는 '페이지 전체'를 SSR로 할지 CSR로 할지 양자택일해야 했습니다. 하지만 최신 리액트는 <strong>컴포넌트 하나하나마다 역할을 분배</strong>합니다. 텍스트 정보는 서버에서 HTML로 0바이트로 만들어 내려주고, 클릭이 필요한 버튼만 브라우저 자바스크립트로 전송합니다.
+              </p>
+            </div>
+            <div class="theory-item">
+              <h4>2. 아일랜드 아키텍처 (Islands Architecture)</h4>
+              <p>
+                웹페이지의 90% 이상은 사실 사용자가 클릭할 필요가 없는 순수 정적 글자(바다)입니다. 오직 찜하기 버튼이나 모달 창 같은 몇 군데만 자바스크립트가 동작하는 <strong>작고 독립된 섬(Island)</strong>으로 띄움으로써, 스마트폰 배터리와 메모리를 극적으로 아낄 수 있습니다.
+              </p>
+            </div>
+          </div>
+          <div class="defense-box">
+            <strong>🎙️ 면접 & 구술 디펜스 모범 답변:</strong>
+            "전통적인 SSR은 전체 페이지를 서버에서 직렬화하고 브라우저가 전체 트리를 재수화(Full Rehydration)하는 막대한 오버헤드가 있었습니다. 하지만 React Server Components(RSC) 기반의 하이브리드 분업을 적용하면, 검색 크롤러와 초기 사용자 경험에 필수적인 상품명·가격은 서버에서 0KB 번들로 완성(SSR)하고, 인터랙티브한 위젯만 선별적 클라이언트 컴포넌트('use client')로 격리함으로써 서버 연산 비용 절감과 클라이언트 번들 최적화를 동시에 달성할 수 있습니다."
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // --------------------------------------------------------------------------
+    // 탭 전환 로직
+    // --------------------------------------------------------------------------
+    function switchTab(index) {
+      document.querySelectorAll('.tab-btn').forEach((btn, i) => {
+        btn.classList.toggle('active', i === index);
+      });
+      document.querySelectorAll('.exp-panel').forEach((panel, i) => {
+        panel.classList.toggle('active', i === index);
+      });
+    }
+
+    // --------------------------------------------------------------------------
+    // 실험 1: F12 수정과 새로고침 시뮬레이터
+    // --------------------------------------------------------------------------
+    function tamperF12() {
+      const display = document.getElementById('client-balance-display');
+      const status = document.getElementById('client-status-text');
+      const box = document.getElementById('box-browser');
+      const aha = document.getElementById('exp1-aha');
+
+      display.innerText = "1,000,000,000원";
+      display.style.color = "#d98a00";
+      status.innerText = "⚠️ 사용자가 F12로 브라우저 RAM을 고쳐 쓴 가짜 화면입니다!";
+      box.classList.add('active-target');
+
+      aha.innerHTML = `🚨 <strong>F12 수정 완료!</strong><br>` +
+        `보시다시피 내 모니터(왼쪽)에는 '10억 원'이 찍혔습니다. 하지만 오른쪽 <strong>은행 금고(DBMS)의 원본은 여전히 '10,000원'</strong>입니다.<br>` +
+        `이 상태에서 식당에 가서 1억 원짜리 밥을 결제하려고 해도, 서버는 오른쪽 금고(10,000원)만 확인하므로 잔액 부족으로 튕깁니다.<br>` +
+        `이제 <strong>[2단계: 새로고침(F5) 누르기]</strong> 버튼을 눌러보세요!`;
+    }
+
+    function simulateF5() {
+      const display = document.getElementById('client-balance-display');
+      const status = document.getElementById('client-status-text');
+      const box = document.getElementById('box-browser');
+      const aha = document.getElementById('exp1-aha');
+
+      display.innerText = "불러오는 중...";
+      display.style.color = "var(--muted)";
+      status.innerText = "브라우저가 기존 메모리를 비우고 서버에 '진짜 데이터 다시 줘' 요청 중...";
+      box.classList.remove('active-target');
+
+      setTimeout(() => {
+        display.innerText = "10,000원";
+        display.style.color = "var(--text)";
+        status.innerText = "✅ 은행 금고(DBMS)에서 진짜 원본을 다시 읽어와 화면을 복원했습니다.";
+        
+        aha.innerHTML = `🎉 <strong>새로고침 원상복구 완료!</strong><br>` +
+          `새로고침(F5)을 누르면 브라우저는 내가 F12로 낙서했던 메모리를 쓰레기통에 싹 비워버립니다.<br>` +
+          `그리고 인터넷을 통해 서버 금고(오른쪽)에 물어봅니다: <em>"진짜 잔액 얼마야?"</em><br>` +
+          `금고에 저장되어 있던 진짜 데이터인 <strong>10,000원</strong>이 배달되고, 리액트가 그 진짜 데이터로 화면을 다시 그리기 때문에 원래대로 돌아오는 것입니다!`;
+      }, 500);
+    }
+
+    function resetExp1() {
+      document.getElementById('client-balance-display').innerText = "10,000원";
+      document.getElementById('client-balance-display').style.color = "var(--text)";
+      document.getElementById('client-status-text').innerText = "* 서버에서 복사해 온 데이터입니다.";
+      document.getElementById('box-browser').classList.remove('active-target');
+      document.getElementById('exp1-aha').innerHTML = `💡 <strong>깨달음 포인트</strong>: [1단계]를 누르면 내 브라우저 화면의 글자는 10억 원으로 바뀌지만, <strong>오른쪽 은행 금고(DBMS)의 진짜 원본은 1원도 바뀌지 않는 것</strong>을 확인할 수 있습니다. 이제 [2단계 새로고침]을 누르면 무슨 일이 일어나는지 확인해 보세요!`;
+    }
+
+    // --------------------------------------------------------------------------
+    // 실험 2: 적재적소 데이터 배치 퀴즈
+    // --------------------------------------------------------------------------
+    const quizzes = [
+      {
+        question: "1. 스마트폰 SMS로 온 '3분짜리 1회용 로그인 인증번호 (6자리)'",
+        desc: "3분이 지나면 아무 쓸모가 없어지는 임시 데이터입니다. 어디에 저장해야 할까요?",
+        correct: "redis",
+        options: [
+          { id: "react", label: "리액트 State (브라우저 RAM)" },
+          { id: "redis", label: "miniRedis (인메모리 RAM, TTL)" },
+          { id: "dbms", label: "miniDBMS (SSD 디스크 B+ Tree)" },
+          { id: "s3", label: "오브젝트 스토리지 (S3)" }
+        ],
+        explainCorrect: "정답! ⚡ Redis의 TTL(유통기한 180초) 기능을 쓰면, 3분이 지난 순간 메모리에서 스스로 소멸합니다. 디스크 I/O를 전혀 쓰지 않아 서버가 가볍습니다.",
+        explainWrong: {
+          react: "❌ 틀렸습니다! 브라우저 창을 닫거나 새로고침하면 사라져서 서버가 인증번호를 확인할 수 없습니다.",
+          dbms: "❌ 비효율적입니다! 3분 뒤 지워질 쓰레기 데이터 때문에 무거운 NVMe SSD에 B+ Tree 인덱스를 쪼개고 WAL을 쓸 이유가 없습니다.",
+          s3: "❌ 틀렸습니다! 6자리 숫자를 저장하기 위해 대용량 파일 스토리지를 쓰는 건 엄청난 자원 낭비입니다."
+        }
+      },
+      {
+        question: "2. 100MB 크기의 고화질 강의 녹화 동영상 파일",
+        desc: "수천 명의 학생이 시청하는 큰 미디어 파일입니다. 어디에 저장해야 할까요?",
+        correct: "s3",
+        options: [
+          { id: "redis", label: "miniRedis (RAM)" },
+          { id: "dbms", label: "miniDBMS 테이블의 BLOB 컬럼" },
+          { id: "s3", label: "오브젝트 스토리지 (AWS S3) & CDN" },
+          { id: "react", label: "리액트 번들 JS 파일 안에 삽입" }
+        ],
+        explainCorrect: "정답! 📦 100MB짜리 큰 파일은 저렴하고 용량이 무제한인 오브젝트 스토리지(S3)에 넣고, DBMS에는 동영상이 있는 'URL 주소(수십 바이트)'만 적어두는 것이 교과서적인 설계입니다.",
+        explainWrong: {
+          redis: "❌ 대참사 발생! 비싼 서버 RAM에 100MB 영상을 넣으면 몇 개 안 넣어도 메모리가 고갈되어 레디스가 뻗어버립니다.",
+          dbms: "❌ 대참사 발생! DB 테이블에 100MB 파일을 넣으면 DB 버퍼 풀 메모리가 오염되어 다른 계좌 조회나 회원 가입이 10배 느려집니다.",
+          react: "❌ 대참사 발생! 자바스크립트 파일이 100MB가 되어 사용자가 웹사이트를 켤 때 1분 동안 하얀 화면만 보게 됩니다."
+        }
+      },
+      {
+        question: "3. 은행 고객의 '실제 계좌 잔액' 및 '이체 거래 내역'",
+        desc: "서버가 정전되거나 불타도 단 1원도 틀리거나 날아가면 안 되는 금융 데이터입니다.",
+        correct: "dbms",
+        options: [
+          { id: "react", label: "리액트 State (브라우저 RAM)" },
+          { id: "redis", label: "miniRedis (RAM)" },
+          { id: "dbms", label: "miniDBMS (ACID 트랜잭션 & WAL 금고)" },
+          { id: "s3", label: "오브젝트 스토리지 (S3)" }
+        ],
+        explainCorrect: "정답! 🏛️ 정전이 나도 디스크 장부(WAL)로 100% 복구되고, 두 명이 동시에 송금해도 데이터가 안 꼬이게 잠금(Lock)을 걸어주는 건 오직 DBMS뿐입니다.",
+        explainWrong: {
+          react: "❌ 감옥 갑니다! 새로고침하면 돈이 날아가고, F12로 고객이 잔액을 100억으로 바꿀 수 있습니다.",
+          redis: "❌ 위험합니다! Redis도 디스크 저장을 지원하지만, 급작스러운 정전 시 수 초간의 데이터가 유실될 위험이 있어 금융 장부로는 부적합합니다.",
+          s3: "❌ 동시성 제어 불가! 여러 명이 동시에 돈을 입금할 때 파일을 덮어써서 돈이 복사되거나 증발합니다."
+        }
+      },
+      {
+        question: "4. 쇼핑몰 웹페이지에서 '장바구니 모달 창 열림 여부(isOpen)'",
+        desc: "내가 지금 장바구니 팝업창을 열었는지 닫았는지를 나타내는 화면 상태입니다.",
+        correct: "react",
+        options: [
+          { id: "react", label: "리액트 State (브라우저 RAM)" },
+          { id: "redis", label: "miniRedis (RAM)" },
+          { id: "dbms", label: "miniDBMS (SSD)" },
+          { id: "s3", label: "오브젝트 스토리지 (S3)" }
+        ],
+        explainCorrect: "정답! ⚛️ 팝업창이 열려있는지 여부는 내 컴퓨터 모니터에서만 알면 되는 사소한 화면 상태입니다. 굳이 인터넷 선을 타고 원격 서버나 DB에 보낼 필요가 전혀 없습니다.",
+        explainWrong: {
+          redis: "❌ 자원 낭비! 창 하나 열 때마다 비싼 서버 메모리에 네트워크 요청을 날릴 필요가 없습니다.",
+          dbms: "❌ 자원 낭비! 팝업창 닫을 때마다 하드디스크에 기록하면 DB 서버가 과부하로 죽습니다.",
+          s3: "❌ 팝업창 띄우려고 파일을 만들어서 업로드할 수는 없습니다."
+        }
+      }
+    ];
+
+    let currentQuizIdx = 0;
+
+    function renderQuiz() {
+      const q = quizzes[currentQuizIdx];
+      document.getElementById('quiz-num').innerText = (currentQuizIdx + 1);
+      document.getElementById('quiz-question').innerText = q.question;
+      document.getElementById('quiz-desc').innerText = q.desc;
+      
+      const container = document.getElementById('quiz-options-container');
+      container.innerHTML = '';
+      document.getElementById('quiz-feedback').style.display = 'none';
+      document.getElementById('quiz-next-btn').style.display = 'none';
+
+      q.options.forEach(opt => {
+        const div = document.createElement('div');
+        div.className = 'quiz-card';
+        div.innerText = opt.label;
+        div.onclick = () => checkQuiz(opt.id, div);
+        container.appendChild(div);
+      });
+    }
+
+    function checkQuiz(selectedId, el) {
+      const q = quizzes[currentQuizIdx];
+      const feedback = document.getElementById('quiz-feedback');
+      feedback.style.display = 'block';
+
+      document.querySelectorAll('.quiz-card').forEach(c => c.style.pointerEvents = 'none');
+
+      if (selectedId === q.correct) {
+        el.classList.add('correct');
+        feedback.innerHTML = `<strong style="color:var(--ok);">정답입니다! 👏</strong><br>${q.explainCorrect}`;
+      } else {
+        el.classList.add('wrong');
+        feedback.innerHTML = `<strong style="color:var(--danger);">오답입니다! ⚠️</strong><br>${q.explainWrong[selectedId]}`;
+      }
+
+      if (currentQuizIdx < quizzes.length - 1) {
+        document.getElementById('quiz-next-btn').style.display = 'inline-block';
+      }
+    }
+
+    function nextQuiz() {
+      currentQuizIdx++;
+      renderQuiz();
+    }
+
+    // --------------------------------------------------------------------------
+    // 실험 3: 검색 로봇 vs 사용자 시선 비교
+    // --------------------------------------------------------------------------
+    function showRenderDiff(mode) {
+      document.getElementById('btn-render-csr').classList.toggle('active', mode === 'csr');
+      document.getElementById('btn-render-ssr').classList.toggle('active', mode === 'ssr');
+
+      const userView = document.getElementById('user-view-content');
+      const botCode = document.getElementById('bot-view-code');
+      const aha = document.getElementById('render-aha');
+
+      if (mode === 'csr') {
+        userView.innerHTML = `
+          <div style="font-weight: 700; color: var(--accent); margin-bottom: 6px;">[브라우저가 그린 화면]</div>
+          <div style="border: 1px solid var(--border); padding: 12px; border-radius: 8px;">
+            <div style="font-weight: 700; font-size: 15px;">나이키 에어포스 1 '07</div>
+            <div style="color: var(--ok); font-weight: 700; font-family: var(--mono); margin: 4px 0;">139,000원 (재고 있음)</div>
+            <div style="font-size: 12px; color: var(--muted);">리액트가 자바스크립트를 다운로드한 뒤 브라우저에서 조립해서 띄웠습니다.</div>
+          </div>
+        `;
+
+        botCode.innerText = `<!DOCTYPE html>
+<html>
+<head>
+  <title>쇼핑몰</title>
+</head>
+<body>
+  <!-- ⚠️ 서버가 보낸 원본 HTML -->
+  <div id="root"></div> 
+  <script src="/bundle.js"><\/script>
+</body>
+</html>`;
+
+        aha.innerHTML = `💡 <strong>CSR(리액트 기본형)의 비밀</strong>:<br>` +
+          `오른쪽의 <strong>검색 로봇 창</strong>을 보세요! 텅 빈 <code>&lt;div id="root"&gt;&lt;/div&gt;</code> 딱 한 줄뿐입니다.<br>` +
+          `네이버나 구글 검색 로봇은 자바스크립트를 복잡하게 실행하지 않고 HTML 글자만 긁어가기 때문에, <strong>"이 사이트는 상품 이름도 없고 가격도 없는 빈 사이트네"</strong> 하고 검색 결과에서 제외해 버립니다. (SEO에 불리한 이유!)`;
+
+      } else {
+        userView.innerHTML = `
+          <div style="font-weight: 700; color: var(--ok); margin-bottom: 6px;">[서버가 다 끓여서 보낸 화면]</div>
+          <div style="border: 1px solid var(--border); padding: 12px; border-radius: 8px;">
+            <div style="font-weight: 700; font-size: 15px;">나이키 에어포스 1 '07</div>
+            <div style="color: var(--ok); font-weight: 700; font-family: var(--mono); margin: 4px 0;">139,000원 (재고 있음)</div>
+            <div style="font-size: 12px; color: var(--muted);">웹 서버가 백엔드에서 HTML 글자를 다 적어서 완성품으로 던져주었습니다.</div>
+          </div>
+        `;
+
+        botCode.innerText = `<!DOCTYPE html>
+<html>
+<head>
+  <title>나이키 에어포스 1 '07 - 공식 쇼핑몰</title>
+</head>
+<body>
+  <!-- 🟢 서버가 완성해서 보낸 풍부한 HTML -->
+  <h1>나이키 에어포스 1 '07</h1>
+  <p class="price">139,000원 (재고 있음)</p>
+  <p class="desc">클래식한 농구화 스타일의 정수...</p>
+</body>
+</html>`;
+
+        aha.innerHTML = `💡 <strong>SSR(서버 사이드 렌더링)의 비밀</strong>:<br>` +
+          `오른쪽의 <strong>검색 로봇 창</strong>을 보세요! 상품 이름과 가격 글자가 HTML에 100% 다 적혀 있습니다.<br>` +
+          `검색 로봇이 이 글자들을 그대로 읽어가서 구글 검색 최상단에 <strong>"나이키 에어포스 139,000원"</strong>으로 노출시켜 줍니다. 그래서 쿠팡 같은 쇼핑몰은 무조건 SSR을 씁니다!`;
+      }
+    }
+
+    // --------------------------------------------------------------------------
+    // 실험 4: 내 컴퓨터 실제 서버와 진짜 HTTP 통신
+    // --------------------------------------------------------------------------
+    async function sendRealRedisSet() {
+      const key = document.getElementById('real-key-input').value;
+      const val = document.getElementById('real-val-input').value;
+      const box = document.getElementById('real-response-box');
+
+      box.innerText = `// 내 컴퓨터 로컬 서버에 진짜 통신 중: POST /api/redis ...`;
+
+      try {
+        const res = await fetch('/api/redis', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ command: ['SET', key, val] })
+        });
+        const data = await res.json();
+        box.innerText = `// HTTP Status: ${res.status} ${res.statusText}\n` +
+          `// 내 컴퓨터의 miniRedis가 실제로 메모리에 저장하고 AOF 파일에 기록했습니다:\n` +
+          JSON.stringify(data, null, 2);
+      } catch (err) {
+        box.innerText = `// 오류 발생: npm start 로 서버가 켜져 있는지 확인하세요!\n${err.message}`;
+      }
+    }
+
+    async function sendRealRedisGet() {
+      const key = document.getElementById('real-key-input').value;
+      const box = document.getElementById('real-response-box');
+
+      box.innerText = `// 내 컴퓨터 로컬 서버에 진짜 통신 중: GET /api/redis ...`;
+
+      try {
+        const res = await fetch(`/api/redis/${encodeURIComponent(key)}`);
+        const data = await res.json();
+        box.innerText = `// HTTP Status: ${res.status} ${res.statusText}\n` +
+          `// 내 컴퓨터의 miniRedis RAM에서 진짜로 꺼내온 값:\n` +
+          JSON.stringify(data, null, 2);
+      } catch (err) {
+        box.innerText = `// 오류 발생: npm start 로 서버가 켜져 있는지 확인하세요!\n${err.message}`;
+      }
+    }
+
+    async function sendRealSql() {
+      const box = document.getElementById('real-response-box');
+      box.innerText = `// 내 컴퓨터 miniDBMS에 진짜 SQL 쿼리 전송 중: SELECT 1 ...`;
+
+      try {
+        const res = await fetch('/api/sql', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sql: "SELECT 1 as test_success, 'B+Tree_Active' as status" })
+        });
+        const data = await res.json();
+        box.innerText = `// HTTP Status: ${res.status} ${res.statusText}\n` +
+          `// 내 컴퓨터의 miniDBMS 스레드 풀과 SQL 엔진이 실제로 파싱한 결과:\n` +
+          JSON.stringify(data, null, 2);
+      } catch (err) {
+        box.innerText = `// 오류 발생: npm start 로 서버가 켜져 있는지 확인하세요!\n${err.message}`;
+      }
+    }
+
+    // --------------------------------------------------------------------------
+    // 실험 5: 하이브리드 분업 (RSC) 로직
+    // --------------------------------------------------------------------------
+    let hybridLikeCount = 142;
+
+    function clickLike() {
+      hybridLikeCount++;
+      document.getElementById('hybrid-like-count').innerText = hybridLikeCount;
+      const btn = document.getElementById('hybrid-like-btn');
+      btn.style.transform = 'scale(1.1)';
+      setTimeout(() => btn.style.transform = 'scale(1)', 150);
+    }
+
+    function clickCart() {
+      const toast = document.getElementById('cart-toast');
+      toast.style.display = 'inline-block';
+      setTimeout(() => toast.style.display = 'none', 2500);
+    }
+
+    // 초기화
+    renderQuiz();
+    showRenderDiff('csr');
+  </script>
+</body>
+</html>
