@@ -87,14 +87,18 @@ class MiniRedis:
                 self._expires.put(key, expire_at)
                 self._log("SET", key, value, expire_at)  # AOF 에도 절대 시각으로 기록
 
-    def get(self, key: str):
-        """값 조회. 없거나 만료됐으면 None."""
+    def get(self, key: str, default=None):
+        """값 조회. 없거나 만료됐으면 default (기본 None).
+
+        저장된 값이 None 일 수도 있으므로, 서버처럼 "없음"과 구분해야 하는 쪽은
+        get(key, MISSING) 으로 부르고 결과를 `is MISSING` 으로 검사한다.
+        """
         with self._lock:
             self._expire_if_needed(key)
             value = self._data.get(key, MISSING)
             if value is MISSING:
                 self._misses += 1
-                return None
+                return default
             self._hits += 1
             return value
 

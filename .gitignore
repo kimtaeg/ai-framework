@@ -46,3 +46,6 @@ docs/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Python 가상환경
+.venv/

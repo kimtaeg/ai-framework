@@ -5,20 +5,9 @@ time.sleep 대신 FakeClock 으로 시간을 직접 움직인다 → 테스트�
 
 import pytest
 
+from mini_redis.core.hashtable import MISSING
 from mini_redis.core.store import MiniRedis
-
-
-class FakeClock:
-    """가짜 시계. 객체를 함수처럼 부르면(clock()) 현재 시각을 돌려준다."""
-
-    def __init__(self, start: float = 1_000_000.0):
-        self.now = start
-
-    def __call__(self) -> float:  # __call__ 덕분에 clock() 처럼 호출할 수 있음 → time.time 대신 주입 가능
-        return self.now
-
-    def advance(self, seconds: float) -> None:
-        self.now += seconds
+from mini_redis.tests.fakes import FakeClock
 
 
 class RecordingAOF:
@@ -60,6 +49,12 @@ def test_store_none_value(r):
     assert r.exists("n") is True   # 값은 None 이지만 키는 있음
     assert r.get("n") is None
     assert r.ttl("n") == -1
+
+
+def test_get_default_distinguishes_none_and_missing(r):
+    r.set("n", None)
+    assert r.get("n", MISSING) is None          # 값이 None
+    assert r.get("ghost", MISSING) is MISSING   # 키 없음
 
 
 # ---------------------------------------------------------------------------
