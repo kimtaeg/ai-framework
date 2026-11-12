@@ -10,8 +10,8 @@ import com.minidbms.sql.parser.ast.SelectStatement;
 import com.minidbms.sql.parser.ast.Statement;
 import com.minidbms.storage.Column;
 import com.minidbms.storage.ColumnType;
-import com.minidbms.storage.RecordCodec;
 import com.minidbms.storage.Schema;
+import com.minidbms.storage.Table;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -24,7 +24,7 @@ import java.util.function.Predicate;
  */
 final class Executor {
 
-    QueryResult execute(Statement statement, TableState table) {
+    QueryResult execute(Statement statement, Table table) {
         if (statement instanceof InsertStatement insert) {
             return insert(insert, table);
         }
@@ -36,7 +36,7 @@ final class Executor {
 
     // ---- INSERT ----
 
-    private QueryResult insert(InsertStatement insert, TableState table) {
+    private QueryResult insert(InsertStatement insert, Table table) {
         Schema schema = table.schema();
         int[] targets = insertTargets(insert, table);
 
@@ -45,18 +45,15 @@ final class Executor {
         for (int i = 0; i < targets.length; i++) {
             record[targets[i]] = toStoredValue(insert.values().get(i), schema.column(targets[i]), schema);
         }
-        // 검증이 모두 끝난 뒤에 id를 뽑는다. 실패한 INSERT가 id를 소모하지 않게 하려고.
-        long id = table.nextId();
-        record[table.idIndex()] = id;
-
-        table.table().file().append(RecordCodec.encode(record));
-        table.table().file().flush();
+        // 검증이 모두 끝난 뒤에 id를 부여한다. 실패한 INSERT가 id를 소모하지 않게 하려고.
+        long id = table.insert(record);
+        table.flush();
         // JDBC의 generated keys처럼 부여한 id를 결과 행으로 돌려준다.
-        return new QueryResult(QueryResult.Type.INSERT, List.of(TableState.ID_COLUMN), List.of(List.of(id)), 1, 0);
+        return new QueryResult(QueryResult.Type.INSERT, List.of(Table.ID_COLUMN), List.of(List.of(id)), 1, 0);
     }
 
     /** values[i]가 들어갈 스키마 컬럼 인덱스를 돌려준다. */
-    private int[] insertTargets(InsertStatement insert, TableState table) {
+    private int[] insertTargets(InsertStatement insert, Table table) {
         Schema schema = table.schema();
         int valueCount = insert.values().size();
 
@@ -64,7 +61,7 @@ final class Executor {
             // 컬럼을 생략하면 id를 뺀 스키마 순서대로 값을 받는다.
             int[] targets = new int[schema.size() - 1];
             for (int i = 0, t = 0; i < schema.size(); i++) {
-                if (i != table.idIndex()) {
+                if (i != table.idColumn()) {
                     targets[t++] = i;
                 }
             }
@@ -80,7 +77,7 @@ final class Executor {
         for (int i = 0; i < targets.length; i++) {
             String name = insert.columns().get(i);
             int index = schema.indexOf(name); // 없는 컬럼이면 ColumnNotFoundException
-            if (index == table.idIndex()) {
+            if (index == table.idColumn()) {
                 throw new ConstraintViolationException("id는 자동으로 부여되므로 직접 넣을 수 없습니다 (테이블 '"
                         + schema.tableName() + "')");
             }
@@ -109,15 +106,14 @@ final class Executor {
 
     // ---- SELECT ----
 
-    private QueryResult select(SelectStatement select, TableState table) {
+    private QueryResult select(SelectStatement select, Table table) {
         Schema schema = table.schema();
         // 스캔 전에 컬럼·조건을 모두 검증해서, 잘못된 쿼리가 파일을 끝까지 읽은 뒤에야 실패하지 않게 한다.
         int[] projection = projection(select, schema);
         Predicate<Object[]> filter = select.where().map(c -> compile(c, schema)).orElse(r -> true);
 
         List<List<Object>> rows = new ArrayList<>();
-        table.table().file().scan(line -> {
-            Object[] record = RecordCodec.decode(line, schema);
+        table.scan(record -> {
             if (filter.test(record)) {
                 Object[] row = new Object[projection.length];
                 for (int i = 0; i < projection.length; i++) {

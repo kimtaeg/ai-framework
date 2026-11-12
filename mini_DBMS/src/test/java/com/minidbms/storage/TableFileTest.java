@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.OptionalLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -145,6 +146,7 @@ class TableFileTest {
 
         try (TableFile file = new TableFile(path)) {
             assertEquals(sizeWithoutNewline + 1, file.size());
+            assertEquals(OptionalLong.of(0), file.unterminatedLineOffset());
             assertEquals(sizeWithoutNewline + 1, file.append("2|b"));
             assertEquals(List.of("1|가", "2|b"), scanAll(file));
         }
@@ -157,7 +159,92 @@ class TableFileTest {
         Files.writeString(path, "1|a\n");
         try (TableFile file = new TableFile(path)) {
             assertEquals(4, file.size());
+            assertEquals(OptionalLong.empty(), file.unterminatedLineOffset());
         }
         assertEquals("1|a\n", Files.readString(path));
+    }
+
+    @Test
+    void 줄바꿈_없는_마지막_줄의_시작_offset을_알려준다() throws IOException {
+        Path path = dir.resolve("t.tbl");
+        Files.writeString(path, "1|a\n2|가나다");
+        try (TableFile file = new TableFile(path)) {
+            assertEquals(OptionalLong.of(4), file.unterminatedLineOffset());
+            assertEquals("2|가나다", file.readAt(4));
+        }
+        // 버퍼(4KB 청크)보다 긴 마지막 줄도 시작 위치를 찾는다.
+        String longLine = "3|" + "x".repeat(10_000);
+        Files.writeString(path, "1|a\n" + longLine);
+        try (TableFile file = new TableFile(path)) {
+            assertEquals(OptionalLong.of(4), file.unterminatedLineOffset());
+            assertEquals(longLine, file.readAt(4));
+        }
+        Files.writeString(path, "only");
+        try (TableFile file = new TableFile(path)) {
+            assertEquals(OptionalLong.of(0), file.unterminatedLineOffset());
+        }
+    }
+
+    // ---- readAt ----
+
+    @Test
+    void readAt은_flush된_줄과_버퍼에만_있는_줄을_모두_읽는다() throws IOException {
+        Path path = dir.resolve("t.tbl");
+        try (TableFile file = new TableFile(path)) {
+            long first = file.append("1|김정글");
+            file.flush();
+            long second = file.append("2|버퍼에만");
+
+            assertEquals(Files.size(path), second, "두 번째 줄은 아직 디스크에 없다");
+            assertEquals("1|김정글", file.readAt(first));
+            assertEquals("2|버퍼에만", file.readAt(second));
+            assertEquals(Files.size(path), second, "readAt이 flush를 일으키지 않는다");
+        }
+    }
+
+    @Test
+    void readAt은_버퍼보다_큰_줄과_버퍼_경계의_줄도_읽는다() {
+        try (TableFile file = new TableFile(dir.resolve("t.tbl"))) {
+            String big = "9|" + "한".repeat(TableFile.BUFFER_SIZE); // UTF-8로 버퍼의 3배
+            List<Long> offsets = new ArrayList<>();
+            List<String> lines = new ArrayList<>();
+            // 버퍼를 여러 번 채우고 넘기는 길이로 섞어 쓴다.
+            for (int i = 0; i < 3000; i++) {
+                String line = i % 1000 == 999 ? big : i + "|" + "v".repeat(i % 97);
+                lines.add(line);
+                offsets.add(file.append(line));
+            }
+            for (int i = 0; i < lines.size(); i++) {
+                assertEquals(lines.get(i), file.readAt(offsets.get(i)), "줄 " + i);
+            }
+        }
+    }
+
+    @Test
+    void readAt은_줄_시작이_아니거나_범위_밖이면_StorageException() {
+        try (TableFile file = new TableFile(dir.resolve("t.tbl"))) {
+            file.append("1|abc");
+            file.flush();
+            file.append("2|def");
+            assertThrows(StorageException.class, () -> file.readAt(2), "디스크 쪽 줄 중간");
+            assertThrows(StorageException.class, () -> file.readAt(7), "버퍼 쪽 줄 중간");
+            assertThrows(StorageException.class, () -> file.readAt(-1));
+            assertThrows(StorageException.class, () -> file.readAt(file.size()));
+        }
+    }
+
+    @Test
+    void scanWithOffsets는_각_줄의_시작_offset을_넘긴다() {
+        try (TableFile file = new TableFile(dir.resolve("t.tbl"))) {
+            List<Long> appended = List.of(file.append("1|가"), file.append(""), file.append("3|c"));
+            List<Long> scanned = new ArrayList<>();
+            List<String> lines = new ArrayList<>();
+            file.scanWithOffsets((offset, line) -> {
+                scanned.add(offset);
+                lines.add(line);
+            });
+            assertEquals(appended, scanned);
+            assertEquals(List.of("1|가", "", "3|c"), lines);
+        }
     }
 }

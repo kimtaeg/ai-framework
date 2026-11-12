@@ -5,7 +5,7 @@ Java 17로 직접 구현한 파일 기반 미니 DBMS. 외부 라이브러리는
 | Phase | 내용 | 상태 |
 |---|---|---|
 | 1 | 파일 기반 SQL 처리기 (INSERT, SELECT, CLI) | ✅ |
-| 2 | 메모리 B+ 트리 id 인덱스 + 100만 건 성능 비교 | |
+| 2 | 메모리 B+ 트리 id 인덱스 + 100만 건 성능 비교 | 진행 중 (B+ 트리 · Table 연결) |
 | 3 | JDK HttpServer + ThreadPoolExecutor API 서버 | |
 
 ## 빠른 시작
@@ -65,6 +65,7 @@ SELECT * | col, ... FROM table [WHERE col op value];
 | `ColumnNotFoundException` | 스키마에 없는 컬럼 |
 | `TypeMismatchException` | 값 타입이 컬럼 타입과 다름 |
 | `ConstraintViolationException` | `id`를 직접 지정 |
+| `DuplicateKeyException` | B+ 트리에 이미 있는 키를 삽입 |
 | `StorageException` | 파일 I/O 실패, 스키마·레코드 형식 손상 |
 
 ## 저장 포맷
@@ -104,16 +105,27 @@ id:INT,name:STRING,age:INT
 - 줄바꿈과 CR을 이스케이프하므로 레코드 하나는 항상 물리적인 한 줄이다.
 - 쓰기는 append만 한다. `TableFile.append`는 그 줄이 시작된 **byte offset**을 돌려준다(Phase 2에서 B+ 트리가 `id → offset`으로 사용).
 
+### id 인덱스 (Phase 2)
+
+테이블마다 메모리 B+ 트리(`BPlusTree<Long, Long>`, order 128)가 `id → .tbl 안의 byte offset`을 들고 있다.
+
+- **INSERT**: id 부여 → `append`가 돌려준 offset을 인덱스에 등록 → `nextId++`. 파일 쓰기가 실패하면 인덱스·nextId는 그대로다.
+- **조회**: `Table.findById(id)`는 인덱스에서 offset을 찾아 `TableFile.readAt(offset)`으로 그 줄만 읽는다. 아직 flush되지 않은 줄은 메모리 버퍼에서 읽는다.
+- **재시작**: 테이블을 처음 열 때 `.tbl`을 한 번 훑어 인덱스를 다시 만들고 `nextId = 최대 id + 1`로 맞춘다. 같은 id가 두 번 있거나 id가 NULL이면 `StorageException`.
+- **줄바꿈 없이 끝난 마지막 줄**(손으로 편집했거나 쓰다 중단됨): 파일 끝에 `\n`을 붙여 다음 레코드가 이어 붙지 않게 하고, 그 줄은 **이번 로딩에서만** 경고(stderr) 후 인덱스·스캔에서 뺀다. 그 줄의 id는 피해서 부여한다. 다음 재시작부터는 일반 레코드로 읽힌다(내용이 깨졌다면 그때 로딩이 실패한다).
+
+아직 SELECT는 인덱스를 쓰지 않고 전체 스캔한다.
+
 ### 쓰기 버퍼와 flush
 
-`.tbl` 파일은 엔진이 처음 쓸 때 열어 두고 64KB 버퍼로 쓴다. 디스크(OS)로 내려가는 시점은
+`.tbl` 파일은 엔진이 처음 쓸 때 열어 두고 64KB 메모리 버퍼에 모은다. `readAt`이 버퍼 안의 줄도 읽어야 해서 버퍼를 직접 관리한다. 디스크(OS)로 내려가는 시점은
 
-1. 버퍼가 가득 찼을 때
+1. 새 줄이 버퍼의 남은 공간에 들어가지 않을 때 (버퍼보다 큰 줄은 버퍼를 거치지 않고 바로 쓴다)
 2. INSERT 문장 하나가 끝날 때 (`flush()`)
 3. SELECT 스캔을 시작할 때
 4. 종료할 때 (`close()` — 정상 종료는 `finally`, Ctrl+C는 shutdown hook)
 
-flush는 OS 페이지 캐시까지만 보장한다(fsync 없음).
+flush는 OS 페이지 캐시까지만 보장한다(fsync 없음). 디스크 쓰기가 한 번 실패하면 그 파일은 이후 쓰기를 거부한다(재시작하면 파일 기준으로 다시 맞춰진다).
 
 ## 처리 흐름
 
@@ -123,11 +135,11 @@ flowchart TD
     B --> C["Lexer: 문자 → Token(type, text, position)"]
     C --> D["Parser: 재귀 하강 → AST (InsertStatement / SelectStatement)"]
     D --> E{"테이블 캐시에 있나?"}
-    E -->|없음| F["SchemaLoader로 .schema 읽기 + TableFile 열기 + 최대 id 스캔"]
+    E -->|없음| F["Table.open: .schema 읽기 + TableFile 열기 + 스캔으로 id 인덱스 재구성"]
     F --> G
     E -->|있음| G["Executor: 스키마로 의미 검증"]
-    G -->|INSERT| H["값 매핑 · 타입 검사 · id 부여 → RecordCodec.encode → TableFile.append + flush"]
-    G -->|SELECT| I["TableFile.scan → RecordCodec.decode → WHERE 필터 → 컬럼 투영"]
+    G -->|INSERT| H["값 매핑 · 타입 검사 → Table.insert: id 부여 · append · 인덱스 등록 → flush"]
+    G -->|SELECT| I["Table.scan → RecordCodec.decode → WHERE 필터 → 컬럼 투영"]
     H --> J["QueryResult"]
     I --> J
     J --> K["CLI: '1 row inserted (id=N)' / TableFormatter 표 + 'N rows (x ms)'"]
@@ -141,7 +153,8 @@ flowchart TD
 | `Lexer` | 키워드·식별자·숫자·문자열·기호, 위치 포함 오류 | 문법 |
 | `Parser` | 문법 → AST, `Expected X but found 'Y' at N` | 스키마 검증 |
 | `Executor` | 테이블·컬럼 존재, 타입, 개수, id 규칙, 실행 | 파일 포맷 |
-| `RecordCodec` / `TableFile` | 레코드 ↔ 한 줄, 버퍼링 append·scan | SQL 의미 |
+| `Table` | id 부여, id 인덱스 유지·재구성, id로 레코드 찾기 | SQL 의미 |
+| `RecordCodec` / `TableFile` | 레코드 ↔ 한 줄, 버퍼링 append·scan·readAt | id·인덱스 |
 
 엔진에 여러 문장을 한 번에 넘기면 전체를 먼저 파싱하므로, 문법 오류가 하나라도 있으면 아무것도 실행되지 않는다. 실행 중 오류는 앞 문장의 결과를 남긴다(트랜잭션 없음).
 
@@ -152,14 +165,15 @@ src/main/java/com/minidbms/
 ├── cli/          Main(인자 파싱·종료 코드), Cli(run/repl), StatementSplitter, TableFormatter
 ├── sql/lexer/    Lexer, Token, TokenType
 ├── sql/parser/   Parser, ast/(Statement, InsertStatement, SelectStatement, Condition, Operator, Literal)
-├── engine/       DatabaseEngine(유일한 진입점), Executor, TableState, QueryResult
+├── engine/       DatabaseEngine(유일한 진입점), Executor, QueryResult
 ├── storage/      Schema, Column, ColumnType, SchemaLoader, RecordCodec, TableFile, Table
+├── index/        BPlusTree, Node, InternalNode, LeafNode
 └── common/       DbException과 하위 예외
 ```
 
 ## 알려진 한계 (Phase 1)
 
 - 엔진은 아직 스레드 안전하지 않다. 테이블 단위 `ReentrantReadWriteLock`은 Phase 3에서.
-- SELECT는 항상 전체 스캔이다. id 인덱스는 Phase 2에서.
+- SELECT는 아직 항상 전체 스캔이다. id 인덱스는 만들어 두었지만 WHERE에서 쓰지 않는다.
 - WHERE는 조건 하나만 지원한다(`AND`, `BETWEEN`은 아직 파싱하지 않음).
 - UPDATE·DELETE·CREATE TABLE이 없다. 테이블은 `.schema` 파일을 직접 만들어 정의한다.

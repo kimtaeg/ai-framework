@@ -2,6 +2,7 @@ package com.minidbms.engine;
 
 import com.minidbms.sql.parser.Parser;
 import com.minidbms.sql.parser.ast.Statement;
+import com.minidbms.storage.Table;
 
 import java.io.Closeable;
 import java.nio.file.Path;
@@ -19,8 +20,8 @@ import java.util.Objects;
 public final class DatabaseEngine implements Closeable {
     private final Path dataDir;
     private final Executor executor = new Executor();
-    // 테이블은 처음 쓰일 때 열어서 캐시한다. 파일 핸들과 다음 id를 문장마다 다시 만들지 않으려고.
-    private final Map<String, TableState> tables = new HashMap<>();
+    // 테이블은 처음 쓰일 때 열어서 캐시한다. 파일 핸들과 id 인덱스를 문장마다 다시 만들지 않으려고.
+    private final Map<String, Table> tables = new HashMap<>();
 
     public DatabaseEngine(Path dataDir) {
         this.dataDir = Objects.requireNonNull(dataDir, "dataDir");
@@ -43,20 +44,21 @@ public final class DatabaseEngine implements Closeable {
         return results;
     }
 
-    private TableState table(String name) {
-        TableState state = tables.get(name);
-        if (state == null) {
+    private Table table(String name) {
+        Table table = tables.get(name);
+        if (table == null) {
+            // 처음 열 때 .tbl을 한 번 훑어 id 인덱스를 재구성한다(Table.open).
             // 로딩이 실패하면(테이블 없음 등) 캐시에 넣지 않으므로, 나중에 스키마 파일을 만들면 다시 시도된다.
-            state = TableState.open(dataDir, name);
-            tables.put(name, state);
+            table = Table.open(dataDir, name);
+            tables.put(name, table);
         }
-        return state;
+        return table;
     }
 
     @Override
     public void close() {
-        for (TableState state : tables.values()) {
-            state.close();
+        for (Table table : tables.values()) {
+            table.close();
         }
         tables.clear();
     }

@@ -89,10 +89,14 @@ class Phase1EdgeCaseTest {
     }
 
     @Test
-    void 마지막_줄에_줄바꿈이_없는_tbl에_이어_쓰면_레코드가_붙지_않아야_한다() throws IOException {
+    void 마지막_줄에_줄바꿈이_없는_tbl은_이번_로딩에서_그_줄을_무시하고_재시작하면_읽는다() throws IOException {
         // 손으로 편집했거나 쓰다가 중단되어 '\n' 없이 끝난 파일
         Files.writeString(dataDir.resolve("users.tbl"), "1|kim|30");
         engine.execute("INSERT INTO users VALUES ('lee', 20)");
+        // 무시한 줄의 id(1)는 피해서 2를 받는다. 새 레코드가 그 줄 뒤에 붙지도 않는다.
+        assertEquals(List.of(row(2L, "lee", 20L)), rows("SELECT * FROM users"));
+
+        reopen();
         assertEquals(List.of(row(1L, "kim", 30L), row(2L, "lee", 20L)), rows("SELECT * FROM users"));
     }
 
