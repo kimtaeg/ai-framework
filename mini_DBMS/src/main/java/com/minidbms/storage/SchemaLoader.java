@@ -2,6 +2,7 @@ package com.minidbms.storage;
 
 import com.minidbms.common.StorageException;
 import com.minidbms.common.TableNotFoundException;
+import com.minidbms.sql.lexer.Lexer;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -23,6 +24,8 @@ public final class SchemaLoader {
 
     // 테이블 이름이 그대로 파일 이름이 되므로 "../x" 같은 경로 조작을 막는다.
     private static final Pattern TABLE_NAME = Pattern.compile("[a-z_][a-z0-9_]*");
+    // 컬럼 이름은 SQL에서 식별자로 참조할 수 있어야 한다. Lexer의 식별자 규칙(ASCII 영문자·숫자·밑줄, 숫자로 시작 불가)과 같다.
+    private static final Pattern COLUMN_NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
     private final Path dataDir;
 
@@ -43,7 +46,8 @@ public final class SchemaLoader {
         try {
             content = Files.readString(path, StandardCharsets.UTF_8);
         } catch (NoSuchFileException e) {
-            throw new TableNotFoundException("테이블 '" + table + "'이(가) 없습니다 (스키마 파일 없음: " + path + ")");
+            // 절대 경로는 넣지 않는다. 이 메시지는 API 응답으로도 나가므로 서버의 디렉터리 구조를 드러내지 않게 파일 이름만 쓴다.
+            throw new TableNotFoundException("테이블 '" + table + "'이(가) 없습니다 (" + path.getFileName() + " 파일 없음)");
         } catch (IOException e) {
             throw new StorageException("스키마 파일을 읽을 수 없습니다: " + path, e);
         }
@@ -79,6 +83,14 @@ public final class SchemaLoader {
         String name = parts[0].trim();
         if (name.isEmpty()) {
             throw new StorageException("컬럼 정의 '" + entry.trim() + "'에 이름이 없습니다: " + path);
+        }
+        // SQL에서 참조할 수 없는 이름(first-name, limit 등)은 로드 단계에서 막는다. 그대로 두면 테이블은 열리지만
+        // 그 컬럼을 SELECT·WHERE·INSERT 어디에서도 쓸 수 없다.
+        if (!COLUMN_NAME.matcher(name).matches()) {
+            throw new StorageException("컬럼 이름 '" + name + "'은(는) 영문자·숫자·밑줄만 쓸 수 있고 숫자로 시작할 수 없습니다: " + path);
+        }
+        if (Lexer.isKeyword(name)) {
+            throw new StorageException("컬럼 이름 '" + name + "'은(는) SQL 키워드라 쓸 수 없습니다: " + path);
         }
         try {
             return new Column(name, ColumnType.parse(parts[1]));

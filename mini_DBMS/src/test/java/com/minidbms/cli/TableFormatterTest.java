@@ -69,4 +69,12 @@ class TableFormatterTest {
         assertEquals(4, TableFormatter.displayWidth("한글"));
         assertEquals(2, TableFormatter.displayWidth("😀"));
     }
+
+    @Test
+    void ESC_같은_제어_문자는_터미널에_그대로_보내지_않는다() {
+        String text = TableFormatter.cellText("a\u001b[2Jb\u0007c\u007f");
+        assertEquals("a\\u001b[2Jb\\u0007c\\u007f", text);
+        assertEquals(-1, text.indexOf('\u001b'));
+        assertEquals("한글 😀", TableFormatter.cellText("한글 😀"), "제어 문자가 아니면 그대로");
+    }
 }

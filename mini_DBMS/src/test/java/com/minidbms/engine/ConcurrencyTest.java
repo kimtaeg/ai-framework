@@ -139,7 +139,7 @@ class ConcurrencyTest {
         engine.close();
         try (Table table = Table.open(dataDir, "t")) {
             assertEquals(total, table.idIndexStats().keys());
-            assertEquals(total + 1, table.nextId());
+            assertEquals(java.util.OptionalLong.of(total + 1), table.nextId());
             long[] seen = {0};
             table.scan(record -> {
                 long id = (Long) record[0];
@@ -316,14 +316,25 @@ class ConcurrencyTest {
     }
 
     @Test
-    void 인덱스_스위치는_다른_스레드에_바로_보인다() throws Exception {
+    @Timeout(30)
+    void 인덱스_스위치는_이미_실행_중인_다른_스레드에_보인다() throws Exception {
         engine.execute(insertSql(0, 0));
-        engine.setIndexEnabled(false);
-        List<Callable<Void>> tasks = List.of(() -> {
-            assertEquals(AccessPath.FULL_SCAN, engine.execute("SELECT * FROM t WHERE id = 1").get(0).accessPath());
-            return null;
+        CountDownLatch running = new CountDownLatch(1);
+        pool = Executors.newSingleThreadExecutor();
+        // 작업을 먼저 시작해 두고, 그 뒤에 스위치를 바꾼다. 작업 쪽에는 바뀐 뒤 아무 동기화 신호도 보내지 않으므로
+        // 작업이 변경을 보는 것은 indexEnabled의 volatile 덕분이다.
+        Future<Integer> observer = pool.submit(() -> {
+            running.countDown();
+            int loops = 0;
+            while (engine.execute("EXPLAIN SELECT * FROM t WHERE id = 1").get(0).accessPath() != AccessPath.FULL_SCAN) {
+                loops++;
+            }
+            return loops;
         });
-        runConcurrently(tasks);
+        assertTrue(running.await(5, TimeUnit.SECONDS));
+        Thread.sleep(50); // 작업이 INDEX_LOOKUP을 몇 번 보게 한다
+        engine.setIndexEnabled(false);
+        assertTrue(observer.get(20, TimeUnit.SECONDS) > 0, "스위치를 바꾸기 전에는 INDEX_LOOKUP을 봤어야 한다");
         assertEquals(Optional.of(false), Optional.of(engine.isIndexEnabled()));
     }
 }

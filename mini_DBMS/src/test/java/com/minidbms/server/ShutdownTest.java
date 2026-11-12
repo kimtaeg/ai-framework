@@ -155,6 +155,8 @@ class ShutdownTest {
         assertTrue(logBytes.toString(StandardCharsets.UTF_8).contains("종료 대기 시간 초과"), logBytes.toString(StandardCharsets.UTF_8));
         // interrupt로 깨어난 요청은 응답을 쓰려 하지만 연결은 이미 닫히고 있다. 어느 쪽이든 서버는 멈춰야 한다.
         running.handle((r, e) -> null).get(20, TimeUnit.SECONDS);
+        assertTrue(server.isTerminated(), "interrupt된 워커가 끝나야 stop이 엔진까지 닫는다");
+        assertTrue(logBytes.toString(StandardCharsets.UTF_8).contains("종료 완료"), logBytes.toString(StandardCharsets.UTF_8));
         server = null;
     }
 

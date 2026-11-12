@@ -31,6 +31,11 @@ public final class Lexer {
         this.sql = sql;
     }
 
+    /** 키워드(대소문자 무시)면 true. 키워드는 식별자로 쓸 수 없으므로 스키마 검증에 쓴다. */
+    public static boolean isKeyword(String word) {
+        return KEYWORDS.containsKey(word.toUpperCase(Locale.ROOT));
+    }
+
     public static List<Token> tokenize(String sql) {
         return new Lexer(sql).tokenize();
     }

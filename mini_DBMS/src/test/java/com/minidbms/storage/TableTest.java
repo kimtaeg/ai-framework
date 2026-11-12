@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -46,7 +47,7 @@ class TableTest {
             assertEquals(2, table.schema().size());
             assertEquals(dataDir.resolve("users.tbl"), table.file().path());
             assertTrue(Files.exists(dataDir.resolve("users.tbl")));
-            assertEquals(1, table.nextId());
+            assertEquals(java.util.OptionalLong.of(1), table.nextId());
         }
     }
 
@@ -67,7 +68,7 @@ class TableTest {
             assertEquals(List.of(1L, "kim"), values(table.findById(1)));
             assertEquals(List.of(2L, "이순신"), values(table.findById(2)), "flush 전 버퍼에 있는 레코드");
             assertEquals(2, table.idIndex().size());
-            assertEquals(3, table.nextId());
+            assertEquals(java.util.OptionalLong.of(3), table.nextId());
         }
     }
 
@@ -118,7 +119,7 @@ class TableTest {
 
         try (Table table = Table.open(dataDir, "users")) {
             assertEquals(1000, table.idIndex().size());
-            assertEquals(1001, table.nextId());
+            assertEquals(java.util.OptionalLong.of(1001), table.nextId());
             for (int i = 1; i <= 1000; i++) {
                 assertEquals(offsets.get(i - 1), table.idIndex().search((long) i).orElseThrow());
             }
@@ -131,7 +132,7 @@ class TableTest {
     void 재구성은_파일의_최대_id를_기준으로_한다() throws IOException {
         Files.writeString(dataDir.resolve("users.tbl"), "5|a\n2|b\n9|c\n");
         try (Table table = Table.open(dataDir, "users")) {
-            assertEquals(10, table.nextId());
+            assertEquals(java.util.OptionalLong.of(10), table.nextId());
             assertEquals(List.of(9L, "c"), values(table.findById(9)));
             assertEquals(Optional.empty(), table.findById(3));
         }
@@ -173,7 +174,7 @@ class TableTest {
     void 무시한_마지막_줄이_해석되지_않아도_로딩은_성공한다() throws IOException {
         Files.writeString(dataDir.resolve("users.tbl"), "1|a\ngarbage-without-fields");
         try (Table table = Table.open(dataDir, "users")) {
-            assertEquals(2, table.nextId());
+            assertEquals(java.util.OptionalLong.of(2), table.nextId());
         }
         // 다음 재시작에는 일반 줄로 읽히므로, 깨진 내용이면 그때 실패한다 (선택한 정책).
         assertThrows(StorageException.class, () -> Table.open(dataDir, "users"));
@@ -190,7 +191,7 @@ class TableTest {
         assertThrows(StorageException.class, () -> table.insert(user("lee")));
         assertEquals(1, table.idIndex().size());
         assertEquals(Optional.empty(), table.idIndex().search(2L));
-        assertEquals(2, table.nextId());
+        assertEquals(java.util.OptionalLong.of(2), table.nextId());
         table.close();
     }
 
@@ -199,7 +200,33 @@ class TableTest {
         try (Table table = Table.open(dataDir, "users")) {
             assertThrows(StorageException.class, () -> table.insert(new Object[]{null, 1.5}));
             assertEquals(0, table.idIndex().size());
-            assertEquals(1, table.nextId());
+            assertEquals(java.util.OptionalLong.of(1), table.nextId());
+        }
+    }
+
+    // ---- 스키마·id 한계 ----
+
+    @Test
+    void id만_있는_테이블은_INSERT할_값이_없어_거부한다() throws IOException {
+        Files.writeString(dataDir.resolve("only.schema"), "id:INT");
+        assertThrows(StorageException.class, () -> Table.open(dataDir, "only"));
+    }
+
+    @Test
+    void id를_Long_MAX까지_다_쓰면_파일에_쓰기_전에_거부한다() throws IOException {
+        Path tbl = dataDir.resolve("users.tbl");
+        Files.writeString(tbl, (Long.MAX_VALUE - 1) + "|a\n");
+        try (Table table = Table.open(dataDir, "users")) {
+            assertEquals(Long.MAX_VALUE, table.insert(user("last")), "마지막 id까지는 부여한다");
+            assertEquals(OptionalLong.empty(), table.nextId());
+            long before = table.fileSize();
+            assertThrows(com.minidbms.common.ConstraintViolationException.class, () -> table.insert(user("over")));
+            assertEquals(before, table.fileSize(), "거부한 INSERT는 파일에 아무것도 쓰지 않는다");
+        }
+        try (Table table = Table.open(dataDir, "users")) {
+            assertEquals(2, table.idIndexStats().keys(), "다시 열어도 정상(중복 줄 없음)");
+            assertEquals(OptionalLong.empty(), table.nextId(), "파일에 MAX id가 있으면 다시 열어도 고갈 상태");
+            assertThrows(com.minidbms.common.ConstraintViolationException.class, () -> table.insert(user("over")));
         }
     }
 }

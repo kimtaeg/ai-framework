@@ -197,6 +197,8 @@ public final class LoadTest {
 
     /** HTTP 호출과 측정 */
     static final class Runner {
+        static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30);
+
         private final String baseUrl;
         private final Options options;
         private final HttpClient client;
@@ -212,7 +214,8 @@ public final class LoadTest {
 
         /** lookup이 필요하면 존재하는 최대 id를 찾는다. */
         void prepare(PrintStream out) throws IOException, InterruptedException {
-            int health = send(HttpRequest.newBuilder(URI.create(baseUrl + "/health")).GET().build());
+            // connectTimeout은 연결까지만 제한한다. 연결은 받고 응답하지 않는 서버에서 멈추지 않게 요청에도 제한 시간을 둔다.
+            int health = send(HttpRequest.newBuilder(URI.create(baseUrl + "/health")).timeout(REQUEST_TIMEOUT).GET().build());
             if (health != 200) {
                 throw new IllegalStateException("서버 /health가 " + health + "입니다: " + baseUrl);
             }
@@ -319,13 +322,18 @@ public final class LoadTest {
             double elapsed = (System.nanoTime() - window[0]) / 1e9;
 
             int total = Arrays.stream(counts).sum();
+            if (total == 0) {
+                // 측정 창 안에 끝난 요청이 하나도 없으면 0 TPS를 결과처럼 보고하지 않는다.
+                throw new IllegalStateException("클라이언트 " + clients + "개로 " + seconds + "초 동안 끝난 요청이 없습니다. "
+                        + "서버가 응답하는지, --duration이 충분한지 확인하세요");
+            }
             long[] all = new long[total];
             int at = 0;
             for (int c = 0; c < clients; c++) {
                 System.arraycopy(latencies[c], 0, all, at, counts[c]);
                 at += counts[c];
             }
-            Benchmark.Summary summary = total == 0 ? new Benchmark.Summary(0, 0, 0, 0, 0, 0) : Benchmark.Summary.of(all);
+            Benchmark.Summary summary = Benchmark.Summary.of(all);
             return new Level(clients, total, errors.get(), busy.get(), elapsed, summary);
         }
 
@@ -348,7 +356,7 @@ public final class LoadTest {
             // SQL에 큰따옴표·역슬래시가 없으므로 JSON 이스케이프 없이 그대로 넣는다.
             return HttpRequest.newBuilder(URI.create(baseUrl + "/query"))
                     .header("Content-Type", "application/json")
-                    .timeout(Duration.ofSeconds(30))
+                    .timeout(REQUEST_TIMEOUT)
                     .POST(HttpRequest.BodyPublishers.ofString("{\"sql\":\"" + sql + "\"}", StandardCharsets.UTF_8))
                     .build();
         }

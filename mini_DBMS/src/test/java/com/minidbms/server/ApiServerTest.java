@@ -208,4 +208,11 @@ class ApiServerTest {
         assertThrows(IOException.class, () -> get("/health"));
         server = null;
     }
+
+    @Test
+    void 기본_바인딩은_루프백이고_요청_읽기_시간에_상한이_있다() throws Exception {
+        start(1, 1, 10);
+        assertTrue(server.address().getAddress().isLoopbackAddress(), server.address().toString());
+        assertEquals(Long.toString(ApiServer.MAX_REQUEST_TIME_SECONDS), System.getProperty(ApiServer.MAX_REQUEST_TIME_PROPERTY));
+    }
 }

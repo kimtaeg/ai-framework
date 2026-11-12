@@ -32,7 +32,10 @@ class ApiOverloadTest {
             for (int i = 0; i < 20_000; i++) {
                 sql.append("INSERT INTO users (name, age) VALUES ('u").append(i).append("', ").append(i % 100).append(");");
             }
+            // 준비용 2만 건 INSERT는 서버의 기본 쿼리 제한(5초)에 걸리지 않게 제한 없이 넣는다.
+            api.server.engine().setQueryTimeoutMillis(0);
             api.server.engine().execute(sql.toString());
+            api.server.engine().setQueryTimeoutMillis(ServerConfig.DEFAULT_QUERY_TIMEOUT_MILLIS);
 
             int requests = 60;
             ExecutorService pool = Executors.newFixedThreadPool(requests);

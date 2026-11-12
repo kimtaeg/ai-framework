@@ -66,7 +66,7 @@ EXPLAIN SELECT ...;                 -- 실행하지 않고 실행 경로만 보�
 - 컬럼 목록을 생략하면 `id`를 뺀 스키마 순서대로 값을 받는다. 지정하지 않은 컬럼은 NULL.
 - 타입은 엄격하게 검사한다. INT 컬럼에 `'30'`을 넣거나 비교하면 오류(암묵적 변환 없음).
 - NULL과의 비교는 항상 false다. `age != 30`에도 age가 NULL인 행은 나오지 않는다.
-- 문자열 비교는 유니코드 코드 포인트 순이다(`'B' < 'a' < '가'`).
+- 문자열 비교는 유니코드 코드 포인트 순이다(`'B' < 'a' < '가'`). Java `String.compareTo`(UTF-16 단위)와 달리 보충 문자(U+10000 이상)도 U+E000~U+FFFF보다 크다.
 - `LIMIT n`(0 이상)은 앞에서부터 n행만 돌려준다. n행을 모으는 순간 남은 파일·인덱스 범위를 읽지 않는다. 순서는 실행 경로를 따른다(인덱스는 id 순, 스캔은 파일 순).
 
 ### 오류 종류 (`common` 패키지, 모두 `DbException` 하위)
@@ -101,10 +101,10 @@ id:INT,name:STRING,age:INT,email:STRING
 한 줄이 레코드 하나(`\n`으로 끝남), 필드는 스키마 순서대로 `|`로 구분한다.
 
 ```text
-1|kim|30
-2|o'brien; \| \\ 특수문자|19
-3|no-age|\N
-4||25
+1|kim|30|kim@test.com
+2|o'brien; \| \\ 특수문자|19|\N
+3|no-age|\N|\N
+4||25|empty-name@test.com
 ```
 
 | 원래 값 | 저장 형태 |
@@ -226,7 +226,7 @@ java -jar build/libs/mini-dbms.jar bench --table users [--queries 1000] [--scan-
 ## API 서버
 
 ```bash
-java -jar build/libs/mini-dbms.jar serve --port 8080 --threads 8 [--max-threads 8] --queue 1000 --data ./data
+java -jar build/libs/mini-dbms.jar serve --port 8080 --threads 8 [--max-threads 8] --queue 1000 --data ./data [--host 127.0.0.1]
 curl localhost:8080/health
 # {"status":"UP","uptimeMs":544,"pool":{"coreThreads":8,"maxThreads":8,"poolSize":1,"activeThreads":1,"queued":0,"queueCapacity":1000,"rejected":0}}
 ```
@@ -320,7 +320,7 @@ curl -s localhost:8080/health
 | 409 | `CONSTRAINT_VIOLATION` · `DUPLICATE_KEY` | id 직접 지정, 키 중복 |
 | 413 | `PAYLOAD_TOO_LARGE` | 본문 1MB 초과 (Content-Length가 있으면 읽기 전에 거절) |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | Content-Type이 `application/json`이 아니거나 charset이 utf-8이 아님 |
-| 500 | `STORAGE_ERROR` · `DB_ERROR` | 파일 I/O·손상 — 서버 로그에 스택 트레이스 |
+| 500 | `STORAGE_ERROR` · `DB_ERROR` | 파일 I/O·손상 — 응답은 고정 문구, 상세(경로·레코드 내용)는 서버 로그에만 |
 | 500 | `INTERNAL_ERROR` | 예상 못 한 예외 — 메시지는 감추고 서버 로그에 스택 트레이스 |
 | 503 | `SERVER_BUSY` | 워커·큐가 모두 참 (`Retry-After: 1`) |
 | 503 | `SHUTTING_DOWN` | 종료 중에 들어온 요청 (`Connection: close`) |
@@ -463,9 +463,26 @@ src/main/java/com/minidbms/
 └── common/       DbException과 하위 예외
 ```
 
+### 보안상 기본값
+
+이 서버에는 **인증과 TLS가 없다**. 그래서 기본값을 안전한 쪽으로 둔다.
+
+| 항목 | 기본 동작 | 이유 |
+|---|---|---|
+| 바인딩 | `127.0.0.1`(같은 컴퓨터에서만). 다른 컴퓨터에서 쓰려면 `--host 0.0.0.0`을 명시하고, 그때는 시작할 때 경고를 출력한다 | 열린 포트에 닿는 누구나 SELECT·INSERT를 할 수 있고 SQL·결과가 평문으로 오간다 |
+| 요청 읽기 시간 | `sun.net.httpserver.maxReqTime=10`(초). `-D`로 이미 정했으면 그 값 | 포화 시 거절된 요청은 dispatcher 스레드에서 파싱된다. 헤더를 끝내지 않는 연결이 dispatcher를 묶지 못하게 JDK 타이머가 끊는다(실험: 설정이 없으면 다음 요청이 8 s 넘게 막히고, 2 s면 2.8 s에 회복) |
+| 결과 크기 | 행 수(`--max-rows`)와 별도로 대략 16M 문자 | 큰 문자열 컬럼을 수천 번 투영하면 한 행만으로 수백 MB가 된다 |
+| 락 대기 | 쿼리 마감 시각까지만 `tryLock` | 다른 요청이 테이블을 오래 쥐고 있을 때 단건 조회가 마감을 넘겨 기다린 뒤 성공하지 않게 |
+| 오류 메시지 | 4xx는 도메인 메시지(SQL·테이블·컬럼 이름), 5xx는 고정 문구. 테이블 없음 메시지에는 절대 경로 대신 파일 이름만 | 서버 디렉터리 구조와 저장된 레코드 내용을 밖으로 보내지 않는다 |
+| 로그·표 출력 | 클라이언트 값의 제어 문자를 `\uXXXX`로 바꿔 출력 | `%0a`로 가짜 로그 줄을 끼우거나 ESC 시퀀스로 터미널을 조작하지 못하게 |
+
 ## 알려진 한계
 
 - 인덱스는 id 하나뿐이다. 다른 컬럼 조건은 항상 FULL_SCAN.
 - WHERE는 조건 하나만 지원한다. `AND`는 `BETWEEN a AND b`의 구분자로만 쓴다.
 - UPDATE·DELETE·CREATE TABLE이 없다. 테이블은 `.schema` 파일을 직접 만들어 정의한다.
-- 쿼리 타임아웃은 협조적이라 확인 지점(문장 사이, 1,024행마다) 사이의 일은 끊지 못한다. 테이블을 처음 여는 인덱스 재구성도 대상이 아니다.
+- 쿼리 타임아웃은 협조적이라 확인 지점(문장 사이, 1,024행마다, 락 대기) 사이의 일은 끊지 못한다. 테이블을 처음 여는 인덱스 재구성도 대상이 아니다.
+- 인증·TLS가 없다. 기본 바인딩을 루프백으로 두는 것으로 대신한다.
+- 결과 크기 상한은 대략적인 추정(문자열 길이 + 2, 숫자 20)이다. JSON 이스케이프로 늘어나는 만큼은 세지 않는다.
+- 스키마는 `id` 말고 컬럼이 하나 이상 있어야 하고, 컬럼 이름은 SQL 식별자 규칙(영문자·숫자·밑줄, 키워드 불가)을 따라야 한다.
+- id가 `Long.MAX_VALUE`까지 차면 그 테이블에는 더 INSERT할 수 없다(`CONSTRAINT_VIOLATION`).

@@ -1,6 +1,8 @@
 package com.minidbms.storage;
 
+import com.minidbms.common.ConstraintViolationException;
 import com.minidbms.common.DuplicateKeyException;
+import com.minidbms.common.QueryTimeoutException;
 import com.minidbms.common.StorageException;
 import com.minidbms.index.BPlusTree;
 
@@ -9,6 +11,8 @@ import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -31,6 +35,8 @@ import java.util.function.Supplier;
  */
 public final class Table implements Closeable {
     public static final String ID_COLUMN = "id";
+    /** 락을 기다리는 시간에 제한이 없음 */
+    public static final long NO_TIMEOUT = Long.MAX_VALUE;
     static final String DATA_EXTENSION = ".tbl";
     static final int INDEX_ORDER = 128;
 
@@ -42,8 +48,10 @@ public final class Table implements Closeable {
     private final int idColumn;
     private final BPlusTree<Long, Long> idIndex = new BPlusTree<>(INDEX_ORDER);
     private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
-    // 아래 두 필드와 idIndex, file의 쓰기 상태는 lock으로 보호한다(open 중에는 아직 공유되지 않아 락 없이 쓴다).
+    // 아래 필드들과 idIndex, file의 쓰기 상태는 lock으로 보호한다(open 중에는 아직 공유되지 않아 락 없이 쓴다).
     private long nextId = 1;
+    // Long.MAX_VALUE id를 이미 부여했으면 더 줄 id가 없다. nextId++가 Long.MIN_VALUE로 넘쳐 음수·중복 id가 생기지 않게 막는다.
+    private boolean idsExhausted;
     // 이번 로딩에서 무시하는 줄(열 때 줄바꿈 없이 끝나 있던 마지막 줄)의 offset. 없으면 -1
     private long ignoredOffset = -1;
 
@@ -55,6 +63,11 @@ public final class Table implements Closeable {
             throw new StorageException("테이블 '" + name + "'의 스키마에 'id:INT' 컬럼이 필요합니다: " + file.path());
         }
         this.idColumn = schema.indexOf(ID_COLUMN);
+        // id는 엔진이 부여하고 직접 넣을 수 없으므로, id만 있는 테이블에는 INSERT로 넣을 값이 하나도 없다.
+        if (schema.size() == 1) {
+            throw new StorageException("테이블 '" + name + "'에 id 말고 컬럼이 하나 이상 필요합니다(id는 자동 부여라 INSERT할 값이 없음): "
+                    + file.path());
+        }
     }
 
     /**
@@ -101,7 +114,8 @@ public final class Table implements Closeable {
             }
             maxId[0] = Math.max(maxId[0], id);
         });
-        nextId = maxId[0] + 1;
+        idsExhausted = maxId[0] == Long.MAX_VALUE;
+        nextId = idsExhausted ? Long.MAX_VALUE : maxId[0] + 1;
     }
 
     private OptionalLong ignoredId(String line) {
@@ -146,9 +160,9 @@ public final class Table implements Closeable {
         return read(idIndex::stats);
     }
 
-    /** 다음 INSERT가 받을 id */
-    public long nextId() {
-        return read(() -> nextId);
+    /** 다음 INSERT가 받을 id. id를 다 썼으면(Long.MAX_VALUE까지 부여) empty */
+    public OptionalLong nextId() {
+        return read(() -> idsExhausted ? OptionalLong.empty() : OptionalLong.of(nextId));
     }
 
     /** 데이터 파일의 논리적 크기(버퍼 포함, byte) */
@@ -166,24 +180,41 @@ public final class Table implements Closeable {
      * @return 부여한 id
      */
     public long insert(Object[] record) {
-        lock.writeLock().lock();
-        try {
+        return insert(record, NO_TIMEOUT);
+    }
+
+    /** @param lockTimeoutNanos 쓰기 락을 이 시간 안에 못 잡으면 QueryTimeoutException */
+    public long insert(Object[] record, long lockTimeoutNanos) {
+        return locked(lock.writeLock(), lockTimeoutNanos, () -> {
             // 세 단계가 한 쓰기 락 안에 있어야 한다. 락 밖에서 id를 뽑으면 두 스레드가 같은 id를 받거나,
             // 파일 순서와 id 순서가 어긋나거나, 인덱스 등록 전에 다른 스레드가 그 id를 조회할 수 있다.
+            if (idsExhausted) {
+                // 파일에 쓰기 전에 거부한다. 쓴 뒤에 인덱스 등록이 실패하면 중복 줄이 파일에 남아 다음 로딩이 실패한다.
+                throw new ConstraintViolationException("테이블 '" + name + "'은(는) id를 " + Long.MAX_VALUE
+                        + "까지 모두 부여해서 더 INSERT할 수 없습니다");
+            }
             long id = nextId;
             record[idColumn] = id;
             long offset = file.append(RecordCodec.encode(record)); // 1) 파일 append (실패하면 여기서 끝)
             idIndex.insert(id, offset);                             // 2) 인덱스 등록
-            nextId++;                                               // 3) 다음 id
+            if (id == Long.MAX_VALUE) {                             // 3) 다음 id (넘치지 않게)
+                idsExhausted = true;
+            } else {
+                nextId = id + 1;
+            }
             return id;
-        } finally {
-            lock.writeLock().unlock();
-        }
+        });
     }
 
     /** id 인덱스로 레코드 하나를 찾아 그 offset의 줄만 읽는다. */
     public Optional<Object[]> findById(long id) {
-        return read(() -> idIndex.search(id).map(offset -> RecordCodec.decode(file.readAt(offset), schema)));
+        return findById(id, NO_TIMEOUT);
+    }
+
+    /** @param lockTimeoutNanos 읽기 락을 이 시간 안에 못 잡으면 QueryTimeoutException */
+    public Optional<Object[]> findById(long id, long lockTimeoutNanos) {
+        return locked(lock.readLock(), lockTimeoutNanos,
+                () -> idIndex.search(id).map(offset -> RecordCodec.decode(file.readAt(offset), schema)));
     }
 
     /**
@@ -199,7 +230,12 @@ public final class Table implements Closeable {
 
     /** rangeById와 같지만 visitor가 false를 돌려주면 멈춘다(남은 줄은 읽지 않는다). */
     public void rangeByIdWhile(long from, long to, Predicate<Object[]> visitor) {
-        read(() -> {
+        rangeByIdWhile(from, to, visitor, NO_TIMEOUT);
+    }
+
+    /** @param lockTimeoutNanos 읽기 락을 이 시간 안에 못 잡으면 QueryTimeoutException */
+    public void rangeByIdWhile(long from, long to, Predicate<Object[]> visitor, long lockTimeoutNanos) {
+        locked(lock.readLock(), lockTimeoutNanos, () -> {
             idIndex.forEachInRange(from, to, offset -> visitor.test(RecordCodec.decode(file.readAt(offset), schema)));
             return null;
         });
@@ -218,7 +254,12 @@ public final class Table implements Closeable {
 
     /** scan과 같지만 visitor가 false를 돌려주면 남은 파일을 읽지 않고 멈춘다. LIMIT·최대 행 수 제한에 쓴다. */
     public void scanWhile(Predicate<Object[]> visitor) {
-        read(() -> {
+        scanWhile(visitor, NO_TIMEOUT);
+    }
+
+    /** @param lockTimeoutNanos 읽기 락을 이 시간 안에 못 잡으면 QueryTimeoutException */
+    public void scanWhile(Predicate<Object[]> visitor, long lockTimeoutNanos) {
+        locked(lock.readLock(), lockTimeoutNanos, () -> {
             file.scanWhile((offset, line) -> offset == ignoredOffset || visitor.test(RecordCodec.decode(line, schema)));
             return null;
         });
@@ -244,11 +285,33 @@ public final class Table implements Closeable {
     }
 
     private <T> T read(Supplier<T> action) {
-        lock.readLock().lock();
+        return locked(lock.readLock(), NO_TIMEOUT, action);
+    }
+
+    /**
+     * 락을 잡고 action을 실행한다. 제한 시간이 있으면 tryLock으로 기다려서, 다른 요청이 락을 오래 쥐고 있을 때
+     * 쿼리 마감 시각을 넘겨서까지 워커가 무기한 대기하지 않게 한다.
+     */
+    private <T> T locked(Lock which, long timeoutNanos, Supplier<T> action) {
+        if (timeoutNanos == NO_TIMEOUT) {
+            which.lock();
+        } else {
+            boolean acquired;
+            try {
+                acquired = timeoutNanos > 0 && which.tryLock(timeoutNanos, TimeUnit.NANOSECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new QueryTimeoutException("테이블 '" + name + "'의 락을 기다리다 중단됐습니다");
+            }
+            if (!acquired) {
+                throw new QueryTimeoutException("테이블 '" + name + "'의 락을 기다리다 쿼리 제한 시간을 넘었습니다. "
+                        + "다른 요청이 이 테이블을 오래 쓰고 있습니다");
+            }
+        }
         try {
             return action.get();
         } finally {
-            lock.readLock().unlock();
+            which.unlock();
         }
     }
 }

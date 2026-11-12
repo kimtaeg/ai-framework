@@ -1,31 +1,42 @@
 package com.minidbms.engine;
 
 import com.minidbms.common.QueryTimeoutException;
+import com.minidbms.storage.Table;
+
+import java.util.function.LongSupplier;
 
 /**
  * execute 호출 하나의 마감 시각. 협조적 타임아웃이다: 스레드를 강제로 멈추지 않고, 실행 중인 코드가
  * 적당한 간격으로 {@link #check()}를 불러 스스로 그만둔다. 그래서 락·파일 스트림은 평소처럼 finally에서 정리된다.
+ *
+ * <p>시계(nanoTime)를 주입받는다. 테스트가 실제 실행 속도와 상관없이 "시간이 흘렀다"를 정할 수 있게 하려고.
  */
 final class Deadline {
     /** 이 간격(읽은 후보 행 수)마다 시계를 본다. nanoTime 호출 비용을 행마다 내지 않으려고. */
     static final int CHECK_EVERY_ROWS = 1024;
 
-    static final Deadline NONE = new Deadline(0, 0);
+    static final Deadline NONE = new Deadline(0, 0, System::nanoTime);
 
     private final long timeoutMillis;
     private final long deadlineNanos;
+    private final LongSupplier clock;
 
-    private Deadline(long timeoutMillis, long deadlineNanos) {
+    private Deadline(long timeoutMillis, long deadlineNanos, LongSupplier clock) {
         this.timeoutMillis = timeoutMillis;
         this.deadlineNanos = deadlineNanos;
+        this.clock = clock;
     }
 
     /** @param timeoutMillis 0 이하면 제한 없음 */
-    static Deadline after(long timeoutMillis) {
+    static Deadline after(long timeoutMillis, LongSupplier clock) {
         if (timeoutMillis <= 0) {
             return NONE;
         }
-        return new Deadline(timeoutMillis, System.nanoTime() + timeoutMillis * 1_000_000L);
+        return new Deadline(timeoutMillis, clock.getAsLong() + timeoutMillis * 1_000_000L, clock);
+    }
+
+    static Deadline after(long timeoutMillis) {
+        return after(timeoutMillis, System::nanoTime);
     }
 
     /**
@@ -33,16 +44,28 @@ final class Deadline {
      * 그러지 않으면 큰 테이블을 처음 쓰는 쿼리는 로딩만으로 제한 시간을 넘겨 항상 실패한다.
      */
     Deadline extendedBy(long nanos) {
-        return isUnlimited() || nanos <= 0 ? this : new Deadline(timeoutMillis, deadlineNanos + nanos);
+        return isUnlimited() || nanos <= 0 ? this : new Deadline(timeoutMillis, deadlineNanos + nanos, clock);
     }
 
     boolean isUnlimited() {
         return timeoutMillis <= 0;
     }
 
+    long now() {
+        return clock.getAsLong();
+    }
+
+    /** 락을 기다려도 되는 남은 시간. 제한이 없으면 {@link Table#NO_TIMEOUT} */
+    long remainingNanos() {
+        if (isUnlimited()) {
+            return Table.NO_TIMEOUT;
+        }
+        return Math.max(0, deadlineNanos - clock.getAsLong());
+    }
+
     void check() {
         // nanoTime은 넘칠 수 있으므로 두 값을 직접 비교하지 않고 차이의 부호를 본다.
-        if (!isUnlimited() && System.nanoTime() - deadlineNanos >= 0) {
+        if (!isUnlimited() && clock.getAsLong() - deadlineNanos >= 0) {
             throw new QueryTimeoutException("쿼리가 제한 시간 " + timeoutMillis + " ms를 넘어 중단했습니다. "
                     + "WHERE id 조건이나 LIMIT으로 읽는 범위를 줄이세요");
         }

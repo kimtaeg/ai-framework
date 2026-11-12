@@ -96,6 +96,7 @@ public final class Main {
         // 정상 종료는 finally에서, Ctrl+C·kill은 종료 훅에서 close한다. 어느 쪽이든 버퍼가 파일로 내려간다.
         Thread shutdownHook = new Thread(cli::close, "mini-dbms-shutdown");
         Runtime.getRuntime().addShutdownHook(shutdownHook);
+        boolean inputFailed = false;
         try {
             if (script != null) {
                 cli.runScript(script);
@@ -103,12 +104,14 @@ public final class Main {
                 cli.repl(new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8)));
             }
         } catch (IOException e) {
+            // 입력이 중간에 끊긴 실행을 성공으로 보고하지 않는다.
             err.println("ERROR: 입력을 읽을 수 없습니다: " + e.getMessage());
+            inputFailed = true;
         } finally {
             cli.close();
             removeHook(shutdownHook);
         }
-        return cli.errorCount() == 0 ? OK : STATEMENT_ERROR;
+        return inputFailed || cli.errorCount() > 0 ? STATEMENT_ERROR : OK;
     }
 
     private static void removeHook(Thread hook) {

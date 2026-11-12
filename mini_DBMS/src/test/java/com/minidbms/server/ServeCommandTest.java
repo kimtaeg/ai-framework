@@ -12,6 +12,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ServeCommandTest {
+    @org.junit.jupiter.api.io.TempDir
+    Path dir;
+
     @Test
     void 기본값과_옵션을_해석한다() {
         assertEquals(new ServerConfig(8080, 8, 8, 1000, Path.of("data")), ServeCommand.parse(new String[0]));
@@ -20,6 +23,8 @@ class ServeCommandTest {
                 "--max-rows", "500", "--grace", "3", "--query-timeout", "250"}));
         assertEquals(0, ServeCommand.parse(new String[]{"--query-timeout", "0"}).queryTimeoutMillis(), "0이면 끔");
         assertEquals(5_000, ServeCommand.parse(new String[0]).queryTimeoutMillis());
+        assertEquals("127.0.0.1", ServeCommand.parse(new String[0]).host(), "기본은 루프백");
+        assertEquals("0.0.0.0", ServeCommand.parse(new String[]{"--host", "0.0.0.0"}).host());
     }
 
     @Test
@@ -40,7 +45,28 @@ class ServeCommandTest {
         PrintStream errStream = new PrintStream(err, true, StandardCharsets.UTF_8);
         PrintStream out = new PrintStream(new ByteArrayOutputStream());
         assertEquals(2, ServeCommand.run(new String[]{"--bogus"}, out, errStream));
-        assertEquals(2, ServeCommand.run(new String[]{"--data", "/nonexistent/mini-dbms"}, out, errStream));
+        assertEquals(2, ServeCommand.run(new String[]{"--data", dir.resolve("missing").toString()}, out, errStream));
         assertTrue(err.toString(StandardCharsets.UTF_8).contains("사용법"));
+    }
+
+    @Test
+    @org.junit.jupiter.api.Timeout(30)
+    void 대기_중_인터럽트되면_서버를_닫고_실패_코드를_돌려준다() throws Exception {
+        java.nio.file.Files.createDirectories(dir.resolve("data"));
+        ByteArrayOutputStream outBytes = new ByteArrayOutputStream();
+        PrintStream out = new PrintStream(outBytes, true, StandardCharsets.UTF_8);
+        PrintStream err = new PrintStream(new ByteArrayOutputStream());
+        int[] code = {-1};
+        Thread serve = new Thread(() -> code[0] = ServeCommand.run(
+                new String[]{"--port", "0", "--data", dir.resolve("data").toString(), "--grace", "0"}, out, err));
+        serve.start();
+        long deadline = System.nanoTime() + 10_000_000_000L;
+        while (!outBytes.toString(StandardCharsets.UTF_8).contains("mini-dbms API 서버") && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        serve.interrupt();
+        serve.join(15_000);
+        assertEquals(1, code[0], outBytes.toString(StandardCharsets.UTF_8));
+        assertTrue(outBytes.toString(StandardCharsets.UTF_8).contains("종료 완료"), "서버를 닫아야 한다");
     }
 }

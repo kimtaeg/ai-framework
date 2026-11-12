@@ -2,6 +2,7 @@ package com.minidbms.cli;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * MySQL 클라이언트처럼 테두리 있는 표를 만든다.
@@ -72,8 +73,26 @@ public final class TableFormatter {
         if (value == null) {
             return "NULL";
         }
-        // 값 안의 줄바꿈·탭이 그대로 찍히면 표가 깨지므로 보이는 문자로 바꾼다.
-        return value.toString().replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t");
+        // 값 안의 제어 문자는 보이는 문자로 바꾼다. 줄바꿈·탭은 표를 깨고, ESC(U+001B) 같은 문자는 ANSI 시퀀스로
+        // 해석돼 터미널 화면을 지우거나 바꿀 수 있다(다른 사용자가 저장한 값을 조회할 때).
+        String text = value.toString();
+        StringBuilder out = new StringBuilder(text.length());
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            switch (c) {
+                case '\n' -> out.append("\\n");
+                case '\r' -> out.append("\\r");
+                case '\t' -> out.append("\\t");
+                default -> {
+                    if (Character.isISOControl(c)) {
+                        out.append(String.format(Locale.ROOT, "\\u%04x", (int) c));
+                    } else {
+                        out.append(c);
+                    }
+                }
+            }
+        }
+        return out.toString();
     }
 
     static int displayWidth(String s) {

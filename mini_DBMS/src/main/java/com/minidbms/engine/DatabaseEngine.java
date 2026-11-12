@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.LongSupplier;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -36,6 +37,10 @@ public final class DatabaseEngine implements Closeable {
     private volatile long maxResultRows = Long.MAX_VALUE;
     // execute 호출 하나의 제한 시간(ms). 0이면 제한 없음.
     private volatile long queryTimeoutMillis = 0;
+    // SELECT 결과의 대략적인 크기 상한(문자 수). 기본은 제한 없음.
+    private volatile long maxResultBytes = Long.MAX_VALUE;
+    // 타임아웃이 보는 시계. 테스트가 실제 실행 속도와 상관없이 시간 흐름을 정할 수 있게 바꿀 수 있다.
+    private volatile LongSupplier clock = System::nanoTime;
 
     public DatabaseEngine(Path dataDir) {
         this.dataDir = Objects.requireNonNull(dataDir, "dataDir");
@@ -82,6 +87,26 @@ public final class DatabaseEngine implements Closeable {
     }
 
     /**
+     * SELECT 결과 크기의 상한. 값마다 대략적인 크기(문자열은 길이 + 2, 숫자 20, NULL 4)를 더해 넘으면 그만 읽고
+     * truncated=true를 단다. 행 수 제한과 별개다: 큰 문자열 컬럼을 여러 번 투영하면 한 행만으로도 결과가 커진다.
+     */
+    public void setMaxResultBytes(long maxBytes) {
+        if (maxBytes < 1) {
+            throw new IllegalArgumentException("결과 크기 상한은 1 이상이어야 합니다: " + maxBytes);
+        }
+        this.maxResultBytes = maxBytes;
+    }
+
+    public long maxResultBytes() {
+        return maxResultBytes;
+    }
+
+    /** 테스트용: 타임아웃 계산에 쓸 시계(nanoTime과 같은 단위) */
+    void setClock(LongSupplier clock) {
+        this.clock = Objects.requireNonNull(clock, "clock");
+    }
+
+    /**
      * 세미콜론으로 구분된 문장들을 순서대로 실행한다.
      *
      * <p>전체를 먼저 파싱하므로 문법 오류가 하나라도 있으면 아무것도 실행되지 않는다.
@@ -92,22 +117,23 @@ public final class DatabaseEngine implements Closeable {
      */
     public List<QueryResult> execute(String sql) {
         // 파싱 전부터 잰다. 1MB짜리 SQL이면 파싱도 시간이 든다.
-        Deadline deadline = Deadline.after(queryTimeoutMillis);
+        LongSupplier clock = this.clock;
+        Deadline deadline = Deadline.after(queryTimeoutMillis, clock);
         List<Statement> statements = Parser.parseAll(sql);
         List<QueryResult> results = new ArrayList<>(statements.size());
         LinkedHashSet<Table> written = new LinkedHashSet<>();
         try {
             for (Statement statement : statements) {
                 deadline.check(); // 문장 사이: 짧은 문장이 많이 이어진 요청도 제한 시간 안에서 끊는다
-                long loadStart = System.nanoTime();
+                long loadStart = clock.getAsLong();
                 Table table = table(statement.table());
                 // 처음 쓰는 테이블이면 여기서 파일을 훑어 인덱스를 재구성한다. 그 시간은 타임아웃에서 뺀다(캐시면 거의 0).
-                deadline = deadline.extendedBy(System.nanoTime() - loadStart);
+                deadline = deadline.extendedBy(clock.getAsLong() - loadStart);
                 if (statement instanceof InsertStatement) {
                     written.add(table);
                 }
                 long start = System.nanoTime();
-                QueryResult result = executor.execute(statement, table, indexEnabled, maxResultRows, deadline);
+                QueryResult result = executor.execute(statement, table, indexEnabled, maxResultRows, maxResultBytes, deadline);
                 results.add(result.withElapsedMs((System.nanoTime() - start) / 1_000_000.0));
             }
         } catch (RuntimeException e) {

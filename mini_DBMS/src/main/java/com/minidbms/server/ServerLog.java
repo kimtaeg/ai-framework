@@ -25,7 +25,7 @@ final class ServerLog {
     }
 
     void request(String thread, String method, String path, int status, double ms) {
-        out.println(String.format(Locale.ROOT, "%s [%s] %s %s %d %.3f ms", now(), thread, method, path, status, ms));
+        out.println(String.format(Locale.ROOT, "%s [%s] %s %s %d %.3f ms", now(), thread, safe(method), safe(path), status, ms));
     }
 
     void info(String message) {
@@ -35,8 +35,25 @@ final class ServerLog {
     void error(String context, Throwable error) {
         StringWriter trace = new StringWriter();
         error.printStackTrace(new PrintWriter(trace));
-        out.print(now() + " [" + Thread.currentThread().getName() + "] ERROR " + context + "\n" + trace);
+        out.print(now() + " [" + Thread.currentThread().getName() + "] ERROR " + safe(context) + "\n" + trace);
         out.flush();
+    }
+
+    /**
+     * 클라이언트가 보낸 값(경로·메서드)의 제어 문자를 \\uXXXX로 바꾼다. getPath()는 %0a를 줄바꿈으로 복원하므로
+     * 그대로 쓰면 "/%0a20:00:00.000 [db-worker-1] POST /admin 200"처럼 가짜 로그 줄을 끼워 넣을 수 있다.
+     */
+    static String safe(String value) {
+        StringBuilder out = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (Character.isISOControl(c)) {
+                out.append(String.format(Locale.ROOT, "\\u%04x", (int) c));
+            } else {
+                out.append(c);
+            }
+        }
+        return out.toString();
     }
 
     private static String now() {

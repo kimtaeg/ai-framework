@@ -30,14 +30,16 @@ final class Executor {
 
     /**
      * @param maxRows  SELECT가 돌려줄 최대 행 수. 넘으면 그만 읽고 truncated로 표시한다.
+     * @param maxBytes SELECT 결과의 대략적인 크기 상한(문자 수 기준). 넘으면 그만 읽고 truncated로 표시한다.
      * @param deadline 넘으면 읽기를 멈추고 QueryTimeoutException
      */
-    QueryResult execute(Statement statement, Table table, boolean indexEnabled, long maxRows, Deadline deadline) {
+    QueryResult execute(Statement statement, Table table, boolean indexEnabled, long maxRows, long maxBytes,
+                        Deadline deadline) {
         if (statement instanceof InsertStatement insert) {
-            return insert(insert, table);
+            return insert(insert, table, deadline);
         }
         if (statement instanceof SelectStatement select) {
-            return select(select, table, indexEnabled, maxRows, deadline);
+            return select(select, table, indexEnabled, maxRows, maxBytes, deadline);
         }
         if (statement instanceof ExplainStatement explain) {
             return explain(explain.select(), table, indexEnabled);
@@ -47,7 +49,7 @@ final class Executor {
 
     // ---- INSERT ----
 
-    private QueryResult insert(InsertStatement insert, Table table) {
+    private QueryResult insert(InsertStatement insert, Table table, Deadline deadline) {
         Schema schema = table.schema();
         int[] targets = insertTargets(insert, table);
 
@@ -58,7 +60,8 @@ final class Executor {
         }
         // 검증이 모두 끝난 뒤에 id를 부여한다. 실패한 INSERT가 id를 소모하지 않게 하려고.
         // flush는 DatabaseEngine이 execute 호출 하나가 끝날 때 한 번 한다(INSERT마다 하면 쓰기 시스템 콜이 행 수만큼 생긴다).
-        long id = table.insert(record);
+        // 다른 요청이 테이블을 오래 읽고 있으면 쓰기 락을 마감 시각까지만 기다린다.
+        long id = table.insert(record, deadline.remainingNanos());
         // JDBC의 generated keys처럼 부여한 id를 결과 행으로 돌려준다.
         return new QueryResult(QueryResult.Type.INSERT, List.of(Table.ID_COLUMN), List.of(List.of(id)), 1, null, 0, false);
     }
@@ -117,7 +120,8 @@ final class Executor {
 
     // ---- SELECT ----
 
-    private QueryResult select(SelectStatement select, Table table, boolean indexEnabled, long maxRows, Deadline deadline) {
+    private QueryResult select(SelectStatement select, Table table, boolean indexEnabled, long maxRows, long maxBytes,
+                               Deadline deadline) {
         Schema schema = table.schema();
         // 읽기 전에 컬럼·조건을 모두 검증해서, 잘못된 쿼리가 파일을 끝까지 읽은 뒤에야 실패하지 않게 한다.
         int[] projection = projection(select, schema);
@@ -130,12 +134,25 @@ final class Executor {
         boolean capApplies = limit > maxRows;
         long collect = capApplies ? saturatedIncrement(maxRows) : limit;
 
+        // 행 수와 별도로 결과 크기(대략적인 문자 수)도 센다. 같은 큰 컬럼을 수천 번 투영하면 한 행만으로도
+        // 결과가 수백 MB가 될 수 있어서 행 수 제한만으로는 메모리를 지킬 수 없다.
         List<List<Object>> rows = new ArrayList<>();
+        long[] bytes = {0};
+        boolean[] overBudget = {false};
         if (collect > 0) {
             read(plan, table, deadline, record -> {
                 // 인덱스 경로가 고른 레코드도 같은 필터를 한 번 더 통과시킨다.
                 // 경로와 상관없이 "조건을 만족하는 행"의 정의가 한 곳(compile)에만 있게 하려고.
                 if (filter.test(record)) {
+                    long rowBytes = 0;
+                    for (int index : projection) {
+                        rowBytes += estimatedSize(record[index]);
+                    }
+                    if (rowBytes > maxBytes - bytes[0]) {
+                        overBudget[0] = true; // 이 행은 넣지 않고 멈춘다
+                        return false;
+                    }
+                    bytes[0] += rowBytes;
                     Object[] row = new Object[projection.length];
                     for (int i = 0; i < projection.length; i++) {
                         row[i] = record[projection[i]];
@@ -145,8 +162,8 @@ final class Executor {
                 return rows.size() < collect; // false면 읽기를 멈춘다
             });
         }
-        boolean truncated = capApplies && rows.size() > maxRows;
-        if (truncated) {
+        boolean truncated = overBudget[0] || (capApplies && rows.size() > maxRows);
+        if (capApplies && rows.size() > maxRows) {
             rows.remove(rows.size() - 1); // 넘침을 확인하려고 하나 더 읽은 행
         }
 
@@ -169,6 +186,17 @@ final class Executor {
      * 읽은 행 기준이라, 결과는 0행인데 전체를 훑는 쿼리도 제때 멈춘다. 예외는 Table의 읽기 락과 파일 스트림을
      * finally로 정리하며 빠져나간다.
      */
+    /**
+     * 결과 값 하나가 응답(JSON·표)에서 차지할 대략적인 크기. 문자열은 길이 + 따옴표, 숫자는 최대 자릿수, NULL은 4.
+     * 정확한 직렬화 크기가 아니라 "수백 MB짜리 결과를 만들기 전에 멈춘다"는 목적의 상한 추정이다.
+     */
+    static long estimatedSize(Object value) {
+        if (value instanceof String s) {
+            return s.length() + 2L;
+        }
+        return value == null ? 4 : 20;
+    }
+
     private static void read(Plan plan, Table table, Deadline deadline, Predicate<Object[]> visitor) {
         if (plan.isEmptyRange()) {
             return;
@@ -184,10 +212,13 @@ final class Executor {
                 return inner.test(record);
             };
         }
+        // 락을 기다리는 시간도 마감 시각 안에 둔다. 다른 INSERT가 쓰기 락을 오래 쥐고 있을 때
+        // 단건 조회(행 검사가 한 번도 일어나지 않음)가 제한 시간을 넘겨 기다린 뒤 성공하는 일을 막는다.
+        long lockTimeout = deadline.remainingNanos();
         switch (plan.path()) {
-            case INDEX_LOOKUP -> table.findById(plan.low()).ifPresent(visitor::test);
-            case INDEX_RANGE -> table.rangeByIdWhile(plan.low(), plan.high(), visitor);
-            case FULL_SCAN -> table.scanWhile(visitor);
+            case INDEX_LOOKUP -> table.findById(plan.low(), lockTimeout).ifPresent(visitor::test);
+            case INDEX_RANGE -> table.rangeByIdWhile(plan.low(), plan.high(), visitor, lockTimeout);
+            case FULL_SCAN -> table.scanWhile(visitor, lockTimeout);
         }
     }
 
@@ -250,7 +281,29 @@ final class Executor {
     @SuppressWarnings("unchecked")
     private static int compare(Object a, Object b) {
         // 타입은 compile에서 이미 맞춰 두었으므로 둘은 같은 타입(Long 또는 String)이다.
+        if (a instanceof String x && b instanceof String y) {
+            return compareCodePoints(x, y);
+        }
         return ((Comparable<Object>) a).compareTo(b);
+    }
+
+    /**
+     * 유니코드 코드 포인트 순서로 비교한다. String.compareTo는 UTF-16 코드 단위를 비교해서, 보충 문자(U+10000 이상,
+     * 서로게이트 쌍 0xD800~)가 U+E000~U+FFFF보다 작다고 판단한다. README에 적은 "코드 포인트 순"과 맞추려고 직접 비교한다.
+     */
+    static int compareCodePoints(String x, String y) {
+        int i = 0;
+        int j = 0;
+        while (i < x.length() && j < y.length()) {
+            int a = x.codePointAt(i);
+            int b = y.codePointAt(j);
+            if (a != b) {
+                return Integer.compare(a, b);
+            }
+            i += Character.charCount(a);
+            j += Character.charCount(b);
+        }
+        return Boolean.compare(i < x.length(), j < y.length());
     }
 
     private static String describe(Literal literal) {

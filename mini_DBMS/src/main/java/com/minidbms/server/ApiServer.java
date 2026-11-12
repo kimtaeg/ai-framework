@@ -29,6 +29,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class ApiServer implements Closeable {
     static final int RETRY_AFTER_SECONDS = 1;
+    /** SELECT 결과 크기 상한(대략적인 문자 수). 큰 값을 여러 번 투영한 결과가 힙을 다 쓰지 않게 한다. */
+    static final long MAX_RESULT_BYTES = 16L * 1024 * 1024;
+    /**
+     * 요청 줄과 헤더를 다 받을 때까지 기다리는 최대 초. 넘으면 JDK HttpServer의 타이머가 연결을 끊는다.
+     * 포화 시 거절된 요청은 dispatcher 스레드에서 파싱되므로, 헤더를 끝내지 않는 연결이 dispatcher를 묶지 못하게 하는 상한이다.
+     */
+    static final String MAX_REQUEST_TIME_PROPERTY = "sun.net.httpserver.maxReqTime";
+    static final long MAX_REQUEST_TIME_SECONDS = 10;
 
     private final ServerConfig config;
     private final DatabaseEngine engine;
@@ -48,11 +56,17 @@ public final class ApiServer implements Closeable {
         this.config = config;
         this.log = new ServerLog(logOut);
         this.executor = ThreadPoolFactory.create(config.coreThreads(), config.maxThreads(), config.queueCapacity());
-        this.server = HttpServer.create(new InetSocketAddress(config.port()), 0);
+        // JDK HttpServer는 이 속성을 처음 서버를 만들 때 한 번 읽는다. 운영자가 -D로 이미 정했으면 그 값을 존중한다.
+        if (System.getProperty(MAX_REQUEST_TIME_PROPERTY) == null) {
+            System.setProperty(MAX_REQUEST_TIME_PROPERTY, Long.toString(MAX_REQUEST_TIME_SECONDS));
+        }
+        // 기본은 루프백. 인증·TLS가 없으므로 다른 컴퓨터에서 접속하게 하려면 --host로 명시해야 한다.
+        this.server = HttpServer.create(new InetSocketAddress(config.host(), config.port()), 0);
         this.server.setExecutor(executor);
         this.engine = new DatabaseEngine(config.dataDir());
         this.engine.setMaxResultRows(config.maxResultRows());
         this.engine.setQueryTimeoutMillis(config.queryTimeoutMillis());
+        this.engine.setMaxResultBytes(MAX_RESULT_BYTES);
         route("/health", this::health);
         route("/stats", this::stats);
         route("/query", new QueryHandler(engine));
@@ -65,6 +79,11 @@ public final class ApiServer implements Closeable {
 
     public void start() {
         server.start();
+    }
+
+    /** 실제로 바인딩된 주소 */
+    java.net.InetSocketAddress address() {
+        return server.getAddress();
     }
 
     /** 실제로 열린 포트(설정이 0이면 OS가 고른 포트) */
@@ -216,20 +235,35 @@ public final class ApiServer implements Closeable {
         int inFlight = executor.getActiveCount() + executor.getQueue().size();
         log.info("종료 시작: 새 요청 거부, 처리 중·대기 중 요청 " + inFlight + "개를 최대 " + graceSeconds + "초 기다립니다");
         executor.shutdown();
+        boolean terminated = false;
         try {
-            if (!executor.awaitTermination(graceSeconds, TimeUnit.SECONDS)) {
+            terminated = executor.awaitTermination(graceSeconds, TimeUnit.SECONDS);
+            if (!terminated) {
                 log.info("종료 대기 시간 초과: 남은 요청 " + (executor.getActiveCount() + executor.getQueue().size())
                         + "개의 워커를 중단합니다");
                 executor.shutdownNow();
-                executor.awaitTermination(5, TimeUnit.SECONDS);
+                terminated = executor.awaitTermination(5, TimeUnit.SECONDS);
             }
         } catch (InterruptedException e) {
             executor.shutdownNow();
             Thread.currentThread().interrupt();
         }
         server.stop(0);
+        if (!terminated) {
+            // interrupt로도 끝나지 않은 워커가 테이블 읽기 락을 쥐고 있으면 engine.close()의 쓰기 락이 무기한 기다린다.
+            // 그래서 엔진을 닫지 않고 끝낸다. 끝난 요청은 execute가 반환될 때 이미 flush했으므로, 잃는 것은
+            // 아직 끝나지 않은 그 요청의 결과뿐이다.
+            log.info("종료: 워커 " + executor.getActiveCount() + "개가 끝나지 않아 엔진을 닫지 않고 종료합니다"
+                    + " (끝난 요청은 이미 flush됨)");
+            return;
+        }
         engine.close();
         log.info("종료 완료: 테이블 파일 flush 후 닫음");
+    }
+
+    /** stop 이후 워커가 모두 끝났는지 */
+    boolean isTerminated() {
+        return executor.isTerminated();
     }
 
     @Override

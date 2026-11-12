@@ -142,4 +142,23 @@ class DataGeneratorTest {
         assertEquals(2, generate("--table", "users", "--count", "10", "--bogus"));
         assertTrue(err().contains("사용법"), err());
     }
+
+    @Test
+    void 기존_데이터가_있는_테이블로는_SQL을_내보내지_않는다() {
+        Path data = dir.resolve("data");
+        generate("--table", "users", "--count", "10", "--data", data.toString());
+        assertEquals(1, generate("--table", "users", "--count", "10", "--data", data.toString(), "--out", dir.resolve("x.sql").toString()));
+        assertTrue(err().contains("email이 겹칩니다"), err());
+        assertTrue(!Files.exists(dir.resolve("x.sql")));
+    }
+
+    @Test
+    void 컬럼_타입이_맞지_않으면_reset_전에_거부해서_데이터를_지우지_않는다() throws IOException {
+        Path data = Files.createDirectories(dir.resolve("data"));
+        Files.writeString(data.resolve("users.schema"), "id:INT,name:STRING,age:STRING,email:STRING");
+        Files.writeString(data.resolve("users.tbl"), "1|keep|30|k@x\n");
+        assertEquals(1, generate("--table", "users", "--count", "10", "--data", data.toString(), "--reset"));
+        assertTrue(err().contains("'age' 컬럼은 STRING"), err());
+        assertEquals("1|keep|30|k@x\n", Files.readString(data.resolve("users.tbl")), "데이터가 그대로 남아야 한다");
+    }
 }

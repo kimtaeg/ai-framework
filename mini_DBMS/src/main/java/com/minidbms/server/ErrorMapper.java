@@ -28,7 +28,8 @@ import java.util.Map;
  * ApiException                   그 예외의 상태·코드        HTTP 요청 오류
  * 그 외 모든 예외                500 INTERNAL_ERROR        메시지는 감추고 서버 로그에 스택 트레이스
  * </pre>
- * 4xx는 클라이언트가 고칠 수 있는 오류라 메시지를 그대로 돌려준다. 5xx는 서버 문제라 로그로 남긴다.
+ * 4xx는 클라이언트가 고칠 수 있는 오류라 메시지를 그대로 돌려준다(SQL·스키마 이름 같은 도메인 정보만 담긴다).
+ * 5xx는 메시지에 파일 경로나 저장된 레코드 내용이 들어갈 수 있으므로 고정 문구만 응답하고, 원문은 서버 로그에만 남긴다.
  */
 final class ErrorMapper {
     /** @param serverFault true면 서버 로그에 스택 트레이스를 남긴다 */
@@ -39,6 +40,7 @@ final class ErrorMapper {
     }
 
     static final String INTERNAL_MESSAGE = "서버 내부 오류가 발생했습니다. 서버 로그를 확인하세요";
+    static final String STORAGE_MESSAGE = "저장소 오류가 발생했습니다(파일 I/O 또는 데이터 손상). 서버 로그를 확인하세요";
 
     private ErrorMapper() {
     }
@@ -71,11 +73,10 @@ final class ErrorMapper {
             return client(503, "QUERY_TIMEOUT", error);
         }
         if (error instanceof StorageException) {
-            // 파일 경로가 들어 있지만 운영자가 원인을 찾는 데 필요하므로 메시지를 그대로 둔다.
-            return new ApiError(500, "STORAGE_ERROR", error.getMessage(), Map.of(), true);
+            return new ApiError(500, "STORAGE_ERROR", STORAGE_MESSAGE, Map.of(), true);
         }
         if (error instanceof DbException) {
-            return new ApiError(500, "DB_ERROR", error.getMessage(), Map.of(), true);
+            return new ApiError(500, "DB_ERROR", INTERNAL_MESSAGE, Map.of(), true);
         }
         // 예상하지 못한 예외(NPE 등)의 메시지는 내부 구현을 드러낼 수 있어 클라이언트에는 감춘다.
         return new ApiError(500, "INTERNAL_ERROR", INTERNAL_MESSAGE, Map.of(), true);

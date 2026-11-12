@@ -52,6 +52,8 @@ class LoadTestTest {
         assertEquals(2, rows.size(), md);
         for (String row : rows) {
             assertTrue(row.endsWith("| 0 | 0 |"), "503·오류가 없어야 한다: " + row);
+            long requests = Long.parseLong(row.split("\\|")[2].trim().replace(",", ""));
+            assertTrue(requests > 0, "측정한 요청이 있어야 한다: " + row);
         }
     }
 

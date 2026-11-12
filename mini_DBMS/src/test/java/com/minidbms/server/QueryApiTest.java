@@ -162,7 +162,10 @@ class QueryApiTest {
     void 저장소_오류는_500_STORAGE_ERROR이고_서버_로그에_남는다() throws Exception {
         Files.writeString(dataDir.resolve("broken.schema"), "id:INT,name:STRING");
         Files.writeString(dataDir.resolve("broken.tbl"), "1|a\n1|b\n"); // id 중복 → 로딩 실패
-        assertError(query("SELECT * FROM broken"), 500, "STORAGE_ERROR");
+        HttpResponse<String> response = query("SELECT * FROM broken");
+        assertError(response, 500, "STORAGE_ERROR");
+        assertFalse(response.body().contains(dataDir.toString()), "응답에 서버 경로가 없어야 한다: " + response.body());
+        assertFalse(response.body().contains("broken.tbl"), response.body());
         assertTrue(log().contains("ERROR POST /query → STORAGE_ERROR"), log());
         assertTrue(log().contains("StorageException"), "스택 트레이스가 로그에 있어야 한다");
     }
@@ -271,5 +274,20 @@ class QueryApiTest {
         assertTrue(lines.stream().anyMatch(l -> l.matches("\\d{2}:\\d{2}:\\d{2}\\.\\d{3} \\[db-worker-\\d+] POST /query 200 \\d+\\.\\d{3} ms")),
                 log());
         assertTrue(lines.stream().anyMatch(l -> l.matches(".* \\[db-worker-\\d+] GET /nope 404 \\d+\\.\\d{3} ms")), log());
+    }
+
+    @Test
+    void 경로의_줄바꿈으로_가짜_로그_줄을_만들_수_없다() throws Exception {
+        get("/x%0a00:00:00.000%20%5Bdb-worker-9%5D%20POST%20/query%20200%200.001%20ms");
+        List<String> lines = log().lines().toList();
+        assertTrue(lines.stream().noneMatch(l -> l.startsWith("00:00:00.000")), log());
+        assertTrue(log().contains("/x\\u000a00:00:00.000"), log());
+    }
+
+    @Test
+    void TABLE_NOT_FOUND_응답에는_서버_경로가_없다() throws Exception {
+        HttpResponse<String> response = query("SELECT * FROM ghost");
+        assertError(response, 404, "TABLE_NOT_FOUND");
+        assertFalse(response.body().contains(dataDir.toString()), response.body());
     }
 }

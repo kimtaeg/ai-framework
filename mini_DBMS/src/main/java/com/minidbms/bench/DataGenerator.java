@@ -2,6 +2,7 @@ package com.minidbms.bench;
 
 import com.minidbms.common.DbException;
 import com.minidbms.engine.DatabaseEngine;
+import com.minidbms.storage.ColumnType;
 import com.minidbms.storage.Schema;
 import com.minidbms.storage.SchemaLoader;
 
@@ -11,8 +12,8 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 /**
  * 대용량 테스트 데이터 생성기.
@@ -28,7 +29,9 @@ import java.util.Locale;
 public final class DataGenerator {
     static final int PROGRESS_EVERY = 100_000;
     static final String DEFAULT_SCHEMA = "id:INT,name:STRING,age:INT,email:STRING";
-    static final List<String> REQUIRED_COLUMNS = List.of("name", "age", "email");
+    // 생성기가 넣는 값의 타입: name·email은 문자열, age는 따옴표 없는 정수
+    static final Map<String, ColumnType> REQUIRED_COLUMNS = Map.of(
+            "name", ColumnType.STRING, "age", ColumnType.INT, "email", ColumnType.STRING);
 
     static final String USAGE = """
             사용법:
@@ -158,6 +161,11 @@ public final class DataGenerator {
     static Stats export(Options options, PrintStream out) throws IOException {
         // 안내하는 run 명령이 바로 돌도록 데이터 디렉터리와 스키마는 준비해 둔다(.tbl은 건드리지 않는다).
         prepareSchema(options);
+        // 내보낸 SQL은 email을 user1@test.com부터 만든다. 이미 데이터가 있는 테이블에 실행하면 email이 겹친다.
+        if (hasData(options)) {
+            throw new DbException("테이블 '" + options.table() + "'에 이미 데이터가 있어, 내보낸 SQL을 실행하면 email이 겹칩니다 ("
+                    + dataFile(options) + "). 빈 데이터 디렉터리를 --data로 주세요");
+        }
         UserRowGenerator rows = new UserRowGenerator(options.table(), options.seed());
         StringBuilder line = new StringBuilder(128);
         long start = System.nanoTime();
@@ -184,14 +192,25 @@ public final class DataGenerator {
 
     /** email이 행 번호로 고유하려면 테이블이 비어 있어야 하므로, 데이터가 있으면 --reset을 요구한다. */
     private static void prepareTable(Options options) throws IOException {
+        // 스키마 검증(컬럼·타입)을 먼저 끝낸다. --reset은 그다음에만 데이터를 지우므로, 생성기가 쓸 수 없는
+        // 스키마 때문에 데이터만 지워지고 실패하는 일이 없다.
         prepareSchema(options);
-        Path data = options.dataDir().resolve(options.table() + ".tbl");
+        Path data = dataFile(options);
         if (options.reset()) {
             Files.deleteIfExists(data);
-        } else if (Files.exists(data) && Files.size(data) > 0) {
+        } else if (hasData(options)) {
             throw new DbException("테이블 '" + options.table() + "'에 이미 데이터가 있습니다 (" + data
                     + "). 지우고 다시 만들려면 --reset을 주세요");
         }
+    }
+
+    private static Path dataFile(Options options) {
+        return options.dataDir().resolve(options.table() + ".tbl");
+    }
+
+    private static boolean hasData(Options options) throws IOException {
+        Path data = dataFile(options);
+        return Files.exists(data) && Files.size(data) > 0;
     }
 
     /** 스키마가 없으면 기본 스키마로 만들고, 있으면 name·age·email 컬럼이 있는지 본다. */
@@ -203,10 +222,16 @@ public final class DataGenerator {
             Files.writeString(schemaPath, DEFAULT_SCHEMA + "\n", StandardCharsets.UTF_8);
         }
         Schema schema = loader.load(options.table());
-        for (String column : REQUIRED_COLUMNS) {
+        for (Map.Entry<String, ColumnType> required : REQUIRED_COLUMNS.entrySet()) {
+            String column = required.getKey();
             if (!schema.hasColumn(column)) {
                 throw new DbException("테이블 '" + options.table() + "'에 '" + column + "' 컬럼이 없습니다. 생성기는 "
                         + DEFAULT_SCHEMA + " 형태의 스키마가 필요합니다: " + schemaPath);
+            }
+            ColumnType actual = schema.column(schema.indexOf(column)).type();
+            if (actual != required.getValue()) {
+                throw new DbException("테이블 '" + options.table() + "'의 '" + column + "' 컬럼은 " + actual + "인데 생성기는 "
+                        + required.getValue() + " 값을 넣습니다. " + DEFAULT_SCHEMA + " 형태의 스키마가 필요합니다: " + schemaPath);
             }
         }
     }

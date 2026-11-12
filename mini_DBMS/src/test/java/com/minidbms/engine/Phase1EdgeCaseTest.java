@@ -14,6 +14,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Phase 1 점검 체크리스트 중 엔진 레벨 엣지 케이스 */
 class Phase1EdgeCaseTest {
@@ -145,5 +146,36 @@ class Phase1EdgeCaseTest {
         // 'B'(0x42) < 'a'(0x61) < '가'(0xAC00). 빈 문자열이 가장 작다.
         assertEquals(List.of(row("Banana"), row("")), rows("SELECT name FROM users WHERE name < 'a'"));
         assertEquals(List.of(row("가나")), rows("SELECT name FROM users WHERE name > 'z'"));
+    }
+
+    @Test
+    void 보충_문자는_코드_포인트_순으로_U_E000보다_크다() {
+        // UTF-16으로는 U+10000(서로게이트 0xD800 0xDC00)이 U+E000보다 작지만, 코드 포인트로는 크다.
+        engine.execute("INSERT INTO users VALUES ('\uE000', 1); INSERT INTO users VALUES ('\uD800\uDC00', 2)");
+        assertEquals(List.of(row(2L)), rows("SELECT id FROM users WHERE name > '\uE000'"));
+        assertEquals(List.of(row(1L)), rows("SELECT id FROM users WHERE name < '\uD800\uDC00'"));
+        assertTrue(Executor.compareCodePoints("\uD800\uDC00", "\uE000") > 0);
+        assertTrue(Executor.compareCodePoints("ab", "abc") < 0);
+        assertEquals(0, Executor.compareCodePoints("가😀", "가😀"));
+    }
+
+    @Test
+    void 결과_크기_상한을_넘으면_그만_읽고_truncated로_표시한다() {
+        engine.execute("INSERT INTO users VALUES ('" + "x".repeat(100) + "', 1);"
+                + "INSERT INTO users VALUES ('" + "y".repeat(100) + "', 2);"
+                + "INSERT INTO users VALUES ('" + "z".repeat(100) + "', 3)");
+        engine.setMaxResultBytes(300); // 행 하나 ≈ id 20 + name 102 + age 20 = 142 → 두 행(284)까지 들어간다
+        var result = engine.execute("SELECT * FROM users").get(0);
+        assertEquals(2, result.rows().size());
+        assertTrue(result.truncated());
+
+        // 같은 큰 컬럼을 여러 번 투영하면 한 행만으로 상한을 넘는다 → 0행, truncated
+        var wide = engine.execute("SELECT name, name, name FROM users WHERE id = 1").get(0);
+        assertEquals(0, wide.rows().size());
+        assertTrue(wide.truncated());
+
+        engine.setMaxResultBytes(Long.MAX_VALUE);
+        assertEquals(false, engine.execute("SELECT * FROM users").get(0).truncated());
+        assertThrows(IllegalArgumentException.class, () -> engine.setMaxResultBytes(0));
     }
 }

@@ -230,4 +230,16 @@ class MainTest {
         assertEquals("3.5", Cli.formatMs(3.46));
         assertEquals("120", Cli.formatMs(120.4));
     }
+
+    @Test
+    void repl_입력을_읽다_실패하면_실패_코드() {
+        InputStream broken = new InputStream() {
+            @Override
+            public int read() throws IOException {
+                throw new IOException("끊김");
+            }
+        };
+        assertEquals(Main.STATEMENT_ERROR, run(broken, "repl", "--data", dataDir.toString()));
+        assertTrue(errBytes.toString(StandardCharsets.UTF_8).contains("입력을 읽을 수 없습니다"));
+    }
 }

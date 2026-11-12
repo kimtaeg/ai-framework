@@ -92,4 +92,19 @@ class SchemaLoaderTest {
     void 파일_경로로_쓸_수_없는_테이블_이름은_거부한다(String name) {
         assertThrows(TableNotFoundException.class, () -> loader.load(name));
     }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"id:INT,first-name:STRING", "id:INT,1st:STRING", "id:INT,limit:INT", "id:INT,Values:STRING",
+            "id:INT,이름:STRING", "id:INT,a b:STRING"})
+    void SQL에서_참조할_수_없는_컬럼_이름은_거부한다(String content) throws IOException {
+        writeSchema("users", content);
+        assertThrows(StorageException.class, () -> loader.load("users"));
+    }
+
+    @Test
+    void 없는_테이블_메시지에는_절대_경로가_없다() {
+        TableNotFoundException e = assertThrows(TableNotFoundException.class, () -> loader.load("ghost"));
+        assertTrue(e.getMessage().contains("ghost.schema"), e.getMessage());
+        assertTrue(!e.getMessage().contains(dataDir.toString()), "서버 디렉터리 구조를 드러내지 않는다: " + e.getMessage());
+    }
 }
