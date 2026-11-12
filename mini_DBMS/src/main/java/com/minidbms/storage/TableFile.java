@@ -20,13 +20,16 @@ import java.util.function.Consumer;
  * .tbl 파일 하나. 한 줄이 레코드 하나다(UTF-8, '\n'으로 끝남).
  *
  * <p>쓰기는 파일을 열어 둔 채 메모리 버퍼(64KB)에 모은다. BufferedOutputStream 대신 버퍼를 직접 들고 있는 이유는
- * {@link #readAt}이 아직 디스크에 없는 줄도 읽어야 하기 때문이다. 버퍼가 디스크(OS)로 내려가는 시점은 아래 넷뿐이다.
+ * {@link #readAt}과 {@link #scan}이 아직 디스크에 없는 줄도 읽어야 하기 때문이다. 버퍼가 디스크(OS)로 내려가는 시점은 아래 셋뿐이다.
  * <ol>
  *   <li>새 줄이 버퍼의 남은 공간에 들어가지 않을 때</li>
  *   <li>{@link #flush()}를 호출했을 때. 엔진이 execute 호출 하나를 끝낼 때마다 부른다.</li>
- *   <li>{@link #scan}/{@link #scanWithOffsets}를 시작할 때</li>
  *   <li>{@link #close()}할 때</li>
  * </ol>
+ *
+ * <p><b>읽기 메서드(readAt, scan, scanWithOffsets, size)는 상태를 바꾸지 않는다.</b> 그래서 상위의 읽기 락 아래에서
+ * 여러 스레드가 동시에 불러도 된다(FileChannel의 위치 지정 읽기는 스레드 안전하다). 쓰기 메서드(append, flush, close)는
+ * 쓰기 락처럼 혼자 실행되는 구간에서만 불러야 한다.
  * flush는 OS 페이지 캐시까지만 보낸다(fsync 없음).
  *
  * <p>버퍼는 항상 통째로 내려가고 줄은 통째로 버퍼에 들어가므로, 한 줄이 디스크와 버퍼에 걸쳐 나뉘는 일은 없다.
@@ -35,7 +38,7 @@ import java.util.function.Consumer;
  * <p>디스크 쓰기가 한 번 실패하면 이 파일은 더 이상 쓰지 않는다(이후 호출은 StorageException).
  * 일부만 써졌을 수 있는 상태에서 계속 쓰면 메모리의 offset과 실제 파일이 어긋나기 때문이다. 재시작하면 파일 기준으로 다시 맞춰진다.
  *
- * <p>스레드 안전하지 않다. 동시 접근은 상위(테이블 락)에서 막는다.
+ * <p>스스로 락을 잡지는 않는다. 읽기끼리는 동시에 돌아도 되고, 쓰기와의 배타는 상위(Table의 ReentrantReadWriteLock)가 보장한다.
  */
 public final class TableFile implements Closeable {
     static final int BUFFER_SIZE = 64 * 1024;
@@ -222,17 +225,23 @@ public final class TableFile implements Closeable {
         scanWithOffsets((offset, line) -> consumer.accept(line));
     }
 
-    /** 파일의 처음부터 끝까지 한 줄씩, 그 줄의 시작 offset과 함께 넘긴다. */
+    /**
+     * 파일의 처음부터 끝까지 한 줄씩, 그 줄의 시작 offset과 함께 넘긴다.
+     *
+     * <p>flush하지 않는다: 디스크에 있는 부분을 읽은 뒤 버퍼에 있는 줄을 메모리에서 이어 읽는다.
+     * 예전에는 시작할 때 flush했는데, 읽기 락 아래에서 두 스캔이 동시에 flush하면 같은 버퍼가 두 번 쓰여 레코드가 중복된다.
+     */
     public void scanWithOffsets(LineConsumer consumer) {
-        flush();
+        ensureOpen();
+        // 시작 시점의 경계를 고정해서 이 범위만 읽는다. 스캔하는 동안 쓰기가 없다는 것은 상위 락이 보장한다.
+        long end = flushedSize;
+        int bufferedEnd = buffered;
         // 채널은 위치 지정 읽기·쓰기에 쓰고 있으므로, 순차 읽기는 별도 스트림으로 한다.
         try (InputStream in = new BufferedInputStream(Files.newInputStream(path), BUFFER_SIZE)) {
             ByteArrayOutputStream line = new ByteArrayOutputStream(256);
             long offset = 0;
             long lineStart = 0;
             int b;
-            // flush 직후의 크기까지만 읽는다. 콜백 안에서 append가 일어나도 새 줄까지 읽지 않게.
-            long end = flushedSize;
             while (offset < end && (b = in.read()) != -1) {
                 offset++;
                 if (b == '\n') {
@@ -249,6 +258,14 @@ public final class TableFile implements Closeable {
             }
         } catch (IOException e) {
             throw new StorageException("테이블 파일을 읽을 수 없습니다: " + path, e);
+        }
+        // 버퍼의 줄들. 버퍼는 항상 줄 단위로 채워지므로 마지막 바이트는 '\n'이다.
+        int lineStart = 0;
+        for (int i = 0; i < bufferedEnd; i++) {
+            if (buffer[i] == '\n') {
+                consumer.accept(end + lineStart, new String(buffer, lineStart, i - lineStart, StandardCharsets.UTF_8));
+                lineStart = i + 1;
+            }
         }
     }
 

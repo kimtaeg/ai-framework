@@ -9,13 +9,24 @@ import java.nio.file.Path;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /**
  * 테이블 하나의 스키마·데이터 파일·id 인덱스를 묶는다.
  *
  * <p>id 인덱스(id → .tbl 안의 byte offset)는 메모리에만 있다. 열 때 파일을 한 번 훑어 다시 만든다.
  * 파일에는 레코드만 append되므로, 파일 내용이 곧 인덱스의 원본이다.
+ *
+ * <p><b>동시성</b>: 테이블마다 ReentrantReadWriteLock 하나.
+ * <ul>
+ *   <li>쓰기 락: insert(id 부여 → append → 인덱스 등록), flush, close — 상태를 바꾸는 모든 것</li>
+ *   <li>읽기 락: findById, rangeById, scan, 통계 — 여러 SELECT가 동시에 읽을 수 있다</li>
+ * </ul>
+ * SELECT 하나는 처음부터 끝까지 읽기 락 하나를 쥐므로, 읽는 도중에 INSERT가 끼어들어 반쯤 쓰인 줄이나
+ * 인덱스에는 있는데 파일에는 없는 레코드를 보는 일이 없다. 스키마·이름·id 컬럼 위치는 불변이라 락이 필요 없다.
+ * {@link #file()}로 TableFile을 직접 만지는 것은 락을 거치지 않으므로 단일 스레드(테스트·로딩) 용도로만 쓴다.
  */
 public final class Table implements Closeable {
     public static final String ID_COLUMN = "id";
@@ -29,6 +40,8 @@ public final class Table implements Closeable {
     private final TableFile file;
     private final int idColumn;
     private final BPlusTree<Long, Long> idIndex = new BPlusTree<>(INDEX_ORDER);
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+    // 아래 두 필드와 idIndex, file의 쓰기 상태는 lock으로 보호한다(open 중에는 아직 공유되지 않아 락 없이 쓴다).
     private long nextId = 1;
     // 이번 로딩에서 무시하는 줄(열 때 줄바꿈 없이 끝나 있던 마지막 줄)의 offset. 없으면 -1
     private long ignoredOffset = -1;
@@ -129,12 +142,17 @@ public final class Table implements Closeable {
 
     /** id 인덱스의 크기·높이·노드 수 */
     public BPlusTree.Stats idIndexStats() {
-        return idIndex.stats();
+        return read(idIndex::stats);
     }
 
     /** 다음 INSERT가 받을 id */
     public long nextId() {
-        return nextId;
+        return read(() -> nextId);
+    }
+
+    /** 데이터 파일의 논리적 크기(버퍼 포함, byte) */
+    public long fileSize() {
+        return read(file::size);
     }
 
     /**
@@ -147,41 +165,79 @@ public final class Table implements Closeable {
      * @return 부여한 id
      */
     public long insert(Object[] record) {
-        long id = nextId;
-        record[idColumn] = id;
-        long offset = file.append(RecordCodec.encode(record));
-        idIndex.insert(id, offset);
-        nextId++;
-        return id;
+        lock.writeLock().lock();
+        try {
+            // 세 단계가 한 쓰기 락 안에 있어야 한다. 락 밖에서 id를 뽑으면 두 스레드가 같은 id를 받거나,
+            // 파일 순서와 id 순서가 어긋나거나, 인덱스 등록 전에 다른 스레드가 그 id를 조회할 수 있다.
+            long id = nextId;
+            record[idColumn] = id;
+            long offset = file.append(RecordCodec.encode(record)); // 1) 파일 append (실패하면 여기서 끝)
+            idIndex.insert(id, offset);                             // 2) 인덱스 등록
+            nextId++;                                               // 3) 다음 id
+            return id;
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     /** id 인덱스로 레코드 하나를 찾아 그 offset의 줄만 읽는다. */
     public Optional<Object[]> findById(long id) {
-        return idIndex.search(id).map(offset -> RecordCodec.decode(file.readAt(offset), schema));
+        return read(() -> idIndex.search(id).map(offset -> RecordCodec.decode(file.readAt(offset), schema)));
     }
 
-    /** id가 [from, to]인 레코드를 id 순서대로 넘긴다. 인덱스의 리프 연결을 따라가며 해당 줄만 읽는다. */
+    /**
+     * id가 [from, to]인 레코드를 id 순서대로 넘긴다. 인덱스의 리프 연결을 따라가며 해당 줄만 읽는다.
+     * 넘기는 동안 읽기 락을 쥐고 있으므로 consumer 안에서 이 테이블에 쓰면 안 된다(교착).
+     */
     public void rangeById(long from, long to, Consumer<Object[]> consumer) {
-        for (long offset : idIndex.range(from, to)) {
-            consumer.accept(RecordCodec.decode(file.readAt(offset), schema));
-        }
+        read(() -> {
+            for (long offset : idIndex.range(from, to)) {
+                consumer.accept(RecordCodec.decode(file.readAt(offset), schema));
+            }
+            return null;
+        });
     }
 
-    /** 전체 레코드를 파일 순서대로 넘긴다. 이번 로딩에서 무시하기로 한 줄은 빠진다. */
+    /**
+     * 전체 레코드를 파일 순서대로 넘긴다. 이번 로딩에서 무시하기로 한 줄은 빠진다.
+     * 넘기는 동안 읽기 락을 쥐고 있으므로 consumer 안에서 이 테이블에 쓰면 안 된다(교착).
+     */
     public void scan(Consumer<Object[]> consumer) {
-        file.scanWithOffsets((offset, line) -> {
-            if (offset != ignoredOffset) {
-                consumer.accept(RecordCodec.decode(line, schema));
-            }
+        read(() -> {
+            file.scanWithOffsets((offset, line) -> {
+                if (offset != ignoredOffset) {
+                    consumer.accept(RecordCodec.decode(line, schema));
+                }
+            });
+            return null;
         });
     }
 
     public void flush() {
-        file.flush();
+        lock.writeLock().lock();
+        try {
+            file.flush();
+        } finally {
+            lock.writeLock().unlock();
+        }
     }
 
     @Override
     public void close() {
-        file.close();
+        lock.writeLock().lock();
+        try {
+            file.close();
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    private <T> T read(Supplier<T> action) {
+        lock.readLock().lock();
+        try {
+            return action.get();
+        } finally {
+            lock.readLock().unlock();
+        }
     }
 }

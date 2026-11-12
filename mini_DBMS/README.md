@@ -139,12 +139,11 @@ id:INT,name:STRING,age:INT,email:STRING
 
 ### 쓰기 버퍼와 flush
 
-`.tbl` 파일은 엔진이 처음 쓸 때 열어 두고 64KB 메모리 버퍼에 모은다. `readAt`이 버퍼 안의 줄도 읽어야 해서 버퍼를 직접 관리한다. 디스크(OS)로 내려가는 시점은
+`.tbl` 파일은 엔진이 처음 쓸 때 열어 두고 64KB 메모리 버퍼에 모은다. `readAt`과 스캔이 버퍼 안의 줄도 읽어야 해서 버퍼를 직접 관리한다(읽기는 flush하지 않는다 — 아래 동시성 참고). 디스크(OS)로 내려가는 시점은
 
 1. 새 줄이 버퍼의 남은 공간에 들어가지 않을 때 (버퍼보다 큰 줄은 버퍼를 거치지 않고 바로 쓴다)
 2. `DatabaseEngine.execute` 호출 하나가 끝날 때 (성공이든 실패든, 그 호출에서 INSERT한 테이블마다 `flush()` 한 번)
-3. SELECT 스캔을 시작할 때
-4. 종료할 때 (`close()` — 정상 종료는 `finally`, Ctrl+C는 shutdown hook)
+3. 종료할 때 (`close()` — 정상 종료는 `finally`, Ctrl+C는 shutdown hook)
 
 flush는 OS 페이지 캐시까지만 보장한다(fsync 없음). 디스크 쓰기가 한 번 실패하면 그 파일은 이후 쓰기를 거부한다(재시작하면 파일 기준으로 다시 맞춰진다).
 
@@ -197,6 +196,25 @@ java -jar build/libs/mini-dbms.jar bench --table users [--queries 1000] [--scan-
 100만 건 결과(전체는 [`bench-result.md`](bench-result.md)): A 평균 **0.025 ms**, B 약 1,350 ms, C 약 1,220 ms — 약 5만 배.
 트리는 order 128, 높이 4, 노드 15,869개이고 테이블 로딩(인덱스 재구성)에 약 2.4 s가 걸린다.
 
+## 동시성 (Phase 3)
+
+`DatabaseEngine`은 여러 스레드가 `execute`를 동시에 불러도 안전하다.
+
+| 대상 | 방법 |
+|---|---|
+| 테이블 캐시 | `ConcurrentHashMap.computeIfAbsent` — 테이블마다 한 번만 열고 인덱스를 재구성한다. `get` 후 `put`이면 두 스레드가 같은 파일을 따로 열어 각자의 `nextId`로 같은 id를 부여한다 |
+| 테이블 안 | 테이블마다 `ReentrantReadWriteLock`. **쓰기 락**: INSERT(id 부여 → append → 인덱스 등록 → nextId++), flush, close. **읽기 락**: 인덱스 조회·범위·전체 스캔 |
+| 읽기 경로 | `readAt`·스캔은 상태를 바꾸지 않는다. 예전 스캔은 시작할 때 flush했는데, 읽기 락은 여러 스레드가 함께 쥘 수 있어 두 스캔이 같은 버퍼를 두 번 써서 레코드가 중복됐다. 지금은 디스크 부분을 읽고 버퍼 부분을 메모리에서 이어 읽는다 |
+| 인덱스 스위치 | `volatile boolean` |
+| Lexer · Parser · Executor · Planner | 호출마다 새로 만들거나 필드가 없다. 공유하는 것은 불변 키워드 표(`Map.of`)뿐 |
+
+- SELECT 하나는 처음부터 끝까지 읽기 락 하나를 쥔다. 그래서 반쯤 쓰인 줄이나 "인덱스에는 있는데 파일에는 없는" 레코드를 볼 수 없다.
+- id 부여와 append가 같은 쓰기 락 안에 있어서, 파일 순서 = id 순서가 동시 INSERT에서도 유지된다.
+- 원자성은 문장 하나 단위다(트랜잭션 없음). `close`는 다른 `execute`가 끝난 뒤에 부른다.
+
+테스트(`ConcurrencyTest`, `TableConcurrencyTest`)는 16스레드 × 1만 INSERT → id 1~160000 연속·중복 없음, INSERT/SELECT 혼합 시 항상 완전한 레코드, 재시작 후 파일·인덱스 일치를 확인한다.
+각 락을 일부러 빼면(쓰기 락 · computeIfAbsent · 읽기 락 · 스캔의 flush) 해당 테스트가 실패하는 것도 확인했다.
+
 ## 처리 흐름
 
 ```mermaid
@@ -248,7 +266,6 @@ src/main/java/com/minidbms/
 
 ## 알려진 한계 (Phase 1)
 
-- 엔진은 아직 스레드 안전하지 않다. 테이블 단위 `ReentrantReadWriteLock`은 Phase 3에서.
 - 인덱스는 id 하나뿐이다. 다른 컬럼 조건은 항상 FULL_SCAN.
 - WHERE는 조건 하나만 지원한다. `AND`는 `BETWEEN a AND b`의 구분자로만 쓴다.
 - UPDATE·DELETE·CREATE TABLE이 없다. 테이블은 `.schema` 파일을 직접 만들어 정의한다.

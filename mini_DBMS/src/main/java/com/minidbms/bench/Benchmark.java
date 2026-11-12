@@ -201,7 +201,7 @@ public final class Benchmark {
             if (!table.schema().hasColumn("email")) {
                 throw new DbException("테이블 '" + table.name() + "'에 email 컬럼이 없습니다. generate로 만든 테이블을 쓰세요");
             }
-            load = new LoadInfo(loadMs, table.file().size(), table.idIndexStats());
+            load = new LoadInfo(loadMs, table.fileSize(), table.idIndexStats());
             if (load.index().keys() == 0) {
                 throw new DbException("테이블 '" + table.name() + "'이(가) 비어 있습니다. 먼저 generate로 데이터를 만드세요");
             }

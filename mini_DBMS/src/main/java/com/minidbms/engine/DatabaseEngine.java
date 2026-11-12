@@ -8,24 +8,30 @@ import com.minidbms.storage.Table;
 import java.io.Closeable;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * SQL 실행의 유일한 진입점. CLI·API 서버·벤치마크 모두 execute(sql)만 부른다.
  *
- * <p>아직 스레드 안전하지 않다(테이블 락은 이후 단계).
+ * <p><b>스레드 안전하다.</b> 여러 스레드가 execute를 동시에 불러도 된다.
+ * <ul>
+ *   <li>테이블 캐시: ConcurrentHashMap.computeIfAbsent로 테이블마다 한 번만 연다.</li>
+ *   <li>테이블 안: Table의 ReentrantReadWriteLock (INSERT는 쓰기, SELECT는 읽기).</li>
+ *   <li>Lexer·Parser·Executor·Planner는 호출마다 새로 만들거나 필드가 없어 공유 상태가 없다.</li>
+ * </ul>
+ * 원자성은 문장 하나 단위다. execute에 넘긴 여러 문장이 한꺼번에 보이지는 않는다(트랜잭션 없음).
+ * close는 다른 execute가 모두 끝난 뒤에 불러야 한다.
  */
 public final class DatabaseEngine implements Closeable {
     private final Path dataDir;
     private final Executor executor = new Executor();
     // 테이블은 처음 쓰일 때 열어서 캐시한다. 파일 핸들과 id 인덱스를 문장마다 다시 만들지 않으려고.
-    private final Map<String, Table> tables = new HashMap<>();
-    // 벤치마크에서 같은 데이터로 인덱스 경로와 FULL_SCAN을 비교하려고 끌 수 있게 한다.
-    private boolean indexEnabled = true;
+    private final ConcurrentHashMap<String, Table> tables = new ConcurrentHashMap<>();
+    // 벤치마크에서 같은 데이터로 인덱스 경로와 FULL_SCAN을 비교하려고 끌 수 있게 한다. 다른 스레드에 바로 보이도록 volatile.
+    private volatile boolean indexEnabled = true;
 
     public DatabaseEngine(Path dataDir) {
         this.dataDir = Objects.requireNonNull(dataDir, "dataDir");
@@ -93,14 +99,11 @@ public final class DatabaseEngine implements Closeable {
     }
 
     private Table table(String name) {
-        Table table = tables.get(name);
-        if (table == null) {
-            // 처음 열 때 .tbl을 한 번 훑어 id 인덱스를 재구성한다(Table.open).
-            // 로딩이 실패하면(테이블 없음 등) 캐시에 넣지 않으므로, 나중에 스키마 파일을 만들면 다시 시도된다.
-            table = Table.open(dataDir, name);
-            tables.put(name, table);
-        }
-        return table;
+        // computeIfAbsent는 같은 키에 대해 함수를 한 번만 실행하고, 그동안 같은 키를 요청한 스레드는 기다린다.
+        // get 후 put으로 하면 두 스레드가 같은 파일을 두 번 열어 각자 다른 인덱스·nextId를 갖게 된다(id 중복).
+        // 처음 열 때 .tbl을 한 번 훑어 id 인덱스를 재구성한다(Table.open).
+        // 로딩이 실패하면(테이블 없음 등) 예외가 전파되고 캐시에 남지 않으므로, 나중에 스키마 파일을 만들면 다시 시도된다.
+        return tables.computeIfAbsent(name, key -> Table.open(dataDir, key));
     }
 
     @Override
