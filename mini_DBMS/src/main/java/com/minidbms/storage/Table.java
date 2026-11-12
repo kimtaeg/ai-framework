@@ -155,6 +155,13 @@ public final class Table implements Closeable {
         return idIndex.search(id).map(offset -> RecordCodec.decode(file.readAt(offset), schema));
     }
 
+    /** id가 [from, to]인 레코드를 id 순서대로 넘긴다. 인덱스의 리프 연결을 따라가며 해당 줄만 읽는다. */
+    public void rangeById(long from, long to, Consumer<Object[]> consumer) {
+        for (long offset : idIndex.range(from, to)) {
+            consumer.accept(RecordCodec.decode(file.readAt(offset), schema));
+        }
+    }
+
     /** 전체 레코드를 파일 순서대로 넘긴다. 이번 로딩에서 무시하기로 한 줄은 빠진다. */
     public void scan(Consumer<Object[]> consumer) {
         file.scanWithOffsets((offset, line) -> {

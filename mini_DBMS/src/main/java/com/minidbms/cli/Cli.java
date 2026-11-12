@@ -9,6 +9,7 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Path;
+import java.util.Locale;
 
 /**
  * run/repl 모드의 실행부. 문장을 하나씩 엔진에 넘기고 결과나 오류를 출력한다.
@@ -88,7 +89,18 @@ final class Cli implements Closeable {
             return;
         }
         out.print(TableFormatter.format(result.columns(), result.rows()));
-        out.println(rowCount(result.affectedRows()) + " (" + result.elapsedMs() + " ms)");
+        if (result.type() == QueryResult.Type.SELECT) {
+            out.println(rowCount(result.affectedRows()) + " (" + result.accessPath().label() + ", "
+                    + formatMs(result.elapsedMs()) + " ms)");
+        }
+    }
+
+    /** 1ms 미만도 0으로 뭉개지지 않게 소수로 보여준다. 로케일에 따라 소수점이 ','가 되지 않게 ROOT로 고정한다. */
+    static String formatMs(double ms) {
+        if (ms >= 100) {
+            return String.format(Locale.ROOT, "%.0f", ms);
+        }
+        return ms >= 1 ? String.format(Locale.ROOT, "%.1f", ms) : String.format(Locale.ROOT, "%.3f", ms);
     }
 
     static String rowCount(long n) {

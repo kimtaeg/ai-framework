@@ -20,7 +20,8 @@ public final class Lexer {
             "FROM", TokenType.FROM,
             "WHERE", TokenType.WHERE,
             "AND", TokenType.AND,
-            "BETWEEN", TokenType.BETWEEN);
+            "BETWEEN", TokenType.BETWEEN,
+            "EXPLAIN", TokenType.EXPLAIN);
 
     private final String sql;
     private int pos;

@@ -5,7 +5,7 @@ Java 17로 직접 구현한 파일 기반 미니 DBMS. 외부 라이브러리는
 | Phase | 내용 | 상태 |
 |---|---|---|
 | 1 | 파일 기반 SQL 처리기 (INSERT, SELECT, CLI) | ✅ |
-| 2 | 메모리 B+ 트리 id 인덱스 + 100만 건 성능 비교 | 진행 중 (B+ 트리 · Table 연결) |
+| 2 | 메모리 B+ 트리 id 인덱스 + 100만 건 성능 비교 | 진행 중 (B+ 트리 · Table 연결 · Planner) |
 | 3 | JDK HttpServer + ThreadPoolExecutor API 서버 | |
 
 ## 빠른 시작
@@ -37,14 +37,22 @@ mini-dbms> SELECT * FROM users
 +----+------+------+
 |  1 | kim  | NULL |
 +----+------+------+
-1 row (0 ms)
+1 row (index range, 0.041 ms)
+mini-dbms> EXPLAIN SELECT * FROM users WHERE id = 1;
++-------+--------------+-----------------+
+| table | access_path  | detail          |
++-------+--------------+-----------------+
+| users | INDEX_LOOKUP | id = 1 (id = 1) |
++-------+--------------+-----------------+
 ```
 
 ## 지원 SQL
 
 ```sql
 INSERT INTO table [(col, ...)] VALUES (value, ...);
-SELECT * | col, ... FROM table [WHERE col op value];
+SELECT * | col, ... FROM table [WHERE condition];
+EXPLAIN SELECT ...;                 -- 실행하지 않고 실행 경로만 보여준다
+-- condition: col op value | col BETWEEN value AND value (양 끝 포함)
 -- op: =  !=  <>  <  <=  >  >=      value: 정수 | '문자열' | NULL
 ```
 
@@ -114,7 +122,18 @@ id:INT,name:STRING,age:INT
 - **재시작**: 테이블을 처음 열 때 `.tbl`을 한 번 훑어 인덱스를 다시 만들고 `nextId = 최대 id + 1`로 맞춘다. 같은 id가 두 번 있거나 id가 NULL이면 `StorageException`.
 - **줄바꿈 없이 끝난 마지막 줄**(손으로 편집했거나 쓰다 중단됨): 파일 끝에 `\n`을 붙여 다음 레코드가 이어 붙지 않게 하고, 그 줄은 **이번 로딩에서만** 경고(stderr) 후 인덱스·스캔에서 뺀다. 그 줄의 id는 피해서 부여한다. 다음 재시작부터는 일반 레코드로 읽힌다(내용이 깨졌다면 그때 로딩이 실패한다).
 
-아직 SELECT는 인덱스를 쓰지 않고 전체 스캔한다.
+### 실행 경로 (Planner)
+
+| WHERE | 경로 | 동작 |
+|---|---|---|
+| `id = v` | `INDEX_LOOKUP` | 트리에서 키 하나 → 그 offset의 줄만 읽기 |
+| `id <, <=, >, >=, BETWEEN` | `INDEX_RANGE` | 닫힌 구간 `[low, high]`로 바꿔(`id < 3` → `-∞..2`) 하한 리프부터 next를 따라 읽기 |
+| 없음, `id !=`, id가 아닌 컬럼 | `FULL_SCAN` | 파일 전체를 읽으며 조건 검사 |
+
+- 인덱스 경로로 고른 행도 FULL_SCAN과 같은 조건 함수를 한 번 더 통과한다. 그래서 두 경로의 결과 행 집합은 항상 같다.
+- 순서: 인덱스 경로는 id 순, FULL_SCAN은 파일 순이다. 엔진이 쓴 파일은 id 순으로 append되므로 같지만, 손으로 편집한 파일은 다를 수 있다(ORDER BY 없음).
+- SELECT 결과 줄에 경로와 시간을 표시한다: `2 rows (index range, 0.041 ms)`.
+- 벤치마크용 스위치: `engine.setIndexEnabled(false)`면 항상 `FULL_SCAN`을 고른다. INSERT의 인덱스 등록은 계속하므로 다시 켜면 바로 쓸 수 있다.
 
 ### 쓰기 버퍼와 flush
 
@@ -139,7 +158,10 @@ flowchart TD
     F --> G
     E -->|있음| G["Executor: 스키마로 의미 검증"]
     G -->|INSERT| H["값 매핑 · 타입 검사 → Table.insert: id 부여 · append · 인덱스 등록 → flush"]
-    G -->|SELECT| I["Table.scan → RecordCodec.decode → WHERE 필터 → 컬럼 투영"]
+    G -->|SELECT| P["Planner: INDEX_LOOKUP / INDEX_RANGE / FULL_SCAN"]
+    P --> I["findById · rangeById(readAt) 또는 Table.scan → WHERE 필터 → 컬럼 투영"]
+    G -->|EXPLAIN| X["Planner 결과만 표로"]
+    X --> J
     H --> J["QueryResult"]
     I --> J
     J --> K["CLI: '1 row inserted (id=N)' / TableFormatter 표 + 'N rows (x ms)'"]
@@ -153,6 +175,7 @@ flowchart TD
 | `Lexer` | 키워드·식별자·숫자·문자열·기호, 위치 포함 오류 | 문법 |
 | `Parser` | 문법 → AST, `Expected X but found 'Y' at N` | 스키마 검증 |
 | `Executor` | 테이블·컬럼 존재, 타입, 개수, id 규칙, 실행 | 파일 포맷 |
+| `Planner` | WHERE를 보고 실행 경로와 id 구간 결정 | 검증, 읽기 |
 | `Table` | id 부여, id 인덱스 유지·재구성, id로 레코드 찾기 | SQL 의미 |
 | `RecordCodec` / `TableFile` | 레코드 ↔ 한 줄, 버퍼링 append·scan·readAt | id·인덱스 |
 
@@ -164,8 +187,8 @@ flowchart TD
 src/main/java/com/minidbms/
 ├── cli/          Main(인자 파싱·종료 코드), Cli(run/repl), StatementSplitter, TableFormatter
 ├── sql/lexer/    Lexer, Token, TokenType
-├── sql/parser/   Parser, ast/(Statement, InsertStatement, SelectStatement, Condition, Operator, Literal)
-├── engine/       DatabaseEngine(유일한 진입점), Executor, QueryResult
+├── sql/parser/   Parser, ast/(Statement, InsertStatement, SelectStatement, ExplainStatement, Condition, Operator, Literal)
+├── engine/       DatabaseEngine(유일한 진입점), Executor, Planner, Plan, AccessPath, QueryResult
 ├── storage/      Schema, Column, ColumnType, SchemaLoader, RecordCodec, TableFile, Table
 ├── index/        BPlusTree, Node, InternalNode, LeafNode
 └── common/       DbException과 하위 예외
@@ -174,6 +197,6 @@ src/main/java/com/minidbms/
 ## 알려진 한계 (Phase 1)
 
 - 엔진은 아직 스레드 안전하지 않다. 테이블 단위 `ReentrantReadWriteLock`은 Phase 3에서.
-- SELECT는 아직 항상 전체 스캔이다. id 인덱스는 만들어 두었지만 WHERE에서 쓰지 않는다.
-- WHERE는 조건 하나만 지원한다(`AND`, `BETWEEN`은 아직 파싱하지 않음).
+- 인덱스는 id 하나뿐이다. 다른 컬럼 조건은 항상 FULL_SCAN.
+- WHERE는 조건 하나만 지원한다. `AND`는 `BETWEEN a AND b`의 구분자로만 쓴다.
 - UPDATE·DELETE·CREATE TABLE이 없다. 테이블은 `.schema` 파일을 직접 만들어 정의한다.

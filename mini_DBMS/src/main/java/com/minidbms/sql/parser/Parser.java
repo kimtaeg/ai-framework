@@ -5,6 +5,7 @@ import com.minidbms.sql.lexer.Lexer;
 import com.minidbms.sql.lexer.Token;
 import com.minidbms.sql.lexer.TokenType;
 import com.minidbms.sql.parser.ast.Condition;
+import com.minidbms.sql.parser.ast.ExplainStatement;
 import com.minidbms.sql.parser.ast.InsertStatement;
 import com.minidbms.sql.parser.ast.Literal;
 import com.minidbms.sql.parser.ast.Operator;
@@ -20,10 +21,10 @@ import java.util.Optional;
  *
  * <pre>
  * script    := statement (';' statement)* ';'? EOF
- * statement := insert | select
+ * statement := insert | select | EXPLAIN select
  * insert    := INSERT INTO ident ('(' identList ')')? VALUES '(' literal (',' literal)* ')'
  * select    := SELECT ('*' | identList) FROM ident (WHERE condition)?
- * condition := ident compareOp literal
+ * condition := ident compareOp literal | ident BETWEEN literal AND literal
  * literal   := NUMBER | STRING | NULL
  * </pre>
  *
@@ -60,7 +61,13 @@ public final class Parser {
         if (check(TokenType.SELECT)) {
             return select();
         }
-        throw error("INSERT or SELECT");
+        if (match(TokenType.EXPLAIN)) {
+            if (!check(TokenType.SELECT)) {
+                throw error("SELECT after EXPLAIN");
+            }
+            return new ExplainStatement(select());
+        }
+        throw error("INSERT, SELECT or EXPLAIN");
     }
 
     private InsertStatement insert() {
@@ -105,6 +112,12 @@ public final class Parser {
 
     private Condition condition() {
         String column = identifier("column name");
+        if (match(TokenType.BETWEEN)) {
+            // AND는 지금 BETWEEN의 구분자로만 쓰인다(조건 여러 개를 잇는 AND는 아직 없다).
+            Literal low = literal();
+            expect(TokenType.AND, "AND");
+            return Condition.between(column, low, literal());
+        }
         Operator operator = switch (peek().type()) {
             case EQ -> Operator.EQ;
             case NEQ -> Operator.NEQ;
@@ -112,7 +125,7 @@ public final class Parser {
             case LTE -> Operator.LTE;
             case GT -> Operator.GT;
             case GTE -> Operator.GTE;
-            default -> throw error("comparison operator (=, !=, <, <=, >, >=)");
+            default -> throw error("comparison operator (=, !=, <, <=, >, >=) or BETWEEN");
         };
         advance();
         return new Condition(column, operator, literal());

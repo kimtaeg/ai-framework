@@ -2,7 +2,7 @@ package com.minidbms.sql.lexer;
 
 public enum TokenType {
     // 키워드
-    INSERT, INTO, VALUES, SELECT, FROM, WHERE, AND, BETWEEN,
+    INSERT, INTO, VALUES, SELECT, FROM, WHERE, AND, BETWEEN, EXPLAIN,
 
     // 값
     IDENT, NUMBER, STRING,
@@ -14,6 +14,6 @@ public enum TokenType {
     EOF;
 
     public boolean isKeyword() {
-        return ordinal() <= BETWEEN.ordinal();
+        return ordinal() <= EXPLAIN.ordinal();
     }
 }

@@ -22,9 +22,20 @@ public final class DatabaseEngine implements Closeable {
     private final Executor executor = new Executor();
     // 테이블은 처음 쓰일 때 열어서 캐시한다. 파일 핸들과 id 인덱스를 문장마다 다시 만들지 않으려고.
     private final Map<String, Table> tables = new HashMap<>();
+    // 벤치마크에서 같은 데이터로 인덱스 경로와 FULL_SCAN을 비교하려고 끌 수 있게 한다.
+    private boolean indexEnabled = true;
 
     public DatabaseEngine(Path dataDir) {
         this.dataDir = Objects.requireNonNull(dataDir, "dataDir");
+    }
+
+    /** false면 Planner가 항상 FULL_SCAN을 고른다. INSERT의 인덱스 등록은 계속한다(다시 켜면 바로 쓸 수 있게). */
+    public void setIndexEnabled(boolean enabled) {
+        this.indexEnabled = enabled;
+    }
+
+    public boolean isIndexEnabled() {
+        return indexEnabled;
     }
 
     /**
@@ -38,8 +49,8 @@ public final class DatabaseEngine implements Closeable {
         List<QueryResult> results = new ArrayList<>(statements.size());
         for (Statement statement : statements) {
             long start = System.nanoTime();
-            QueryResult result = executor.execute(statement, table(statement.table()));
-            results.add(result.withElapsedMs((System.nanoTime() - start) / 1_000_000));
+            QueryResult result = executor.execute(statement, table(statement.table()), indexEnabled);
+            results.add(result.withElapsedMs((System.nanoTime() - start) / 1_000_000.0));
         }
         return results;
     }

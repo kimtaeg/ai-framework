@@ -4,6 +4,7 @@ import com.minidbms.common.ConstraintViolationException;
 import com.minidbms.common.ParseException;
 import com.minidbms.common.TypeMismatchException;
 import com.minidbms.sql.parser.ast.Condition;
+import com.minidbms.sql.parser.ast.ExplainStatement;
 import com.minidbms.sql.parser.ast.InsertStatement;
 import com.minidbms.sql.parser.ast.Literal;
 import com.minidbms.sql.parser.ast.SelectStatement;
@@ -17,19 +18,26 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /**
  * AST 문장을 스키마에 비춰 검증하고 실행한다. 파서가 미뤄둔 의미 검증(컬럼 존재·타입·개수)은 모두 여기서 한다.
  */
 final class Executor {
+    static final List<String> EXPLAIN_COLUMNS = List.of("table", "access_path", "detail");
 
-    QueryResult execute(Statement statement, Table table) {
+    private final Planner planner = new Planner();
+
+    QueryResult execute(Statement statement, Table table, boolean indexEnabled) {
         if (statement instanceof InsertStatement insert) {
             return insert(insert, table);
         }
         if (statement instanceof SelectStatement select) {
-            return select(select, table);
+            return select(select, table, indexEnabled);
+        }
+        if (statement instanceof ExplainStatement explain) {
+            return explain(explain.select(), table, indexEnabled);
         }
         throw new IllegalStateException("지원하지 않는 문장: " + statement);
     }
@@ -49,7 +57,7 @@ final class Executor {
         long id = table.insert(record);
         table.flush();
         // JDBC의 generated keys처럼 부여한 id를 결과 행으로 돌려준다.
-        return new QueryResult(QueryResult.Type.INSERT, List.of(Table.ID_COLUMN), List.of(List.of(id)), 1, 0);
+        return new QueryResult(QueryResult.Type.INSERT, List.of(Table.ID_COLUMN), List.of(List.of(id)), 1, null, 0);
     }
 
     /** values[i]가 들어갈 스키마 컬럼 인덱스를 돌려준다. */
@@ -106,14 +114,17 @@ final class Executor {
 
     // ---- SELECT ----
 
-    private QueryResult select(SelectStatement select, Table table) {
+    private QueryResult select(SelectStatement select, Table table, boolean indexEnabled) {
         Schema schema = table.schema();
-        // 스캔 전에 컬럼·조건을 모두 검증해서, 잘못된 쿼리가 파일을 끝까지 읽은 뒤에야 실패하지 않게 한다.
+        // 읽기 전에 컬럼·조건을 모두 검증해서, 잘못된 쿼리가 파일을 끝까지 읽은 뒤에야 실패하지 않게 한다.
         int[] projection = projection(select, schema);
         Predicate<Object[]> filter = select.where().map(c -> compile(c, schema)).orElse(r -> true);
+        Plan plan = planner.plan(select, table, indexEnabled);
 
         List<List<Object>> rows = new ArrayList<>();
-        table.scan(record -> {
+        read(plan, table, record -> {
+            // 인덱스 경로가 고른 레코드도 같은 필터를 한 번 더 통과시킨다.
+            // 경로와 상관없이 "조건을 만족하는 행"의 정의가 한 곳(compile)에만 있게 하려고.
             if (filter.test(record)) {
                 Object[] row = new Object[projection.length];
                 for (int i = 0; i < projection.length; i++) {
@@ -127,7 +138,28 @@ final class Executor {
         for (int index : projection) {
             columns.add(schema.column(index).name());
         }
-        return new QueryResult(QueryResult.Type.SELECT, columns, rows, rows.size(), 0);
+        return new QueryResult(QueryResult.Type.SELECT, columns, rows, rows.size(), plan.path(), 0);
+    }
+
+    /** 계획에 따라 후보 레코드를 넘긴다. 인덱스 경로는 id 순서, FULL_SCAN은 파일 순서다. */
+    private static void read(Plan plan, Table table, Consumer<Object[]> consumer) {
+        if (plan.isEmptyRange()) {
+            return;
+        }
+        switch (plan.path()) {
+            case INDEX_LOOKUP -> table.findById(plan.low()).ifPresent(consumer);
+            case INDEX_RANGE -> table.rangeById(plan.low(), plan.high(), consumer);
+            case FULL_SCAN -> table.scan(consumer);
+        }
+    }
+
+    private QueryResult explain(SelectStatement select, Table table, boolean indexEnabled) {
+        // 실제 SELECT와 같은 검증을 거친다. 실행했다면 실패할 쿼리를 EXPLAIN이 통과시키지 않게.
+        projection(select, table.schema());
+        select.where().ifPresent(c -> compile(c, table.schema()));
+        Plan plan = planner.plan(select, table, indexEnabled);
+        List<Object> row = List.of(table.name(), plan.path().name(), plan.detail());
+        return new QueryResult(QueryResult.Type.EXPLAIN, EXPLAIN_COLUMNS, List.of(row), 0, plan.path(), 0);
     }
 
     private static int[] projection(SelectStatement select, Schema schema) {
@@ -145,13 +177,19 @@ final class Executor {
         Column column = schema.column(index);
         Literal literal = condition.value();
 
+        Literal high = condition.high();
+        // 타입이 다르면 TypeMismatchException. NULL은 타입 검사를 통과한다.
+        toStoredValue(literal, column, schema);
+        if (high != null) {
+            toStoredValue(high, column, schema);
+        }
         // NULL과의 비교는 결과가 항상 false다 (SQL의 3값 논리에서 UNKNOWN은 걸러진다).
-        if (literal.isNull()) {
+        if (literal.isNull() || (high != null && high.isNull())) {
             return record -> false;
         }
-        toStoredValue(literal, column, schema); // 타입이 다르면 TypeMismatchException
 
         Object expected = literal.value();
+        Object upper = high == null ? null : high.value();
         return record -> {
             Object actual = record[index];
             if (actual == null) {
@@ -165,6 +203,7 @@ final class Executor {
                 case LTE -> cmp <= 0;
                 case GT -> cmp > 0;
                 case GTE -> cmp >= 0;
+                case BETWEEN -> cmp >= 0 && compare(actual, upper) <= 0;
             };
         };
     }

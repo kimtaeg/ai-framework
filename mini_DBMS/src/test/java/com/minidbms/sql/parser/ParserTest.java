@@ -2,6 +2,7 @@ package com.minidbms.sql.parser;
 
 import com.minidbms.common.ParseException;
 import com.minidbms.sql.parser.ast.Condition;
+import com.minidbms.sql.parser.ast.ExplainStatement;
 import com.minidbms.sql.parser.ast.InsertStatement;
 import com.minidbms.sql.parser.ast.Literal;
 import com.minidbms.sql.parser.ast.Operator;
@@ -110,7 +111,7 @@ class ParserTest {
 
     @Test
     void 알_수_없는_문장() {
-        assertEquals("Expected INSERT or SELECT but found 'delete' at 0", errorOf("DELETE FROM users"));
+        assertEquals("Expected INSERT, SELECT or EXPLAIN but found 'delete' at 0", errorOf("DELETE FROM users"));
     }
 
     @Test
@@ -120,7 +121,7 @@ class ParserTest {
 
     @Test
     void 연속된_세미콜론은_빈_문장이라_오류() {
-        assertEquals("Expected INSERT or SELECT but found ';' at 16", errorOf("SELECT * FROM t;;"));
+        assertEquals("Expected INSERT, SELECT or EXPLAIN but found ';' at 16", errorOf("SELECT * FROM t;;"));
     }
 
     @Test
@@ -130,12 +131,45 @@ class ParserTest {
 
     @Test
     void 비교_연산자가_없으면_오류() {
-        assertEquals("Expected comparison operator (=, !=, <, <=, >, >=) but found '5' at 25",
+        assertEquals("Expected comparison operator (=, !=, <, <=, >, >=) or BETWEEN but found '5' at 25",
                 errorOf("SELECT * FROM t WHERE id 5"));
     }
 
     @Test
     void 렉서_오류는_ParseException으로_그대로_전달된다() {
         assertThrows(ParseException.class, () -> Parser.parseAll("SELECT * FROM t WHERE name = 'abc"));
+    }
+
+    // ---- BETWEEN · EXPLAIN ----
+
+    @Test
+    void BETWEEN은_하한과_상한을_가진다() {
+        SelectStatement select = (SelectStatement) parseOne("SELECT * FROM t WHERE id BETWEEN -3 AND 10");
+        assertEquals(Condition.between("id", Literal.of(-3), Literal.of(10)), select.where().orElseThrow());
+        assertEquals("id BETWEEN -3 AND 10", select.where().orElseThrow().toString());
+    }
+
+    @Test
+    void BETWEEN에_AND가_없으면_오류() {
+        assertEquals("Expected AND but found '10' at 35", errorOf("SELECT * FROM t WHERE id BETWEEN 1 10"));
+    }
+
+    @Test
+    void EXPLAIN은_SELECT를_감싼다() {
+        Statement statement = parseOne("explain SELECT name FROM users WHERE id = 1");
+        assertEquals(new ExplainStatement(new SelectStatement("users", List.of("name"),
+                Optional.of(new Condition("id", Operator.EQ, Literal.of(1))))), statement);
+        assertEquals("users", statement.table());
+    }
+
+    @Test
+    void EXPLAIN_뒤에는_SELECT만_올_수_있다() {
+        assertEquals("Expected SELECT after EXPLAIN but found 'INSERT' at 8", errorOf("EXPLAIN INSERT INTO t VALUES (1)"));
+    }
+
+    @Test
+    void BETWEEN이_아닌_조건에_상한을_주면_거부한다() {
+        assertThrows(IllegalArgumentException.class, () -> new Condition("id", Operator.EQ, Literal.of(1), Literal.of(2)));
+        assertThrows(IllegalArgumentException.class, () -> new Condition("id", Operator.BETWEEN, Literal.of(1)));
     }
 }

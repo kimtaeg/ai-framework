@@ -41,7 +41,7 @@ class MainTest {
 
     private String out() {
         // 실행 시간은 매번 달라지므로 비교 전에 고정값으로 바꾼다.
-        return outBytes.toString(StandardCharsets.UTF_8).replaceAll("\\(\\d+ ms\\)", "(? ms)");
+        return outBytes.toString(StandardCharsets.UTF_8).replaceAll("\\d+(\\.\\d+)? ms\\)", "? ms)");
     }
 
     private Path sqlFile(String sql) throws IOException {
@@ -73,11 +73,11 @@ class MainTest {
                 |  1 | kim    |   30 |
                 |  2 | 이순신 | NULL |
                 +----+--------+------+
-                2 rows (? ms)
+                2 rows (full scan, ? ms)
                 +------+
                 | name |
                 +------+
-                0 rows (? ms)
+                0 rows (full scan, ? ms)
                 """, out());
     }
 
@@ -96,7 +96,7 @@ class MainTest {
         String out = out();
         assertEquals(Main.STATEMENT_ERROR, code);
         assertTrue(out.contains("ERROR: [line 1] 컬럼 'users.age'은(는) INT 타입인데"), out);
-        assertTrue(out.contains("ERROR: [line 2] Expected INSERT or SELECT but found 'selec' at 0"), out);
+        assertTrue(out.contains("ERROR: [line 2] Expected INSERT, SELECT or EXPLAIN but found 'selec' at 0"), out);
         assertTrue(out.contains("ERROR: [line 3] 테이블 'users'에 컬럼 'nick'이(가) 없습니다"), out);
         // 실패한 INSERT는 id를 쓰지 않았으므로 성공한 첫 INSERT가 id=1을 받는다.
         assertTrue(out.endsWith("""
@@ -106,7 +106,7 @@ class MainTest {
                 +----+
                 |  1 |
                 +----+
-                1 row (? ms)
+                1 row (full scan, ? ms)
                 """), out);
     }
 
@@ -143,7 +143,7 @@ class MainTest {
                 +------+
                 | kim  |
                 +------+
-                1 row (? ms)
+                1 row (full scan, ? ms)
                 """
                 + Cli.PROMPT + "Bye\n", out());
     }
@@ -199,5 +199,35 @@ class MainTest {
         Path file = sqlFile("SELECT * FROM users;\n\nSELECT * FORM users;");
         run(InputStream.nullInputStream(), "run", file.toString(), "--data", dataDir.toString());
         assertTrue(out().contains("ERROR: [line 3] Expected FROM but found 'form' at 9"), out());
+    }
+
+    // ---- 실행 경로 표시 ----
+
+    @Test
+    void SELECT_결과에_실행_경로를_표시하고_EXPLAIN은_계획만_출력한다() throws IOException {
+        Path file = sqlFile("""
+                INSERT INTO users VALUES ('kim', 30);
+                INSERT INTO users VALUES ('lee', 20);
+                SELECT name FROM users WHERE id = 2;
+                SELECT name FROM users WHERE id BETWEEN 1 AND 2;
+                EXPLAIN SELECT * FROM users WHERE id >= 2;
+                EXPLAIN SELECT * FROM users WHERE name = 'kim';
+                """);
+        run(InputStream.nullInputStream(), "run", file.toString(), "--data", dataDir.toString());
+
+        String out = out();
+        assertTrue(out.contains("1 row (index lookup, ? ms)"), out);
+        assertTrue(out.contains("2 rows (index range, ? ms)"), out);
+        // EXPLAIN은 계획 표만 출력하고 행 수 줄은 출력하지 않는다.
+        assertTrue(out.contains("| users | INDEX_RANGE | id 2 .. +∞ (id >= 2) |"), out);
+        assertTrue(out.contains("| users | FULL_SCAN   | 'name'에는 인덱스가 없음, 조건: name = 'kim' |"), out);
+        assertTrue(out.endsWith("+\n"), "마지막 출력은 EXPLAIN 표의 테두리여야 한다:\n" + out);
+    }
+
+    @Test
+    void 실행_시간은_소수로_표시한다() {
+        assertEquals("0.020", Cli.formatMs(0.02));
+        assertEquals("3.5", Cli.formatMs(3.46));
+        assertEquals("120", Cli.formatMs(120.4));
     }
 }

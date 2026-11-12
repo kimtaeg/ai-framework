@@ -6,12 +6,15 @@ import java.util.List;
 /**
  * 문장 하나의 실행 결과.
  *
- * @param columns      SELECT가 돌려주는 컬럼 이름(스키마 표기). INSERT는 ["id"]
- * @param rows         SELECT 결과 행. 값은 Long, String, null(NULL). INSERT는 부여된 id 한 행 [[id]]
- * @param affectedRows INSERT는 삽입한 행 수, SELECT는 반환한 행 수
+ * @param columns      SELECT가 돌려주는 컬럼 이름(스키마 표기). INSERT는 ["id"], EXPLAIN은 계획 칸 이름
+ * @param rows         SELECT 결과 행. 값은 Long, String, null(NULL). INSERT는 부여된 id 한 행 [[id]], EXPLAIN은 계획 한 행
+ * @param affectedRows INSERT는 삽입한 행 수, SELECT는 반환한 행 수, EXPLAIN은 0
+ * @param accessPath   SELECT·EXPLAIN이 고른 실행 경로. INSERT는 null
+ * @param elapsedMs    실행 시간(밀리초, 소수). 파싱 시간은 빼고 문장 실행만 잰다.
  */
-public record QueryResult(Type type, List<String> columns, List<List<Object>> rows, long affectedRows, long elapsedMs) {
-    public enum Type { INSERT, SELECT }
+public record QueryResult(Type type, List<String> columns, List<List<Object>> rows, long affectedRows,
+                          AccessPath accessPath, double elapsedMs) {
+    public enum Type { INSERT, SELECT, EXPLAIN }
 
     public QueryResult {
         columns = List.copyOf(columns);
@@ -19,7 +22,7 @@ public record QueryResult(Type type, List<String> columns, List<List<Object>> ro
         rows = Collections.unmodifiableList(rows);
     }
 
-    QueryResult withElapsedMs(long ms) {
-        return new QueryResult(type, columns, rows, affectedRows, ms);
+    QueryResult withElapsedMs(double ms) {
+        return new QueryResult(type, columns, rows, affectedRows, accessPath, ms);
     }
 }

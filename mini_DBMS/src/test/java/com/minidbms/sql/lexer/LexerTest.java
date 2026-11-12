@@ -23,8 +23,8 @@ class LexerTest {
 
     @Test
     void 키워드는_대소문자를_무시한다() {
-        assertEquals(List.of(INSERT, INTO, VALUES, SELECT, FROM, WHERE, AND, BETWEEN, EOF),
-                types("insert Into VALUES select FROM where And between"));
+        assertEquals(List.of(INSERT, INTO, VALUES, SELECT, FROM, WHERE, AND, BETWEEN, EXPLAIN, EOF),
+                types("insert Into VALUES select FROM where And between Explain"));
         assertEquals("SELECT", first("select").text());
     }
 
