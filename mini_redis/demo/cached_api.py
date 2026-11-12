@@ -62,20 +62,33 @@ def create_app(cache: AsyncMiniRedisClient | None = None, origin: httpx.AsyncCli
             await origin.aclose()
 
     app = FastAPI(title="Cached Product API (Cache-Aside)", lifespan=lifespan)
-    locks = HashTable()  # 상품 id → asyncio.Lock (상품 수만큼만 생긴다)
+    # 상품 id → [asyncio.Lock, 사용 중인 요청 수]. 아무도 안 쓰면 바로 지워서,
+    # 존재하지 않는 id 를 마구 요청해도 Lock 이 계속 쌓이지 않는다 (메모리 고갈 방지)
+    locks = HashTable()
 
-    def product_lock(product_id: int) -> asyncio.Lock:
+    @asynccontextmanager
+    async def product_lock(product_id: int):
         """같은 상품끼리만 순서를 정한다. 다른 상품 요청은 서로 기다리지 않는다.
 
         asyncio.Lock 은 스레드용 Lock 과 달리, 기다리는 동안 이벤트 루프가 다른 요청을 처리한다(await).
-        이 함수 자체에는 await 가 없어서 "확인 후 생성" 사이에 다른 요청이 끼어들 수 없다.
+        "찾기 → 없으면 만들기 → 사용 수 +1" 과 "사용 수 -1 → 0이면 지우기" 사이에는 await 가 없어서
+        다른 요청이 끼어들 수 없다 (싱글 스레드 이벤트 루프).
         """
         key = str(product_id)
-        lock = locks.get(key)
-        if lock is None:
-            lock = asyncio.Lock()
-            locks.put(key, lock)
-        return lock
+        entry = locks.get(key)
+        if entry is None:
+            entry = [asyncio.Lock(), 0]
+            locks.put(key, entry)
+        entry[1] += 1                     # 기다리는 요청도 센다 → 기다리는 중에 Lock 이 지워지지 않음
+        try:
+            async with entry[0]:
+                yield
+        finally:
+            entry[1] -= 1
+            if entry[1] == 0:
+                locks.remove(key)         # 마지막 사용자가 나가면 회수
+
+    app.state.locks = locks               # 테스트에서 회수 여부를 확인할 때 사용
 
     app.state.cache = cache                # 테스트에서 연결 상태를 확인할 때 사용
     app.state.origin = origin

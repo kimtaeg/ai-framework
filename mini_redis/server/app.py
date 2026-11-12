@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..core.expiry import active_expire_cycle
-from ..core.persistence import AOF
+from ..core.persistence import AOF, AOFWriteError
 from ..core.store import MiniRedis
 from .routes import ApiError, router
 
@@ -114,6 +114,11 @@ def create_app(
     @app.exception_handler(ApiError)
     async def handle_api_error(request: Request, exc: ApiError):
         return error_response(exc.status_code, exc.error, exc.message)
+
+    @app.exception_handler(AOFWriteError)
+    async def handle_aof_error(request: Request, exc: AOFWriteError):
+        # 디스크에 기록하지 못한 쓰기는 메모리에도 반영되지 않았다 (store 의 "기록 먼저" 규칙)
+        return error_response(503, "PERSISTENCE_FAILED", str(exc))
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(request: Request, exc: RequestValidationError):

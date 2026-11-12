@@ -13,7 +13,8 @@ import time
 import httpx
 import pytest
 
-from mini_redis.core.persistence import AOF, AOFCorruptError
+from mini_redis.core import persistence
+from mini_redis.core.persistence import AOF, AOFCorruptError, AOFWriteError
 from mini_redis.core.store import MiniRedis
 from mini_redis.server.app import create_app
 from mini_redis.tests.fakes import FakeClock
@@ -394,3 +395,115 @@ async def test_admin_rewrite_without_aof_409():
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as c:
         r = await c.post("/admin/rewrite-aof")
         assert r.status_code == 409 and r.json()["error"] == "AOF_DISABLED"
+
+
+
+# ===========================================================================
+# 디스크 오류 (fail-stop)
+# ===========================================================================
+class BrokenFile:
+    """write 는 받지만 flush 할 때 디스크 오류를 내는 가짜 파일."""
+
+    def write(self, s):
+        pass
+
+    def flush(self):
+        raise OSError(5, "Input/output error")
+
+    def fileno(self):
+        return -1
+
+    def close(self):
+        pass
+
+
+def test_disk_error_rejects_later_writes(aof_path, clock):
+    r = MiniRedis(clock=clock, aof=AOF(aof_path, fsync="always"))
+    r.set("a", 1)
+    r.aof._file.close()
+    r.aof._file = BrokenFile()
+    with pytest.raises(AOFWriteError):
+        r.set("b", 2)
+    assert not r.exists("b")                       # 기록 실패 → 메모리에도 없음
+    assert r.aof.failed
+    with pytest.raises(AOFWriteError):
+        r.set("c", 3)                              # 한 번 실패하면 이후 쓰기도 거절 (fail-stop)
+    assert r.get("a") == 1                         # 읽기는 계속 가능
+    r.aof.close()                                  # 실패 상태여도 close 는 예외 없이 정리
+
+
+def test_everysec_flush_error_turns_into_fail_stop(aof_path, clock):
+    r = MiniRedis(clock=clock, aof=AOF(aof_path, fsync="everysec"))
+    r.set("a", 1)
+    r.aof._file.close()
+    r.aof._file = BrokenFile()
+    with pytest.raises(AOFWriteError):
+        r.aof.flush()                              # 1초 flush 가 실패 → 응답했던 쓰기가 유실될 수 있음
+    with pytest.raises(AOFWriteError):
+        r.set("b", 2)
+    r.aof.close()
+
+
+# ===========================================================================
+# 폴더 fsync
+# ===========================================================================
+def test_new_file_and_dirs_fsync_parent(tmp_path, clock, monkeypatch):
+    synced = []
+    monkeypatch.setattr(AOF, "_fsync_dir", staticmethod(lambda d: synced.append(os.path.abspath(d))))
+    path = tmp_path / "a" / "b" / "appendonly.aof"
+    r = MiniRedis(clock=clock, aof=AOF(str(path), fsync="always"))
+    r.set("k", 1)
+    # 새로 만든 폴더 a, b 의 이름이 기록된 부모(tmp_path, a)와, 새 파일이 들어간 b 를 fsync
+    assert synced == [str(tmp_path), str(tmp_path / "a"), str(tmp_path / "a" / "b")]
+    synced.clear()
+    r.aof.close()
+    r2 = MiniRedis(clock=clock, aof=AOF(str(path), fsync="always"))
+    r2.set("k", 2)
+    assert synced == []                            # 이미 있는 파일을 다시 열 때는 폴더 fsync 불필요
+    r2.aof.close()
+
+
+@posix_only
+def test_dir_fsync_unsupported_is_ignored_but_io_error_raises(aof_path, clock, monkeypatch):
+    r = MiniRedis(clock=clock, aof=AOF(aof_path, fsync="always"))
+    r.set("a", 1)
+    real_fsync = os.fsync
+
+    def fake_fsync(fd, err):
+        import stat as st
+        if st.S_ISDIR(os.fstat(fd).st_mode):       # 폴더에 대한 fsync 만 실패시킨다
+            raise OSError(err, os.strerror(err))
+        return real_fsync(fd)
+
+    monkeypatch.setattr(persistence.os, "fsync", lambda fd: fake_fsync(fd, persistence.errno.EINVAL))
+    assert r.aof.rewrite(r) == 1                   # 지원 안 함(EINVAL) → 무시하고 성공
+
+    monkeypatch.setattr(persistence.os, "fsync", lambda fd: fake_fsync(fd, persistence.errno.EIO))
+    with pytest.raises(AOFWriteError):
+        r.aof.rewrite(r)                           # 진짜 I/O 오류 → 성공으로 보고하지 않음
+    monkeypatch.setattr(persistence.os, "fsync", real_fsync)
+    r.aof.close()
+
+
+# ===========================================================================
+# rewrite 임시 파일
+# ===========================================================================
+def test_rewrite_replaces_leftover_temp_file(aof_path, clock):
+    r = MiniRedis(clock=clock, aof=AOF(aof_path, fsync="always"))
+    r.set("a", 1)
+    write_file(aof_path + ".rewrite.tmp", "지난번에 죽으면서 남긴 쓰레기\n")
+    assert r.aof.rewrite(r) == 1
+    r.aof.close()
+    assert state(restore(aof_path, clock)) == [("a", 1, -1)]
+
+
+@posix_only
+def test_rewrite_does_not_follow_symlink(aof_path, clock, tmp_path):
+    victim = tmp_path / "victim.txt"
+    victim.write_text("건드리면 안 되는 파일", encoding="utf-8")
+    r = MiniRedis(clock=clock, aof=AOF(aof_path, fsync="always"))
+    r.set("a", 1)
+    os.symlink(victim, aof_path + ".rewrite.tmp")  # 임시 파일 자리에 다른 파일을 가리키는 링크
+    r.aof.rewrite(r)
+    assert victim.read_text(encoding="utf-8") == "건드리면 안 되는 파일"   # 링크를 따라가 덮어쓰지 않음
+    r.aof.close()

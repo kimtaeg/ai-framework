@@ -297,3 +297,63 @@ def test_write_commands_are_logged_with_absolute_time(clock):
     # delete_pattern 의 DEL 순서는 해시 순서라 정해져 있지 않으므로 정렬해서 비교
     assert sorted(aof.entries[8:10]) == [("DEL", "b"), ("DEL", "new")]
     assert aof.entries[10:] == [("FLUSHALL",)]
+
+
+
+# ---------------------------------------------------------------------------
+# "기록 먼저, 메모리는 그다음" 규칙
+# ---------------------------------------------------------------------------
+class FailingAOF:
+    """append 할 때마다 실패하는 가짜 AOF (디스크 오류 흉내)."""
+
+    def append(self, command, *args):
+        raise OSError("디스크 오류")
+
+
+@pytest.mark.parametrize(
+    "action",
+    [
+        lambda r: r.set("k", 999),
+        lambda r: r.set("k", 999, ttl=5),
+        lambda r: r.delete("k"),
+        lambda r: r.expire("k", 5),
+        lambda r: r.expire("k", 0),
+        lambda r: r.persist("t"),
+        lambda r: r.incr("n"),
+        lambda r: r.delete_pattern("*"),
+        lambda r: r.flush_all(),
+    ],
+)
+def test_failed_log_leaves_memory_unchanged(clock, action):
+    r = MiniRedis(clock=clock)
+    r.set("k", "v")
+    r.set("t", "v", ttl=100)
+    r.set("n", 1)
+    before = sorted((k, r.get(k), r.ttl(k)) for k in r.keys())
+    r._aof = FailingAOF()
+    with pytest.raises(OSError):
+        action(r)
+    r._aof = None
+    assert sorted((k, r.get(k), r.ttl(k)) for k in r.keys()) == before   # 아무것도 바뀌지 않음
+
+
+def test_incr_retry_after_log_failure_does_not_double_count(clock):
+    r = MiniRedis(clock=clock)
+    r.set("n", 1)
+    r._aof = FailingAOF()
+    with pytest.raises(OSError):
+        r.incr("n")
+    r._aof = None
+    assert r.incr("n") == 2          # 실패한 증가는 반영되지 않았으므로 재시도는 1 → 2
+
+
+def test_unserializable_value_is_not_stored(tmp_path, clock):
+    from mini_redis.core.persistence import AOF
+
+    r = MiniRedis(clock=clock, aof=AOF(str(tmp_path / "a.aof"), fsync="always"))
+    with pytest.raises(TypeError):
+        r.set("obj", object())       # JSON 으로 바꿀 수 없는 값 → 기록 실패
+    assert not r.exists("obj")       # 메모리에도 없음 (재시작하면 사라질 값을 받아두지 않음)
+    r.set("ok", 1)                   # 값 문제는 디스크 오류가 아니므로 이후 쓰기는 정상
+    assert r.get("ok") == 1
+    r.aof.close()

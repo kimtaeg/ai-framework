@@ -4,7 +4,7 @@ Python 내장 `dict` 없이 **해시 테이블을 직접 구현**해서 만든 �
 마지막에는 느린 API 앞에 캐시로 붙였을 때의 성능 차이를 측정했습니다.
 
 - 언어/스택: Python 3.11+ (개발 환경 3.13.9), FastAPI, uvicorn, Pydantic v2, pytest, httpx
-- 테스트: 155개 (통과 154 + 의도된 실패 시연 xfail 1)
+- 테스트: 174개 (통과 173 + 의도된 실패 시연 xfail 1)
 
 ---
 
@@ -108,9 +108,9 @@ mini_redis/
 ├── tests/
 │   ├── fakes.py             FakeClock (가짜 시계)
 │   ├── test_hashtable.py    29개
-│   ├── test_store.py        27개
-│   ├── test_persistence.py  26개
-│   ├── test_api.py          53개
+│   ├── test_store.py        38개
+│   ├── test_persistence.py  32개
+│   ├── test_api.py          55개
 │   ├── test_concurrency.py  10개
 │   └── test_bench.py        10개 (벤치마크 도우미)
 └── requirements.txt
@@ -225,7 +225,10 @@ GET /products/7  (포트 8002)
 PUT /products/7
    └─ async with product_lock(7):                  ← 진행 중인 미스 GET 이 저장을 끝낸 뒤에
          ├─ slow_api 원본 수정 (version+1)
-         └─ cache.delete("product:7")  → 다음 GET 은 MISS 로 최신 값을 다시 캐시
+         └─ cache.delete("product:7")
+               ├─ 성공 → X-Cache-Invalidated: true,  다음 GET 은 MISS 로 최신 값을 다시 캐시
+               └─ 실패 (Mini Redis 다운 등) → PUT 은 성공, X-Cache-Invalidated: false
+                     → 캐시가 다시 살아나면 TTL(60초)이 끝날 때까지 옛 값이 나갈 수 있음
 ```
 
 ---
@@ -335,7 +338,10 @@ data/appendonly.aof
   | `everysec` (기본) | 버퍼에 모았다가 AOF의 `aof-flush` 스레드가 1초마다 fsync | 목표 주기 1초. 디스크가 느려 fsync가 오래 걸리면 더 길어질 수 있음 | 빠름 |
   | `no` | 명령마다 OS에만 넘기고 fsync는 OS가 알아서 | OS가 죽으면 유실 | 가장 빠름 |
 
-  - everysec flush는 **AOF가 스스로 띄우는 백그라운드 스레드**(`AOF._start_flusher`)가 합니다. 서버 앱 없이 `MiniRedis(aof=AOF(...))`로 직접 써도 1초 주기가 지켜집니다. 또 이벤트 루프가 rewrite 같은 동기 작업으로 잠깐 막혀도 flush는 멈추지 않습니다.
+  - everysec flush는 **AOF가 스스로 띄우는 백그라운드 스레드**(`AOF._start_flusher`)가 합니다. 이벤트 루프와 따로 돌기 때문에, 서버 앱 없이 `MiniRedis(aof=AOF(...))`로 직접 써도 flush가 일어나고, 이벤트 루프가 rewrite 같은 동기 작업으로 잠깐 막혀도 멈추지 않습니다.
+  - 1초는 **목표 주기**입니다. fsync가 느리면 간격이 길어집니다. flush가 실패하면(디스크 가득 참 등) 그 뒤로는 저장하지 않고 쓰기를 거절하므로, 재시작해서 복구해야 합니다.
+- **기록 실패 처리 (fail-stop)**: 모든 쓰기 메서드는 **AOF 기록 → 메모리 변경** 순서입니다. 기록에 실패하면 메모리는 그대로이고 API는 503 `PERSISTENCE_FAILED`를 돌려줍니다. 그래서 `incr`을 재시도해도 두 번 증가하지 않습니다. 디스크 오류가 한 번 나면 `AOFWriteError` 상태가 되어 이후 쓰기를 모두 거절합니다. 실패한 줄이 파일에 반쯤 들어갔는지 알 수 없어서, 계속 쓰면 어긋난 지점을 추적할 수 없기 때문입니다(Redis와 같은 원칙). 단, 줄이 디스크에 기록된 뒤 fsync만 실패했다면 그 명령은 재시작 후 복구될 수 있습니다.
+- **폴더 fsync**: 파일 내용을 fsync해도 POSIX에서는 "파일 이름"이 남는다는 보장이 없습니다. 그래서 새 AOF 파일이나 새 `data/` 폴더를 만들 때, 그리고 rewrite로 이름을 바꿀 때 부모 폴더를 fsync합니다. 폴더 fsync를 지원하지 않는 파일시스템(EINVAL 등)과 Windows만 건너뛰고, 진짜 I/O 오류는 rewrite 실패로 보고합니다.
 - **파일 권한**: 새 AOF는 `os.open(..., 0o600)`으로 만들어 소유자만 읽을 수 있습니다(AOF에는 값이 그대로 들어 있습니다). rewrite 파일은 기존 AOF의 권한을 물려받으므로 `os.replace`로 바꿔도 권한 제한이 사라지지 않습니다.
 - **replay**: 서버가 요청을 받기 **전에** `store.apply_command()`로 다시 실행합니다. 이 메서드는 `_log`를 부르지 않으므로 같은 줄이 다시 쌓이지 않습니다.
   - 파일을 **한 줄씩** 읽습니다. AOF가 아무리 커도 메모리에는 한 줄만 올라갑니다.
@@ -344,6 +350,7 @@ data/appendonly.aof
   - 중간 줄이 깨졌으면 `AOFCorruptError`를 내고 시작하지 않습니다.
 - **rewrite (`POST /admin/rewrite-aof`)**:
   - `store.snapshot(callback)`이 저장소 Lock을 잡은 채로, 살아 있는 키만 `SET` 명령으로 임시 파일에 씁니다. 그다음 fsync하고 `os.replace`로 원자적으로 교체한 뒤 폴더까지 fsync합니다.
+  - 임시 파일은 지난번에 남은 파일이나 심볼릭 링크를 먼저 지우고 `O_EXCL`로 새로 만듭니다. 남의 파일을 따라가서 덮어쓰지 않기 위해서입니다.
   - Lock을 잡고 있는 동안 다른 쓰기는 기다립니다. 그 사이에 들어온 쓰기가 옛 파일에 기록됐다가 사라지는 일을 막기 위해서입니다.
   - 예를 들어 `incr` 1000번이면 1000줄이 1줄로 줄어듭니다.
 
@@ -367,7 +374,9 @@ data/appendonly.aof
 | POST | `/flush` | | 200 `{"flushed": true}` | |
 | GET | `/stats` | | 200 `{keys, capacity, load_factor, hits, misses, expired}` | |
 | GET | `/health` | | 200 `{"status": "ok"}` | |
-| POST | `/admin/rewrite-aof` | | 200 `{"rewritten": true, "commands": n}` | 409 `AOF_DISABLED` |
+| POST | `/admin/rewrite-aof` | | 200 `{"rewritten": true, "commands": n}` | 409 `AOF_DISABLED`, 503 `PERSISTENCE_FAILED` |
+
+모든 쓰기 API(PUT, DELETE, expire, persist, incr, 패턴 삭제, flush)는 AOF 디스크 기록에 실패하면 503 `PERSISTENCE_FAILED`를 돌려주고, 메모리도 바꾸지 않습니다.
 
 검증 규칙
 - 키는 1~512자입니다. 한글, 이모지, 공백, 콜론, 슬래시 모두 허용합니다. 단 `/ttl`, `/expire`, `/persist`, `/incr`로 끝나는 키는 금지합니다. `/keys/foo/ttl`이 "키 `foo/ttl` 조회"인지 "키 `foo`의 TTL 조회"인지 구분할 수 없기 때문입니다.
@@ -436,9 +445,9 @@ async 앱 안에서는 `AsyncMiniRedisClient`를 쓰고 `await r.get(...)`처럼
 | 파일 | 종류 | 개수 | 다루는 내용 |
 |---|---|---|---|
 | `test_hashtable.py` | 단위 | 29 | FNV-1a 공개 테스트 벡터, **seed가 다르면 버킷 배치가 달라짐·충돌 키가 다른 seed에선 흩어짐**, **대량 삭제 후 축소·축소 후 random_key**, put/get/remove, 덮어쓰기 시 개수 유지, None 값과 `MISSING` 구분, **강제 충돌**(같은 버킷 키 5개), 체인 **맨 앞/중간/끝 삭제**, **13번째 put에서 용량 32**, 용량이 항상 2의 거듭제곱, 1만 개 삽입 후 절반 삭제, 한글·이모지·가족 이모지(ZWJ)·빈 문자열 키, `random_key` |
-| `test_store.py` | 단위 | 27 | **inf·-inf·nan TTL 거절**, `FakeClock`으로 **9.9초에는 있음 / 10초에는 없음**, 조회 순간 내부에서도 삭제됨, 덮어쓰면 TTL 제거, persist, expire(없는 키, 0 이하), ttl -2/-1/올림, incr(신규·누적·문자열 "5"·실수·만료 후 1부터·TTL 유지), 패턴(`*`, `?`, 대소문자 구분, 만료 제외), hits/misses, **AOF 기록 형식**(절대 시각, 실패한 쓰기는 기록 안 함) |
-| `test_persistence.py` | 단위+통합 | 26 | **SET(TTL) → PERSIST 후 원래 만료 시각이 지나 재시작해도 살아 있음**, **SET → EXPIREAT 연장 후 재시작**, **새 AOF 0600·rewrite가 기존 권한 유지**, **everysec 자체 flush 스레드**, 여러 명령 후 replay하면 같은 상태, FLUSHALL, JSON 줄 형식, replay가 다시 기록하지 않음, **30초 다운 후 TTL 70초**, 다운 중 만료된 키 버림, **마지막 줄 잘림 → 경고·잘라냄·이어쓰기 가능**, 줄바꿈만 빠진 줄, **중간 줄 손상 → 에러**, 모르는 명령, everysec 버퍼/always·no 즉시 기록, **rewrite 후 줄 수 감소·상태 동일·임시 파일 없음**, 앱 lifespan(시작 시 replay, 종료 시 flush), rewrite API |
-| `test_api.py` | 기능 | 53 | 모든 엔드포인트의 정상 응답과 상태 코드, 에러 형식 통일, 의존성 교체, **빈 키 / 512자 OK / 513자 400**, 한글·이모지·공백·슬래시·`..`·`%`·`?`·`#`·앞뒤 공백 키, 예약 접미사, **ttl 0·음수·"10"·1.5·true → 422**, **1MB 경계**(정확히 1MB는 OK, 초과는 413, 한글은 바이트로 계산), 잘못된 JSON 400, value 누락, **null 저장 후 조회 200**, **만료 키 404**, 없는 경로 404·405, 실제 uvicorn으로 클라이언트 왕복·에러 변환·연결 실패, **데모: MISS → HIT → PUT → MISS**, 캐시 다운 시 BYPASS, 없는 상품은 캐시 안 함, **느린 GET과 PUT 경합 후에도 옛 값이 남지 않음**, **동시 미스 10개 → 원본 호출 1번**, 주입받은 클라이언트는 닫지 않음, 서버 시작 시간 초과 시 스레드 정리 |
+| `test_store.py` | 단위 | 38 | **AOF 기록 실패 시 9가지 쓰기 모두 메모리 그대로·incr 재시도 중복 없음·JSON 불가 값 저장 안 함**, **inf·-inf·nan TTL 거절**, `FakeClock`으로 **9.9초에는 있음 / 10초에는 없음**, 조회 순간 내부에서도 삭제됨, 덮어쓰면 TTL 제거, persist, expire(없는 키, 0 이하), ttl -2/-1/올림, incr(신규·누적·문자열 "5"·실수·만료 후 1부터·TTL 유지), 패턴(`*`, `?`, 대소문자 구분, 만료 제외), hits/misses, **AOF 기록 형식**(절대 시각, 실패한 쓰기는 기록 안 함) |
+| `test_persistence.py` | 단위+통합 | 32 | **디스크 오류 후 쓰기 거절(fail-stop)·everysec flush 실패도 동일**, **새 파일·폴더 생성 시 부모 폴더 fsync**, **폴더 fsync EINVAL은 무시·EIO는 실패 보고**, **남은 임시 파일 교체·심볼릭 링크 따라가지 않음**, **SET(TTL) → PERSIST 후 원래 만료 시각이 지나 재시작해도 살아 있음**, **SET → EXPIREAT 연장 후 재시작**, **새 AOF 0600·rewrite가 기존 권한 유지**, **everysec 자체 flush 스레드**, 여러 명령 후 replay하면 같은 상태, FLUSHALL, JSON 줄 형식, replay가 다시 기록하지 않음, **30초 다운 후 TTL 70초**, 다운 중 만료된 키 버림, **마지막 줄 잘림 → 경고·잘라냄·이어쓰기 가능**, 줄바꿈만 빠진 줄, **중간 줄 손상 → 에러**, 모르는 명령, everysec 버퍼/always·no 즉시 기록, **rewrite 후 줄 수 감소·상태 동일·임시 파일 없음**, 앱 lifespan(시작 시 replay, 종료 시 flush), rewrite API |
+| `test_api.py` | 기능 | 55 | 모든 엔드포인트의 정상 응답과 상태 코드, 에러 형식 통일, 의존성 교체, **빈 키 / 512자 OK / 513자 400**, 한글·이모지·공백·슬래시·`..`·`%`·`?`·`#`·앞뒤 공백 키, 예약 접미사, **ttl 0·음수·"10"·1.5·true → 422**, **1MB 경계**(정확히 1MB는 OK, 초과는 413, 한글은 바이트로 계산), 잘못된 JSON 400, value 누락, **null 저장 후 조회 200**, **만료 키 404**, 없는 경로 404·405, 실제 uvicorn으로 클라이언트 왕복·에러 변환·연결 실패, **데모: MISS → HIT → PUT → MISS**, 캐시 다운 시 BYPASS, 없는 상품은 캐시 안 함, **느린 GET과 PUT 경합 후에도 옛 값이 남지 않음**, **동시 미스 10개 → 원본 호출 1번**, 주입받은 클라이언트는 닫지 않음, **상품 Lock 회수**, **AOF 실패 시 503**, 서버 시작 시간 초과 시 스레드 정리 |
 | `test_bench.py` | 단위 | 10 | nearest-rank 백분위수 올림(11개의 p95 = 11번째), `--requests 0`·`--concurrency 0`·음수 거절 |
 | `test_concurrency.py` | 동시성 | 10 | Active 만료(**만료 100 + 생존 100 → 만료 키만 삭제**, 만료 없는 키 무시, 비율 높으면 반복, 25ms 제한, 비율 낮으면 한 묶음), lifespan 백그라운드 청소, **incr 1000개 동시 요청 → 1~1000이 한 번씩**, set/get 500개 섞어서, 스레드 8개 Lock 안전망, **GET→SET 유실 (xfail strict)** |
 

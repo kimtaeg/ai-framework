@@ -41,7 +41,13 @@ class MiniRedis:
     # 공개 메서드끼리 서로 부르지 않고 이 도우미들을 쓴다.
     # ==================================================================
     def _log(self, command: str, *args) -> None:
-        """쓰기 명령 기록. *args 는 '가변 인자'(Java의 String... args)다."""
+        """쓰기 명령 기록. *args 는 '가변 인자'(Java의 String... args)다.
+
+        [순서 규칙] 모든 쓰기 메서드는 "_log 먼저 → 메모리 변경은 그다음" 순서로 한다.
+        기록이 실패하면(JSON 으로 바꿀 수 없는 값, 디스크 오류 등) 예외가 여기서 나가므로 메모리는 바뀌지 않는다.
+        → "메모리에는 반영됐는데 AOF 에는 없어서 재시작하면 사라지는" 불일치가 생기지 않는다.
+        디스크 오류가 한 번 나면 AOF 는 그 뒤의 쓰기를 모두 거절한다(AOFWriteError). Redis 도 같은 원칙이다.
+        """
         if self._aof is None:
             return
         self._aof.append(command, *args)
@@ -87,14 +93,17 @@ class MiniRedis:
             if ttl <= 0:
                 raise ValueError("ttl은 0보다 커야 합니다")  # Redis 도 SET EX 0 은 에러
         with self._lock:
-            self._data.put(key, value)
-            self._expires.remove(key)                 # 덮어쓰면 이전 TTL 제거
             if ttl is None:
+                expire_at = None
                 self._log("SET", key, value)
             else:
                 expire_at = self._clock() + ttl       # 상대 시간(초) → 절대 시각으로 변환해 저장
-                self._expires.put(key, expire_at)
                 self._log("SET", key, value, expire_at)  # AOF 에도 절대 시각으로 기록
+            # 기록이 성공한 뒤에만 메모리를 바꾼다
+            self._data.put(key, value)
+            self._expires.remove(key)                 # 덮어쓰면 이전 TTL 제거
+            if expire_at is not None:
+                self._expires.put(key, expire_at)
 
     def get(self, key: str, default=None):
         """값 조회. 없거나 만료됐으면 default (기본 None).
@@ -115,10 +124,10 @@ class MiniRedis:
         with self._lock:
             if self._expire_if_needed(key):  # 이미 만료된 키는 "없는 키"를 지운 것과 같다
                 return False
-            removed = self._delete(key)
-            if removed:
-                self._log("DEL", key)
-            return removed
+            if not self._data.contains(key):
+                return False
+            self._log("DEL", key)
+            return self._delete(key)
 
     def exists(self, key: str) -> bool:
         """값이 None 이어도 키가 있으면 True (get 과 달리 hits/misses 는 세지 않는다)."""
@@ -135,12 +144,12 @@ class MiniRedis:
                 return False
             if ttl <= 0:
                 # Redis 처럼 0 이하 TTL 은 "지금 바로 만료" = 삭제
-                self._delete(key)
                 self._log("DEL", key)
+                self._delete(key)
                 return True
             expire_at = self._clock() + ttl
-            self._expires.put(key, expire_at)
             self._log("EXPIREAT", key, expire_at)  # 상대 ttl 이 아니라 절대 시각을 기록
+            self._expires.put(key, expire_at)
             return True
 
     def ttl(self, key: str) -> int:
@@ -163,9 +172,10 @@ class MiniRedis:
             self._expire_if_needed(key)
             if not self._data.contains(key):
                 return False
-            if not self._expires.remove(key):  # 원래 만료가 없었음
+            if not self._expires.contains(key):  # 원래 만료가 없었음
                 return False
             self._log("PERSIST", key)
+            self._expires.remove(key)
             return True
 
     def incr(self, key: str, amount: int = 1) -> int:
@@ -180,7 +190,6 @@ class MiniRedis:
             elif isinstance(current, bool) or not isinstance(current, int):
                 raise TypeError(f"키 '{key}'의 값이 정수가 아닙니다")
             new_value = current + amount
-            self._data.put(key, new_value)           # expires 는 건드리지 않음 → TTL 유지
             # AOF 에는 "INCR" 대신 결과값을 SET 으로 기록한다.
             # 이유: 복구는 나중 시각에 하므로, INCR 을 다시 실행하면 그 사이 만료 여부에 따라 결과가 달라질 수 있다.
             #       결과값 + 절대 만료 시각을 남기면 언제 복구해도 같은 상태가 된다.
@@ -189,6 +198,8 @@ class MiniRedis:
                 self._log("SET", key, new_value)
             else:
                 self._log("SET", key, new_value, expire_at)
+            # 기록 성공 후에만 증가를 반영 → 기록이 실패하면 값은 그대로라 재시도해도 두 번 증가하지 않는다
+            self._data.put(key, new_value)           # expires 는 건드리지 않음 → TTL 유지
             return new_value
 
     def keys(self, pattern: str = "*") -> list[str]:
@@ -201,8 +212,8 @@ class MiniRedis:
         with self._lock:
             targets = self._matching_keys(pattern)
             for key in targets:
-                self._delete(key)
                 self._log("DEL", key)  # 패턴이 아니라 실제 지운 키를 기록 → 복구 결과가 명확함
+                self._delete(key)      # 중간에 기록이 실패하면 그때까지 기록된 키만 지워진 상태로 멈춤 (AOF 와 일치)
             return len(targets)
 
     def _matching_keys(self, pattern: str) -> list[str]:
@@ -312,9 +323,9 @@ class MiniRedis:
     def flush_all(self) -> None:
         """모든 키 삭제. 통계(hits/misses)는 Redis 처럼 유지한다."""
         with self._lock:
+            self._log("FLUSHALL")
             self._data = HashTable()
             self._expires = HashTable()
-            self._log("FLUSHALL")
 
     def stats(self) -> dict:
         """현재 상태 요약. (반환용 결과 묶음이라 dict 를 쓴다. 저장소 데이터는 여전히 HashTable 에만 있다.)"""

@@ -404,8 +404,13 @@ async def test_demo_stale_get_does_not_survive_put(app, client):
     origin_http = httpx.AsyncClient(transport=httpx.ASGITransport(app=origin_app), base_url="http://origin")
     cached_app = cached_api.create_app(cache=AsyncMiniRedisClient(http_client=redis_http), origin=origin_http)
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=cached_app), base_url="http://cached") as c:
+        calls_before = origin_app.state.calls
         get_task = asyncio.create_task(c.get("/products/9"))   # v1 을 읽는 중인 GET
-        await asyncio.sleep(0.05)                               # GET 이 원본 응답을 기다리는 시점
+        # 고정 시간 대신 "GET 이 원본에 도착해 v1 을 읽었다" 는 사실을 기다린다 (느린 컴퓨터에서도 안정적)
+        deadline = asyncio.get_running_loop().time() + 2
+        while origin_app.state.calls == calls_before:
+            assert asyncio.get_running_loop().time() < deadline, "GET 이 2초 안에 원본에 도착하지 않음"
+            await asyncio.sleep(0.001)
         put = await c.put("/products/9", json={"price": 1})    # Lock 때문에 GET 이 끝날 때까지 기다린다
         assert put.status_code == 200 and put.json()["version"] == 2
         assert (await get_task).json()["version"] == 1          # GET 은 수정 전 값을 받았지만
@@ -460,3 +465,31 @@ def test_running_server_cleans_up_on_startup_timeout(app):
     while threading.active_count() > before and time.time() < deadline:
         time.sleep(0.01)
     assert threading.active_count() == before          # 뒤늦게 시작한 서버 스레드까지 정리됨
+
+
+async def test_demo_product_locks_are_reclaimed(app):
+    origin_app = slow_api.create_app(delay=0)
+    redis_http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://redis")
+    origin_http = httpx.AsyncClient(transport=httpx.ASGITransport(app=origin_app), base_url="http://origin")
+    cached_app = cached_api.create_app(cache=AsyncMiniRedisClient(http_client=redis_http), origin=origin_http)
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=cached_app), base_url="http://cached") as c:
+        # 존재하지 않는 id 를 많이 요청해도 Lock 이 쌓이지 않아야 한다
+        await asyncio.gather(*(c.get(f"/products/{10_000 + i}") for i in range(50)))
+        await asyncio.gather(*(c.get("/products/1") for _ in range(5)), c.put("/products/1", json={"price": 5}))
+    assert len(cached_app.state.locks) == 0      # 모든 요청이 끝나면 Lock 회수
+    await redis_http.aclose()
+    await origin_http.aclose()
+
+
+async def test_write_returns_503_when_aof_fails(tmp_path):
+    from mini_redis.core.persistence import AOF
+
+    aof = AOF(str(tmp_path / "a.aof"), fsync="always")
+    store = MiniRedis(aof=aof)
+    fail_app = create_app(store, active_expire=False)
+    aof._error = OSError(28, "No space left on device")   # 디스크 가득 참 상태를 흉내
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=fail_app), base_url="http://test") as c:
+        r = await c.put("/keys/a", json={"value": 1})
+        assert r.status_code == 503 and r.json()["error"] == "PERSISTENCE_FAILED"
+        assert (await c.get("/keys/a")).status_code == 404   # 기록 못 한 쓰기는 메모리에도 없음
+        assert (await c.get("/health")).status_code == 200    # 읽기·상태 확인은 계속 가능

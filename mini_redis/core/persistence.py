@@ -10,6 +10,8 @@ fsync 정책 (Redis 와 같은 이름):
   - "no"      : 운영체제(OS)에 넘기기만 하고 디스크 기록 시점은 OS 가 결정. 가장 빠름
 """
 
+import contextlib
+import errno
 import json
 import logging
 import os
@@ -23,6 +25,18 @@ FILE_MODE = 0o600  # 새 AOF 파일 권한: 소유자만 읽기/쓰기 (AOF 에�
 
 class AOFCorruptError(Exception):
     """AOF 파일 중간이 깨져 있어서 안전하게 복구할 수 없음."""
+
+
+class AOFWriteError(Exception):
+    """AOF 를 디스크에 쓰지 못함 (디스크 가득 참, I/O 오류 등).
+
+    한 번 실패하면 그 뒤의 쓰기를 모두 거절한다(fail-stop). 실패한 줄이 파일에 반쯤 들어갔는지 알 수 없으므로,
+    계속 쓰면 메모리와 파일이 어디서부터 어긋났는지 추적할 수 없게 되기 때문이다. 서버를 재시작해서 복구한다.
+    (Redis 도 AOF 쓰기에 실패하면 쓰기 명령을 에러로 거절한다)
+    """
+
+# 폴더 fsync 를 "지원하지 않는" 파일시스템이 돌려주는 에러 번호. 이것만 무시하고 진짜 I/O 오류(EIO 등)는 올려보낸다
+DIR_FSYNC_UNSUPPORTED = {errno.EINVAL, getattr(errno, "ENOTSUP", errno.EINVAL), getattr(errno, "EOPNOTSUPP", errno.EINVAL)}
 
 
 def encode_line(cmd: str, args) -> str:
@@ -43,40 +57,75 @@ class AOF:
         self._lock = threading.Lock()
         self._stop = threading.Event()    # flush 스레드에 "이제 그만" 을 알리는 신호
         self._flusher = None              # everysec 용 백그라운드 스레드
+        self._error = None                # 디스크 쓰기 실패 원인. None 이 아니면 쓰기를 거절한다
+
+    @property
+    def failed(self) -> bool:
+        """디스크 쓰기에 실패해서 쓰기를 거절하는 상태인지."""
+        return self._error is not None
 
     # ------------------------------------------------------------------
     # 파일 열기 (권한 제한)
     # ------------------------------------------------------------------
     def _ensure_dir(self) -> str:
+        """AOF 가 들어갈 폴더를 만들고 폴더 경로를 돌려준다. 새로 만든 폴더는 그 이름도 디스크에 남긴다."""
         directory = os.path.dirname(self.path)
-        if directory:
-            os.makedirs(directory, exist_ok=True)  # data/ 폴더가 없으면 만든다 (exist_ok: 이미 있어도 OK)
+        if not directory:
+            return directory
+        missing = []                       # 아직 없는 폴더들 (깊은 것부터)
+        d = directory
+        while d and not os.path.exists(d):
+            missing.append(d)
+            d = os.path.dirname(d)
+        os.makedirs(directory, exist_ok=True)  # data/ 폴더가 없으면 만든다 (exist_ok: 이미 있어도 OK)
+        # 새 폴더의 "이름"은 그 부모 폴더에 기록된다 → 부모를 fsync 해야 정전 뒤에도 폴더가 남는다
+        for created in reversed(missing):  # 바깥 폴더부터
+            self._fsync_dir(os.path.dirname(created) or ".")
         return directory
 
     def _open(self) -> None:
-        self._ensure_dir()
+        directory = self._ensure_dir()
+        is_new = not os.path.exists(self.path)
         # open(path, "a") 대신 os.open 으로 권한을 직접 지정해서 새 파일이 다른 사용자에게 보이지 않게 한다.
         # O_APPEND: 무조건 파일 끝에만 쓴다 / O_CREAT: 없으면 만든다 (이미 있는 파일의 권한은 바꾸지 않음)
         fd = os.open(self.path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, FILE_MODE)
         self._file = os.fdopen(fd, "a", encoding="utf-8")   # 숫자 fd 를 Python 파일 객체로 감싼다
+        if is_new:
+            # 파일 내용의 fsync 만으로는 "파일 이름"이 남는다는 보장이 없다 (POSIX).
+            # 새 파일이면 부모 폴더도 fsync 해서, 정전 뒤에 파일 자체가 사라지는 일을 막는다.
+            self._fsync_dir(directory or ".")
         if self.fsync == "everysec" and self._flusher is None:
             self._start_flusher()
+
+    def _fail(self, e: OSError, action: str):
+        """디스크 오류를 기록하고 AOFWriteError 로 바꿔 던진다. 이후 쓰기는 모두 거절된다."""
+        self._error = e
+        logger.error("AOF %s 실패, 이후 쓰기를 거절합니다: %s", action, e)
+        raise AOFWriteError(f"AOF {action} 실패: {e}") from e
+
+    def _check_writable(self) -> None:
+        if self._error is not None:
+            raise AOFWriteError(f"이전 AOF 기록 실패로 쓰기를 거절합니다 (재시작 필요): {self._error}")
 
     # ------------------------------------------------------------------
     # 기록
     # ------------------------------------------------------------------
     def append(self, cmd: str, *args) -> None:
         """명령 하나를 JSON 한 줄로 기록한다. MiniRedis._log 가 쓰기 성공 직후 호출한다."""
-        line = encode_line(cmd, args)
+        line = encode_line(cmd, args)         # JSON 으로 못 바꾸는 값이면 여기서 TypeError (디스크와 무관, 쓰기 거절 상태로 만들지 않음)
         with self._lock:
-            if self._file is None:
-                self._open()
-            self._file.write(line)            # 아직은 Python 내부 버퍼(메모리)에 있을 수 있음
-            if self.fsync == "always":
-                self._sync()                  # 매번 디스크까지
-            elif self.fsync == "no":
-                self._file.flush()            # OS 에만 넘김 (프로세스가 죽어도 OS 가 살아 있으면 남는다)
-            # everysec: 아무것도 안 함 → flush 스레드가 1초마다 한꺼번에 기록
+            self._check_writable()
+            try:
+                if self._file is None:
+                    self._open()
+                self._file.write(line)        # 아직은 Python 내부 버퍼(메모리)에 있을 수 있음
+                if self.fsync == "always":
+                    self._sync()              # 매번 디스크까지
+                elif self.fsync == "no":
+                    self._file.flush()        # OS 에만 넘김 (프로세스가 죽어도 OS 가 살아 있으면 남는다)
+                # everysec: 아무것도 안 함 → flush 스레드가 1초마다 한꺼번에 기록
+            except OSError as e:
+                self._fail(e, "기록")
 
     def _sync(self) -> None:
         self._file.flush()                    # 1) Python 버퍼 → OS (write 시스템 콜)
@@ -85,12 +134,16 @@ class AOF:
     def flush(self) -> None:
         """버퍼를 디스크에 기록. everysec 에서는 flush 스레드가 1초마다 부르고, 직접 불러도 된다."""
         with self._lock:
-            if self._file is None:
+            if self._file is None or self._error is not None:
                 return
-            if self.fsync == "no":
-                self._file.flush()
-            else:
-                self._sync()
+            try:
+                if self.fsync == "no":
+                    self._file.flush()
+                else:
+                    self._sync()
+            except OSError as e:
+                # everysec 에서 버퍼를 디스크에 못 썼다 = 그동안 응답한 쓰기가 사라질 수 있다 → 이후 쓰기 거절
+                self._fail(e, "flush")
 
     def _start_flusher(self) -> None:
         """everysec 정책: AOF 가 스스로 1초마다 flush 하는 스레드를 띄운다.
@@ -107,7 +160,9 @@ class AOF:
             while not self._stop.wait(self.flush_interval):
                 try:
                     self.flush()
-                except Exception:                   # 디스크 오류가 나도 스레드가 죽지 않게
+                except AOFWriteError:
+                    return                          # 이미 쓰기 거절 상태로 바뀜 (원인은 _fail 이 로그로 남김)
+                except Exception:                   # 예상 못 한 오류가 나도 스레드가 죽지 않게
                     logger.exception("AOF flush 실패")
 
         # daemon=True: 프로그램이 끝날 때 이 스레드가 종료를 막지 않음 (정상 종료라면 close() 가 먼저 정리)
@@ -122,9 +177,13 @@ class AOF:
             self._flusher = None
         with self._lock:
             if self._file is not None:
-                self._sync()
-                self._file.close()
-                self._file = None
+                try:
+                    if self._error is None:
+                        self._sync()
+                finally:
+                    with contextlib.suppress(OSError):  # 이미 실패한 파일이라도 핸들은 반드시 닫는다
+                        self._file.close()
+                    self._file = None
 
     # ------------------------------------------------------------------
     # 복구
@@ -208,44 +267,63 @@ class AOF:
 
     def _write_rewrite(self, entries) -> int:
         tmp_path = self.path + ".rewrite.tmp"
-        directory = self._ensure_dir()
-        # 새 파일 권한: 기존 AOF 가 있으면 그 권한을 그대로 물려받고, 없으면 소유자 전용
-        # (os.replace 는 파일 자체를 바꿔 끼우므로, 권한을 맞춰 두지 않으면 기존 제한이 사라진다)
-        try:
-            mode = os.stat(self.path).st_mode & 0o777
-        except FileNotFoundError:
-            mode = FILE_MODE
-        # 1) 임시 파일에 새 내용을 전부 쓰고 디스크까지 기록
-        fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, mode)
-        if hasattr(os, "fchmod"):              # 이미 남아 있던 임시 파일이었다면 권한을 다시 맞춘다 (Windows 에는 없음)
-            os.fchmod(fd, mode)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            for key, value, expire_at in entries:
-                args = [key, value] if expire_at is None else [key, value, expire_at]
-                f.write(encode_line("SET", args))
-            f.flush()
-            os.fsync(f.fileno())
         with self._lock:
-            # 2) 기존 파일 핸들을 닫고 (flush 스레드는 _file 이 None 이면 아무것도 안 함)
-            if self._file is not None:
-                self._file.close()
-                self._file = None             # 다음 append 때 새 파일을 연다
-            # 3) os.replace: 이름 바꾸기 한 번으로 교체. 운영체제가 원자적으로 처리하므로
-            #    "옛 파일" 아니면 "새 파일" 둘 중 하나만 존재한다 (반쯤 쓰인 파일이 보이는 순간이 없음)
-            os.replace(tmp_path, self.path)
-            self._fsync_dir(directory or ".")
+            self._check_writable()            # 이미 디스크 오류 상태면 rewrite 도 하지 않는다
+        try:
+            directory = self._ensure_dir()
+            # 새 파일 권한: 기존 AOF 가 있으면 그 권한을 그대로 물려받고, 없으면 소유자 전용
+            # (os.replace 는 파일 자체를 바꿔 끼우므로, 권한을 맞춰 두지 않으면 기존 제한이 사라진다)
+            try:
+                mode = os.stat(self.path).st_mode & 0o777
+            except FileNotFoundError:
+                mode = FILE_MODE
+            # 지난 rewrite 가 중간에 죽어 남긴 임시 파일(또는 누가 만들어 둔 심볼릭 링크)을 먼저 지운다
+            with contextlib.suppress(FileNotFoundError):
+                os.remove(tmp_path)
+            # 1) 임시 파일에 새 내용을 전부 쓰고 디스크까지 기록
+            # O_EXCL: 그 사이 같은 이름이 또 생겼으면 열지 않고 실패 → 남의 파일·링크를 따라가 덮어쓰지 않는다
+            fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, mode)
+            if hasattr(os, "fchmod"):          # umask 때문에 깎인 권한 비트를 정확히 맞춘다 (Windows 에는 없음)
+                os.fchmod(fd, mode)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                for key, value, expire_at in entries:
+                    args = [key, value] if expire_at is None else [key, value, expire_at]
+                    f.write(encode_line("SET", args))
+                f.flush()
+                os.fsync(f.fileno())
+        except OSError as e:
+            with contextlib.suppress(OSError):
+                os.remove(tmp_path)           # 반쯤 쓴 임시 파일 정리. 기존 AOF 는 그대로라 데이터 손실 없음
+            raise AOFWriteError(f"AOF rewrite 실패 (기존 파일은 그대로): {e}") from e
+        with self._lock:
+            try:
+                # 2) 기존 파일 핸들을 닫고 (flush 스레드는 _file 이 None 이면 아무것도 안 함)
+                if self._file is not None:
+                    self._file.close()
+                    self._file = None         # 다음 append 때 새 파일을 연다
+                # 3) os.replace: 이름 바꾸기 한 번으로 교체. 운영체제가 원자적으로 처리하므로
+                #    "옛 파일" 아니면 "새 파일" 둘 중 하나만 존재한다 (반쯤 쓰인 파일이 보이는 순간이 없음)
+                os.replace(tmp_path, self.path)
+                # 4) 교체(이름 바꾸기)가 정전 뒤에도 남도록 폴더를 fsync. 실패하면 성공으로 보고하지 않는다
+                self._fsync_dir(directory or ".")
+            except OSError as e:
+                self._fail(e, "rewrite 교체")
         return len(entries)
 
     @staticmethod
     def _fsync_dir(directory: str) -> None:
-        """이름 바꾸기 자체도 디스크에 확실히 남기려면 폴더도 fsync 해야 한다 (POSIX). 지원 안 하는 OS 는 무시."""
-        try:
-            fd = os.open(directory, os.O_RDONLY)
-        except OSError:
+        """폴더를 fsync 해서 그 안의 이름 변화(새 파일, 이름 바꾸기)를 디스크에 확정한다 (POSIX).
+
+        - Windows 는 폴더를 열어 fsync 하는 방법이 없으므로 건너뛴다
+        - 폴더 fsync 를 지원하지 않는 파일시스템(EINVAL 등)만 무시하고, 진짜 I/O 오류는 올려보낸다
+        """
+        if os.name == "nt":
             return
+        fd = os.open(directory, os.O_RDONLY)
         try:
             os.fsync(fd)
-        except OSError:
-            pass
+        except OSError as e:
+            if e.errno not in DIR_FSYNC_UNSUPPORTED:
+                raise
         finally:
             os.close(fd)
