@@ -1,0 +1,44 @@
+plugins {
+    id 'java'
+}
+
+group = 'com.minidbms'
+version = '0.1.0'
+
+repositories {
+    mavenCentral()
+}
+
+java {
+    // 설치된 JDK가 17보다 높아도 Java 17 API·문법만 쓰도록 고정한다.
+    toolchain { languageVersion = JavaLanguageVersion.of(17) }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release = 17
+}
+
+dependencies {
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.2'
+
+    testImplementation platform('org.junit:junit-bom:5.11.3')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+// java -jar 한 번으로 실행되도록 런타임 의존성(Jackson)까지 jar 안에 풀어 넣는다.
+jar {
+    manifest {
+        attributes 'Main-Class': 'com.minidbms.cli.Main'
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+    exclude 'META-INF/*.SF', 'META-INF/*.DSA', 'META-INF/*.RSA'
+}
