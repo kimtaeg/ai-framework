@@ -223,7 +223,9 @@ describe('MiniRedis 명령', () => {
 describe('만료 (TTL)', () => {
   const make = () => {
     const clock = { t: 1_000_000 };
-    return { r: new MiniRedis({ now: () => clock.t }), clock };
+    let seed = 1;
+    const random = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+    return { r: new MiniRedis({ now: () => clock.t, random }), clock };
   };
 
   test('TTL / PTTL: 키 없음 -2, 만료 없음 -1, 남은 시간', () => {
@@ -370,6 +372,19 @@ describe('AOF (서버가 꺼져도 데이터 유지)', () => {
     assert.equal(b.exec('GET short'), null, '꺼져 있는 동안 만료됨');
     assert.equal(b.exec('GET plain'), '정글');
     assert.equal(b.exec('INVALIDATE t'), 1, '태그도 복원');
+
+    const lines2 = [];
+    const c = new MiniRedis({ now: () => clock.t, onWrite: (x) => lines2.push(JSON.stringify(x)) });
+    c.exec('SET cnt 10 EX 60');
+    c.exec('TAG cnt counterTag');
+    c.exec('INCR cnt');
+    c.exec('SET kept old EX 60');
+    c.exec('TAG kept keepTag');
+    c.exec('SET kept new KEEPTTL');
+    const d = new MiniRedis({ now: () => clock.t });
+    d.loadAof(lines2.join('\n') + '\n');
+    assert.equal(d.exec('INVALIDATE counterTag'), 1, 'INCR 뒤에도 AOF 재생 시 태그 유지');
+    assert.equal(d.exec('INVALIDATE keepTag'), 1, 'SET KEEPTTL 뒤에도 AOF 재생 시 태그 유지');
   });
 
   test('마지막 줄이 쓰다 만 상태(서버가 쓰는 도중 죽음)면 그 줄만 버린다', () => {

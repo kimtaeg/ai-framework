@@ -106,7 +106,11 @@ describe('B+ 트리', () => {
     for (let order = 3; order <= 8; order++) {
       const t = new BPlusTree(order);
       const rand = rng(order);
-      const keys = [...Array(2000).keys()].map((k) => k + 1).sort(() => rand() - 0.5);
+      const keys = [...Array(2000).keys()].map((k) => k + 1);
+      for (let i = keys.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [keys[i], keys[j]] = [keys[j], keys[i]];
+      }
       for (const k of keys) t.insert(k, `v${k}`);
       assert.equal(t.check(), true);
       assert.equal(t.size, 2000);
@@ -331,6 +335,8 @@ describe('CLI', () => {
       assert.equal(cli(['run', join(dir, 'none.sql'), '--data', dir]).code, 1);
       assert.equal(cli(['seed', 'users', 'abc', '--data', dir]).code, 1);
       assert.equal(cli(['what', '--data', dir]).code, 1);
+      assert.equal(cli(['info', '--data']).code, 1);
+      assert.equal(cli(['info', '--data', '--json']).code, 1);
       assert.equal(cli([]).code, 1);
     } finally {
       rmSync(dir, { recursive: true, force: true });

@@ -14,7 +14,7 @@ export function mountSandbox({ templates, snippets, storeKey, showKeys = true, s
   const editor = $('#code');
   let env = createEnv();
   let current = templates[0];
-  let running = false;
+  let isRunning = false;
   let autoTimer = null;
 
   // ---------------------------------------------------------------- 저장
@@ -118,8 +118,8 @@ export function mountSandbox({ templates, snippets, storeKey, showKeys = true, s
 
   // ---------------------------------------------------------------- 실행
   async function run() {
-    if (running) return;
-    running = true;
+    if (isRunning) return;
+    isRunning = true;
     $('#run').disabled = true;
     $('#error').hidden = true;
     if ($('#fresh').checked) env = createEnv();
@@ -134,7 +134,7 @@ export function mountSandbox({ templates, snippets, storeKey, showKeys = true, s
     }
     paintGutter(r.error?.line ?? null);
     paintState();
-    running = false;
+    isRunning = false;
     $('#run').disabled = false;
   }
   $('#run').addEventListener('click', run);

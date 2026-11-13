@@ -111,20 +111,24 @@ const usersDb = (order = 64) => new Database(new MemoryStorage(JSON.parse(JSON.s
 export function indexCost(n = 50_000) {
   const rand = rng(5);
   const rows = Array.from({ length: n }, (_, i) => [i + 1, `user${i}`, 20 + Math.floor(rand() * 40), `user${i}@x.com`]);
-  // 처음 도는 쪽이 JIT 준비 때문에 느려지므로, 번갈아 3번씩 재서 가장 빠른 값을 쓴다
+  // 처음 도는 쪽이 JIT 준비 때문에 느려지므로, 워밍업 후 번갈아 3번씩 재서 가장 빠른 값을 쓴다
   let withoutMs = Infinity, withMs = Infinity, tree = null;
-  for (let rep = 0; rep < 3; rep++) {
+  for (let rep = -1; rep < 3; rep++) {
     // ① 인덱스 없이: 한 줄로 인코딩해서 저장소 끝에 붙이기만
     const plain = new MemoryStorage(JSON.parse(JSON.stringify(USERS)));
     let t0 = nowMs();
     for (const r of rows) plain.append('users', encodeRow(r));
-    withoutMs = Math.min(withoutMs, nowMs() - t0);
+    const dWithout = nowMs() - t0;
     // ② 인덱스 있게: 같은 저장 + B+ 트리 등록
     tree = new BPlusTree(64);
     const indexed = new MemoryStorage(JSON.parse(JSON.stringify(USERS)));
     t0 = nowMs();
     for (const r of rows) tree.insert(r[0], indexed.append('users', encodeRow(r)));
-    withMs = Math.min(withMs, nowMs() - t0);
+    const dWith = nowMs() - t0;
+    if (rep >= 0) {
+      withoutMs = Math.min(withoutMs, dWithout);
+      withMs = Math.min(withMs, dWith);
+    }
   }
   const nodes = tree.levels().reduce((s, l) => s + l.length, 0);
   return { n, withoutMs, withMs, extraMs: withMs - withoutMs, nodes, splits: tree.stats.splits, height: tree.height };

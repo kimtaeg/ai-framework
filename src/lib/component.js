@@ -58,6 +58,7 @@ function afterPaint(fn) {
 }
 
 const MAX_NESTED_UPDATES = 50;
+const MAX_RENDER_PHASE_LOOPS = 25; // React 의 "Too many re-renders" 기준과 같다
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 export class FunctionComponent {
@@ -88,6 +89,8 @@ export class FunctionComponent {
     this.updateReasons = []; // 이번 렌더를 일으킨 setState 들 { index, kind }
     this.renderCount = 0;
     this.nestedUpdates = 0;
+    this.renderPhaseUpdated = false; // 이번 렌더 도중 setState 가 불렸는가
+    this.renderPhaseLoops = 0; // 렌더 중 setState 로 이어진 연속 렌더 수
     this.memoCache = new Map(); // memo 컴포넌트 결과: Map<memo 함수, Map<key, { props, children, result, gen }>>
     this.renderGen = 0; // 렌더마다 1씩 — 이번 렌더에 쓰이지 않은 memo 결과를 버릴 때 쓴다
     this.onCommit = options.onCommit ?? null;
@@ -104,6 +107,7 @@ export class FunctionComponent {
     this.isRendering = true;
     this.renderEffects = { layout: [], passive: [] };
     const expectedHooks = this.hooks.length;
+    this.renderPhaseUpdated = false;
     try {
       const out = resolve(this.fn(this.props));
       if (this.isMounted && this.hookIndex !== expectedHooks) {
@@ -113,8 +117,13 @@ export class FunctionComponent {
         );
       }
       this.renderCount++;
+      if (!this.renderPhaseUpdated) this.renderPhaseLoops = 0; // 렌더 중 setState 연쇄가 끝났다
       this.sweepMemo();
       return normalizeRoot(out);
+    } catch (error) {
+      // 실패한 렌더가 새로 만든 Hook 슬롯은 버린다 — 남겨 두면 다음 렌더부터 "개수가 달라졌다" 가 계속 난다
+      if (this.isMounted) this.hooks.length = expectedHooks;
+      throw error;
     } finally {
       this.isRendering = false;
       currentComponent = prevComponent;
@@ -185,6 +194,17 @@ export class FunctionComponent {
    */
   scheduleUpdate(reason) {
     if (this.isUnmounted) return;
+    // 렌더 함수 본문에서 setState → 다시 렌더 → 또 setState ... 는 effect 를 거치지 않아 checkNested 로 못 잡는다.
+    // 렌더 중 업데이트 자체는 허용하되 (props 에서 state 파생하기), 연속 MAX_RENDER_PHASE_LOOPS 번을 넘으면 멈춘다.
+    if (this.isRendering && !this.renderPhaseUpdated) {
+      this.renderPhaseUpdated = true;
+      if (++this.renderPhaseLoops > MAX_RENDER_PHASE_LOOPS) {
+        this.renderPhaseLoops = 0;
+        this.updateScheduled = false;
+        this.updateReasons = [];
+        throw new Error('렌더링이 너무 많이 반복되었습니다 (Too many re-renders). 렌더 함수 본문에서 조건 없이 setState 를 호출하지 마세요.');
+      }
+    }
     if (reason) this.updateReasons.push(reason);
     if (this.updateScheduled) return;
     this.updateScheduled = true;
@@ -216,6 +236,9 @@ export class FunctionComponent {
     // 1) useLayoutEffect: DOM 반영 직후, 브라우저가 그리기 전에 동기 실행
     const t0 = now();
     const layoutList = this.renderEffects.layout;
+    // 화면에 반영된 렌더의 deps 를 기록한다 — 다음 렌더는 "커밋된 deps" 와 비교한다 (React 와 동일)
+    commitEffectDeps(layoutList);
+    commitEffectDeps(this.renderEffects.passive);
     runEffects(layoutList);
     const layout = now() - t0;
     // 2) useEffect: 화면을 그린 뒤 실행하도록 예약
@@ -279,6 +302,13 @@ export class FunctionComponent {
       if ((hook.kind === 'useEffect' || hook.kind === 'useLayoutEffect') && typeof hook.cleanup === 'function') hook.cleanup();
     }
     this.dom?.remove();
+  }
+}
+
+function commitEffectDeps(list) {
+  for (const item of list) {
+    item.slot.deps = item.deps;
+    item.slot.ran = true;
   }
 }
 
@@ -511,10 +541,10 @@ export function useReducer(reducer, initialArg, init) {
 function effectHook(kind, phase, effect, deps) {
   const { comp, index, hook } = getHookSlot(kind);
   const slot = hook ?? (comp.hooks[index] = { kind, deps: undefined, cleanup: null, ran: false });
+  // deps 는 여기서 바로 기록하지 않고 commit 때 기록한다 (commitEffectDeps).
+  // 렌더가 도중에 실패하면 이 effect 는 버려지는데, deps 만 새 값으로 남으면 다음 렌더에서 "안 바뀜" 으로 보고 건너뛰게 된다.
   if (!slot.ran || depsChanged(slot.deps, deps)) {
-    slot.deps = deps;
-    slot.ran = true;
-    comp.renderEffects[phase].push({ slot, effect });
+    comp.renderEffects[phase].push({ slot, effect, deps });
   }
 }
 

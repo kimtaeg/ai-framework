@@ -124,11 +124,12 @@ export function simulateActiveExpire({ n = 2000, expiredRatio = 0.5, sample = 20
  */
 export async function stampede({ clients = 100, protect = false, dbMs = 80 } = {}) {
   const r = new MiniRedis();
+  const rand = rng(13);
   let dbQueries = 0;
   const db = async () => { dbQueries++; await sleep(dbMs); return '{"price":1000}'; };
   const t0 = now();
   await Promise.all(Array.from({ length: clients }, async (_, i) => {
-    await sleep(Math.random() * 5);
+    await sleep(rand() * 5);
     for (let attempt = 0; attempt < 100; attempt++) {
       const hit = r.command(['GET', 'hot']);
       if (hit !== null) return hit;

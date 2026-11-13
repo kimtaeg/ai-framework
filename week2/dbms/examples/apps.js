@@ -26,8 +26,10 @@ export const quote = (s) => `'${String(s).replace(/'/g, "''")}'`;
 // ================================================================ 1. 회원 가입
 /** 입력값 → INSERT 문. 망가뜨리면 따옴표를 그대로 이어 붙인다 */
 export function signupSql({ name, age, email }) {
-  const ageSql = String(age).trim() === '' ? 'NULL' : String(age).trim();
-  if (flags.signupNoEscape) return `INSERT INTO users (name, age, email) VALUES ('${name}', ${ageSql}, '${email}')`;
+  const ageText = String(age).trim();
+  const rawAgeSql = ageText === '' ? 'NULL' : ageText;
+  if (flags.signupNoEscape) return `INSERT INTO users (name, age, email) VALUES ('${name}', ${rawAgeSql}, '${email}')`;
+  const ageSql = ageText === '' ? 'NULL' : /^-?\d+$/.test(ageText) ? ageText : quote(ageText);
   return `INSERT INTO users (name, age, email) VALUES (${quote(name)}, ${ageSql}, ${quote(email)})`;
 }
 

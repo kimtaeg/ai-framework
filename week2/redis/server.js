@@ -6,6 +6,7 @@
  *   http://localhost:6380/demo/products/1 (캐시를 쓰는 느린 상품 API 예시)
  */
 import { createServer } from 'node:http';
+import { randomInt } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MiniRedis } from './miniredis.js';
@@ -14,10 +15,12 @@ import { createRedisApi } from './api.js';
 import { createProductApi } from './demo-api.js';
 import { MiniRedisClient } from './client.js';
 
-export function startRedisServer({ port = 6380, aofPath = null, fsync = 'everysec', latencyMs = 120 } = {}) {
+export function startRedisServer({ port = 6380, host = '127.0.0.1', aofPath = null, fsync = 'everysec', latencyMs = 120, maxMemory = 0 } = {}) {
   let redis, aof = null, restored = null;
-  if (aofPath) ({ redis, aof, restored } = openPersistentRedis(aofPath, { fsync }));
-  else redis = new MiniRedis();
+  // 해시 시드를 서버마다 무작위로: 밖에서 버킷 위치를 미리 계산해 한 버킷에 몰리는 키를 보낼 수 없게
+  const hashSeed = randomInt(1, 0x7fffffff);
+  if (aofPath) ({ redis, aof, restored } = openPersistentRedis(aofPath, { fsync, hashSeed, maxMemory }));
+  else redis = new MiniRedis({ hashSeed, maxMemory });
   redis.start();
   const api = createRedisApi(redis);
   let client = null;
@@ -27,7 +30,7 @@ export function startRedisServer({ port = 6380, aofPath = null, fsync = 'everyse
     await api(req, res);
   });
   return new Promise((ok) => {
-    server.listen(port, () => {
+    server.listen(port, host, () => {
       client = new MiniRedisClient(`http://127.0.0.1:${server.address().port}`);
       const close = () =>
         new Promise((done) => {
@@ -51,6 +54,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     port: Number(arg('port', 6380)),
     aofPath: noAof ? null : resolve(arg('aof', 'week2/data/redis.aof')),
     fsync: arg('fsync', 'everysec'),
+    maxMemory: Number(arg('maxmemory', 0)) || 0, // 바이트. 넘으면 오래 안 쓴 키부터 지운다 (0 = 제한 없음)
   });
   console.log(`MiniRedis → http://localhost:${s.port}  (AOF: ${noAof ? '끔' : `${arg('aof', 'week2/data/redis.aof')}, fsync=${arg('fsync', 'everysec')}`})`);
   if (s.restored) console.log(`복원: 명령 ${s.restored.applied}개${s.restored.truncated ? ', 잘린 마지막 줄 버림' : ''}`);

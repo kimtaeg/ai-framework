@@ -60,11 +60,13 @@ const TBL = join(DATA_DIR, 'products.tbl');
 }
 const BASE_BYTES = statSync(TBL).size;
 
-let db = createDbService({ dir: DATA_DIR, workers: DB_WORKERS });
+// 발표한 측정 결과와 같은 조건으로 고정한다: id 가 아닌 열은 선형 탐색, 쓰는 동안 조회는 기다림
+const DB_OPTS = { dir: DATA_DIR, workers: DB_WORKERS, autoIndex: false, snapshotReads: false };
+let db = createDbService(DB_OPTS);
 async function resetDb() {
   await db.close(); // 이전 측정에서 밀려 있던 쿼리도 함께 끊긴다
   truncateSync(TBL, BASE_BYTES);
-  db = createDbService({ dir: DATA_DIR, workers: DB_WORKERS });
+  db = createDbService(DB_OPTS);
   const t = await db.tables();
   const rows = t.find((x) => x.table === 'products').rows;
   if (rows !== ROWS) throw new Error(`products 가 ${rows}건입니다 (기대 ${ROWS}건)`);

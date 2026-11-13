@@ -84,10 +84,21 @@ function diffNode(ctx, oldVNode, newVNode, depth, patches) {
     return patches;
   }
 
-  const changes = compareProps(oldVNode.props, newVNode.props, ctx.liveHandlers);
+  let changes = compareProps(oldVNode.props, newVNode.props, ctx.liveHandlers);
+  // <select value> 는 해당 <option> 이 있어야 반영된다 → value 변경만 떼어 자식 패치 "뒤" 에 내보낸다
+  // (createElement 가 option 을 붙인 뒤 value 를 넣는 것과 같은 규칙)
+  let deferred = null;
+  if (newVNode.type === 'select' && changes.length) {
+    const i = changes.findIndex((c) => c.name === 'value');
+    if (i >= 0) {
+      deferred = [changes[i]];
+      changes = changes.filter((_, k) => k !== i);
+    }
+  }
   if (changes.length) patches.push({ type: PatchType.PROPS, path: pathTo(ctx, depth), changes });
 
   childrenAt(ctx, oldVNode.children, newVNode.children, depth, patches);
+  if (deferred) patches.push({ type: PatchType.PROPS, path: pathTo(ctx, depth), changes: deferred });
   return patches;
 }
 

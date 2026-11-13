@@ -5,6 +5,8 @@
  *  - 쓰기(INSERT)는 혼자만               → id 중복, 파일에 두 줄이 섞여 쓰이는 문제, 인덱스 불일치를 막음
  *  - 공정성: 기다리는 쓰기가 있으면 새 읽기는 뒤에 줄 선다 (읽기가 계속 와서 쓰기가 영원히 못 하는 "기아" 방지)
  *  - 여러 테이블을 잡을 때는 항상 이름 순서로 → 교착 상태(deadlock) 방지
+ *  - 락 이름은 key 함수로 하나로 맞춘다: SQL 에 USERS / users 로 적혀도 같은 테이블이면 같은 락
+ *    (이름을 적힌 그대로 쓰면 한 테이블에 쓰기 락이 두 개 생겨서 INSERT 가 겹친다)
  */
 export class RWLock {
   constructor(name = '') {
@@ -56,8 +58,15 @@ export class RWLock {
 }
 
 export class LockManager {
-  constructor() {
+  /**
+   * @param {{ key?: (name: string) => string, readLocks?: boolean }} [opts]
+   *   key: 테이블 이름 → 락 이름 (기본: 그대로)
+   *   readLocks: false 면 읽기는 락을 잡지 않는다 (스냅샷 읽기 — service.js 의 snapshotReads 설명 참고)
+   */
+  constructor(opts = {}) {
     this.locks = new Map();
+    this.key = opts.key ?? ((name) => name);
+    this.readLocks = opts.readLocks ?? true;
   }
 
   #lock(name) {
@@ -71,8 +80,8 @@ export class LockManager {
    */
   async acquire({ read = [], write = [] }) {
     const modes = new Map();
-    for (const t of read) modes.set(t, 'read');
-    for (const t of write) modes.set(t, 'write'); // 같은 테이블을 읽고 쓰면 쓰기 락
+    if (this.readLocks) for (const t of read) modes.set(this.key(t), 'read');
+    for (const t of write) modes.set(this.key(t), 'write'); // 같은 테이블을 읽고 쓰면 쓰기 락
     const order = [...modes.keys()].sort();
     const releases = [];
     for (const t of order) releases.push(await this.#lock(t).acquire(modes.get(t)));

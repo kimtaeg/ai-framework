@@ -7,7 +7,8 @@
  *   INSERT INTO 테이블 [(열, ...)] VALUES (값, ...) [, (값, ...)] ;
  *   SELECT * | 열, ... FROM 테이블 [WHERE 조건 [AND 조건 ...]] [LIMIT n] ;
  *     조건: 열 (= | != | <> | < | <= | > | >=) 값     |   열 BETWEEN 값 AND 값
- *   값: 정수, 실수, '문자열' (작은따옴표 두 개 '' 는 따옴표 하나), NULL
+ *   값: 정수, 실수, '문자열' (작은따옴표 두 개 '' 는 따옴표 하나), NULL, ? (자리표시자 — 값은 params 로 따로 준다)
+ *       ? 를 쓰면 값이 SQL 문자열에 섞이지 않는다 → 값 안의 따옴표로 문장을 바꾸는 SQL 인젝션이 통하지 않는다
  *   주석: -- 한 줄 주석,  /* 여러 줄 *\/
  *   여러 문장은 ; 로 구분. 키워드는 대소문자 구분 없음.
  *
@@ -23,7 +24,7 @@ export class SqlError extends Error {
 }
 
 export const KEYWORDS = new Set(['INSERT', 'INTO', 'VALUES', 'SELECT', 'FROM', 'WHERE', 'AND', 'LIMIT', 'NULL', 'BETWEEN']);
-const SYMBOLS = ['<=', '>=', '!=', '<>', '(', ')', ',', ';', '*', '=', '<', '>', '-'];
+const SYMBOLS = ['<=', '>=', '!=', '<>', '(', ')', ',', ';', '*', '=', '<', '>', '-', '?'];
 
 /**
  * @returns {Array<{ type: 'keyword'|'ident'|'number'|'string'|'symbol'|'eof', value: string, pos: {line, col, offset} }>}
@@ -93,10 +94,25 @@ export function tokenize(src) {
   return tokens;
 }
 
-/** 여러 문장을 파싱 → AST 배열 */
-export function parse(src) {
+/**
+ * 여러 문장을 파싱 → AST 배열
+ * @param {string} src
+ * @param {Array<number|string|null>} [params]  ? 자리에 순서대로 들어갈 값
+ */
+export function parse(src, params = null) {
+  if (params !== null && !Array.isArray(params)) throw new SqlError('params 는 배열이어야 합니다.');
   const tokens = tokenize(src);
   let k = 0;
+  let used = 0; // 지금까지 쓴 params 개수
+  const bind = (pos) => {
+    if (!params) throw new SqlError("'?' 자리에 넣을 값(params)이 없습니다.", pos);
+    if (used >= params.length) throw new SqlError(`'?' 는 ${used + 1}개 이상인데 params 는 ${params.length}개입니다.`, pos);
+    const v = params[used++];
+    if (v === null) return { kind: 'null', value: null };
+    if (typeof v === 'number' && Number.isFinite(v)) return { kind: 'number', value: v };
+    if (typeof v === 'string') return { kind: 'string', value: v };
+    throw new SqlError(`params 의 ${used}번째 값은 숫자, 문자열, null 중 하나여야 합니다.`, pos);
+  };
   const peek = () => tokens[k];
   const next = () => tokens[k++];
   const is = (type, value) => peek().type === type && (value === undefined || peek().value === value);
@@ -112,6 +128,7 @@ export function parse(src) {
 
   function value() {
     const t = peek();
+    if (is('symbol', '?')) return next(), bind(t.pos);
     if (is('symbol', '-')) {
       next();
       const n = expect('number', undefined, '숫자');
@@ -202,5 +219,6 @@ export function parse(src) {
     statements.push(stmt);
     if (!is('eof')) expect('symbol', ';', "문장 끝의 ';'");
   }
+  if (params && used !== params.length) throw new SqlError(`params 는 ${params.length}개인데 '?' 는 ${used}개입니다.`);
   return statements;
 }
