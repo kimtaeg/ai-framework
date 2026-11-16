@@ -177,6 +177,8 @@ export function createRedisApi(redis, opts = {}) {
         }
       }
       if (!Array.isArray(args) || !args.length) throw new HttpError(400, 'BAD_ARG', 'args 배열 또는 command 문자열이 필요합니다.');
+      // 객체 · null 을 그대로 두면 "[object Object]" 가 조용히 저장된다
+      if (args.some((a) => typeof a !== 'string' && typeof a !== 'number')) throw new HttpError(400, 'BAD_ARG', 'args 의 각 값은 문자열이나 숫자여야 합니다.');
       return send(res, 200, { result: run(args.map(String)) });
     }
     if (path === '/pipeline' && req.method === 'POST') {

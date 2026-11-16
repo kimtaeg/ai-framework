@@ -14,6 +14,7 @@ import { openPersistentRedis } from './persistence.js';
 import { createRedisApi } from './api.js';
 import { createProductApi } from './demo-api.js';
 import { MiniRedisClient } from './client.js';
+import { nodeFetch } from './node-fetch.js';
 
 export function startRedisServer({ port = 6380, host = '127.0.0.1', aofPath = null, fsync = 'everysec', latencyMs = 120, maxMemory = 0 } = {}) {
   let redis, aof = null, restored = null;
@@ -32,7 +33,8 @@ export function startRedisServer({ port = 6380, host = '127.0.0.1', aofPath = nu
   });
   return new Promise((ok) => {
     server.listen(port, host, () => {
-      client = new MiniRedisClient(`http://127.0.0.1:${server.address().port}`);
+      // nodeFetch: 내장 fetch 는 Windows 에서 요청 하나에 약 15ms 가 걸려 캐시 적중이 느려 보인다
+      client = new MiniRedisClient(`http://127.0.0.1:${server.address().port}`, { fetch: nodeFetch });
       const close = () =>
         new Promise((done) => {
           redis.stop();

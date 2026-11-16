@@ -17,6 +17,7 @@ import { openPersistentRedis } from './week2/redis/persistence.js';
 import { createRedisApi } from './week2/redis/api.js';
 import { createProductApi } from './week2/redis/demo-api.js';
 import { MiniRedisClient } from './week2/redis/client.js';
+import { nodeFetch } from './week2/redis/node-fetch.js';
 import { createDbService, createSqlApi } from './week2/dbms/service.js';
 import { createTestLab } from './server/testlab.js';
 
@@ -79,7 +80,8 @@ export function createWeek2(dataDir = join(ROOT, 'week2', 'data'), { fsync = 'ev
       if (pathname === '/api/redis' || pathname.startsWith('/api/redis/')) return redisApi(req, res);
       if (pathname.startsWith('/api/demo/')) {
         getRedis();
-        client ??= new MiniRedisClient(`http://127.0.0.1:${req.socket.localPort}/api/redis`);
+        // nodeFetch: 내장 fetch 는 Windows 에서 요청 하나에 약 15ms 가 걸려 캐시 적중이 느려 보인다
+        client ??= new MiniRedisClient(`http://127.0.0.1:${req.socket.localPort}/api/redis`, { fetch: nodeFetch });
         return products(req, res);
       }
       if (pathname === '/api/sql' || pathname.startsWith('/api/sql/')) return sqlApi(req, res);

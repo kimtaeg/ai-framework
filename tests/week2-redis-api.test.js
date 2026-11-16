@@ -95,6 +95,7 @@ describe('HTTP API + 클라이언트', () => {
     assert.equal((await req('/keys/x', 'PATCH')).status, 405);
     assert.equal((await req('/command', 'POST', { command: 'NOPE' })).status, 400);
     assert.equal((await req('/command', 'POST', {})).status, 400);
+    assert.equal((await req('/command', 'POST', { args: ['SET', 'k', { a: 1 }] })).status, 400); // "[object Object]" 로 저장되면 안 된다
     assert.equal((await req('/invalidate', 'POST', {})).status, 400);
     const incr = await req('/keys/notnum/incr', 'POST', { by: 'x' });
     assert.equal(incr.status, 400);
