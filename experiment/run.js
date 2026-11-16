@@ -32,11 +32,14 @@ const ONLY = arg('only', 'E1,E2,E3,E4,E5,E6').split(',');
 const DELAY = parseMs(arg('delay', '1ms'));
 const JITTER = arg('jitter') == null ? DELAY * 0.2 : parseMs(arg('jitter'));
 const resume = process.argv.includes('--resume');
+// --tag e7: 결과를 results/raw/e7/ 에 따로 쓴다 (analyze.js 는 raw/ 바로 아래만 읽으므로 발표용 결과와 섞이지 않는다)
+const TAG = arg('tag', '');
 
 const HITS_E1 = [0, 0.5, 0.9, 0.99, 1];
 const HITS_E2 = [0, 0.5, 0.8, 0.9, 0.95, 0.99, 1];
 const HITS_E3 = [0, 0.5, 0.7, 0.9, 1];  // 손익분기가 있을 구간(50~90%)을 촘촘히
 const HITS_E6 = [0, 0.5, 0.9, 1];
+const HITS_E7 = [0, 0.5, 0.8, 0.9, 0.95, 0.99, 1]; // 손익분기가 90% 위에 있을 것으로 보고 위쪽을 촘촘히
 const LIGHT = ['mini', 'miniresp', 'redis']; // 가벼운 쿼리 실험의 캐시 3종 (통신 방식 비교)
 
 function grid(delay = 1) {
@@ -54,10 +57,15 @@ function grid(delay = 1) {
     sweep('E6', 'index', 1, HITS_E6, LIGHT);
     if (delay > 0) sweep('E6', 'index', 1, HITS_E6, LIGHT, { DELAY_MS: delay });
   }
+  // E7: E6 의 +1ms 에 DB 쪽에도 1ms 왕복을 넣는다 (캐시만 멀리 있는 불리한 조건 → 둘 다 멀리 있는 공정한 조건)
+  if (delay > 0 && ONLY.includes('E7')) {
+    c.push({ exp: 'E7', BACKEND: 'none', ORIGIN: 'index', MODE: 'hit', HIT: 0, VUS: 1 }); // 같은 시간대의 DB 지연 없는 기준
+    sweep('E7', 'index', 1, HITS_E7, LIGHT, { DELAY_MS: delay, DB_WAIT: 1 });
+  }
   return c;
 }
 
-const id = (c) => [c.exp, c.BACKEND, c.ORIGIN, c.MODE === 'hit' ? `h${c.HIT}` : `ycsb${c.WORKLOAD}`, `vu${c.VUS}`, ...(c.DELAY_MS ? [`d${c.DELAY_MS}ms`] : [])].join('_');
+const id = (c) => [c.exp, c.BACKEND, c.ORIGIN, c.MODE === 'hit' ? `h${c.HIT}` : `ycsb${c.WORKLOAD}`, `vu${c.VUS}`, ...(c.DELAY_MS ? [`d${c.DELAY_MS}ms`] : []), ...(c.DB_WAIT ? [`w${c.DB_WAIT}ms`] : [])].join('_');
 
 function shuffle(a, seed) {
   // 재현 가능한 섞기 (반복 번호가 씨앗)
@@ -96,9 +104,9 @@ async function environment() {
   };
 }
 
-mkdirSync(RAW, { recursive: true });
+mkdirSync(join(RAW, TAG), { recursive: true });
 // 서버가 꺼져 있으면 여기서 멈춘다. --resume 이고 이미 env.json 이 있으면 앞선 측정의 환경 정보를 지키기 위해 덮어쓰지 않는다
-const ENV_FILE = join(HERE, 'results', 'env.json');
+const ENV_FILE = TAG ? join(RAW, TAG, 'env.json') : join(HERE, 'results', 'env.json');
 if (!(resume && existsSync(ENV_FILE))) writeFileSync(ENV_FILE, JSON.stringify(await environment(), null, 2));
 
 // 지연 상태: 바뀔 때만 tc 를 부른다. 어떤 식으로 끝나든(완료 · Ctrl+C · 오류) 지연을 꺼 둔다
@@ -116,7 +124,7 @@ const t0 = Date.now();
 for (let rep = 1; rep <= REPS; rep++) {
   for (const c of shuffle([...conds], rep)) {
     n++;
-    const name = `${id(c)}_r${rep}.json`;
+    const name = `${TAG ? `${TAG}/` : ''}${id(c)}_r${rep}.json`;
     if (resume && existsSync(join(RAW, name))) continue;
     applyDelay(c.DELAY_MS ?? 0);
     const env = { ...c, DELAY_MS: c.DELAY_MS ?? 0, WARMUP: c.WARMUP ?? 3, DURATION, OUT: `/out/${name}` };

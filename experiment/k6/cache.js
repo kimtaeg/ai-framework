@@ -32,6 +32,7 @@ const hit = new Rate('hit');
 const reqs = new Counter('reqs');
 const errors = new Rate('errors');
 const DELAY_MS = Number(E.DELAY_MS || 0);
+const DB_WAIT = Number(E.DB_WAIT || 0); // E7: DB 까지 왕복이라고 치고 앱이 DB 조회 전에 기다리는 시간(ms)
 // CPU 누적값(µs)을 측정 시작(cpu0) · 끝(cpu1)에 한 번씩 적어 둔다
 const CPU_KEYS = ['appUs', 'miniUs', 'redisUs', 'at'];
 const cpuG = Object.fromEntries(['cpu0', 'cpu1'].map((s) => [s, Object.fromEntries(CPU_KEYS.map((k) => [k, new Gauge(`${s}_${k}`)]))]));
@@ -69,7 +70,7 @@ function scramble(rank) {
 }
 
 const rnd = (n) => 1 + Math.floor(Math.random() * n);
-const url = (id, extra = '') => `${BASE}/item/${id}?backend=${BACKEND}&origin=${ORIGIN}${extra}`;
+const url = (id, extra = '') => `${BASE}/item/${id}?backend=${BACKEND}&origin=${ORIGIN}${DB_WAIT ? `&dbwait=${DB_WAIT}` : ''}${extra}`;
 
 export function setup() {
   const r = http.post(`${BASE}/admin/reset`, null, { timeout: '60s' }); // 캐시 비우기 + DB 를 정확히 ROWS 건으로
@@ -125,7 +126,7 @@ export function handleSummary(data) {
   const cpu = { windowMs: d('at'), appUs: d('appUs'), miniUs: d('miniUs'), redisUs: d('redisUs') };
   Object.assign(cpu, { appMsPerReq: perReq(cpu.appUs), miniMsPerReq: perReq(cpu.miniUs), redisMsPerReq: perReq(cpu.redisUs) });
   const out = {
-    params: { BACKEND, ORIGIN, MODE, HIT: MODE === 'hit' ? HIT : null, WORKLOAD: MODE === 'ycsb' ? (E.WORKLOAD || 'C') : null, VUS, WARMUP, DURATION, ROWS, HOT, DELAY_MS },
+    params: { BACKEND, ORIGIN, MODE, HIT: MODE === 'hit' ? HIT : null, WORKLOAD: MODE === 'ycsb' ? (E.WORKLOAD || 'C') : null, VUS, WARMUP, DURATION, ROWS, HOT, DELAY_MS, DB_WAIT },
     cpu,
     rps: n / DURATION,
     lat: m('lat'), latRead: m('lat_read'), latHit: m('lat_hit'), latMiss: m('lat_miss'),

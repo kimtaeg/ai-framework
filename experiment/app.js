@@ -99,7 +99,9 @@ async function cpuSnapshot() {
 const sqlFor = (origin, id) =>
   origin === 'scan' ? `SELECT * FROM products WHERE name = '${CATS[id % 5]} ${id}'` : `SELECT * FROM products WHERE id = ${id}`;
 
-async function load(origin, id) {
+async function load(origin, id, wait = 0) {
+  // E7: DB 도 다른 서버에 있다고 치고 그 왕복만큼 기다린다 (CPU 는 쓰지 않음 · setTimeout 은 ms 단위라 정수만)
+  if (wait > 0) await new Promise((r) => setTimeout(r, wait));
   const r = await db.query(sqlFor(origin, id));
   return r.results[0].rows[0] ?? null;
 }
@@ -124,6 +126,7 @@ const server = createServer(async (req, res) => {
       if (!(backend in caches)) return send(res, 400, { error: 'BAD_BACKEND' });
       const cache = caches[backend];
       const key = `item:${origin}:${id}`;
+      const dbWait = Number(url.searchParams.get('dbwait') ?? 0);
 
       if (req.method === 'POST') {
         writes++;
@@ -133,7 +136,7 @@ const server = createServer(async (req, res) => {
       }
 
       if (!cache) {
-        const row = await load(origin, id);
+        const row = await load(origin, id, dbWait);
         return send(res, row ? 200 : 404, row ?? { error: 'NOT_FOUND' }, { 'X-Cache': 'BYPASS', 'X-Server-Ms': ms() });
       }
       const ckey = url.searchParams.has('v') ? `${key}:${url.searchParams.get('v')}` : key;
@@ -142,7 +145,7 @@ const server = createServer(async (req, res) => {
         const row = JSON.parse(cached);
         return send(res, row ? 200 : 404, row ?? { error: 'NOT_FOUND' }, { 'X-Cache': 'HIT', 'X-Server-Ms': ms() });
       }
-      const row = await load(origin, id);
+      const row = await load(origin, id, dbWait);
       await cache.set(ckey, JSON.stringify(row), { ttl: TTL });
       return send(res, row ? 200 : 404, row ?? { error: 'NOT_FOUND' }, { 'X-Cache': 'MISS', 'X-Server-Ms': ms() });
     }
