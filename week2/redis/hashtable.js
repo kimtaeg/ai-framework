@@ -44,6 +44,8 @@ export class HashTable {
   constructor(opts = {}) {
     const size = Math.max(MIN_SIZE, nextPow2(opts.initialSize ?? MIN_SIZE));
     const seed = (opts.seed ?? 0) | 0;
+    this.seed = seed;
+    this._customHash = typeof opts.hash === 'function';
     this.hash = opts.hash ?? (seed ? (s) => fnv1a(s, seed) : fnv1a);
     this.onEvent = opts.onEvent ?? null; // 시각화용: 'resize-start', 'move', 'resize-end'
     this.tables = [makeTable(size), null]; // [0] = 지금 테이블, [1] = 리해시 중일 때 새 테이블
@@ -66,8 +68,17 @@ export class HashTable {
   }
 
   // ---------------------------------------------------------------- 기본 연산
+  computeHash(key) {
+    return this._customHash ? this.hash(key) : fnv1a(key, this.seed);
+  }
+
   get(key) {
     const node = this.#find(key);
+    return node ? node.value : undefined;
+  }
+
+  getWithHash(key, h) {
+    const node = this.#find(key, true, h);
     return node ? node.value : undefined;
   }
 
@@ -78,13 +89,21 @@ export class HashTable {
   /** @returns {boolean} 새로 추가됐으면 true, 기존 값을 바꿨으면 false */
   set(key, value) {
     if (typeof key !== 'string') throw new TypeError('키는 문자열이어야 합니다.');
-    this.#rehashStep();
-    const h = this.hash(key); // 해시는 한 번만 계산해서 찾기와 넣기에 함께 쓴다 (키 길이만큼 드는 계산)
+    return this.setWithHash(key, value, this.computeHash(key));
+  }
+
+  setWithHash(key, value, h) {
+    if (this.rehashIdx !== -1) this.#rehashStep();
     const found = this.#find(key, false, h);
     if (found) {
       found.value = value;
       return false;
     }
+    return this.insertNewWithHash(key, value, h);
+  }
+
+  /** key 가 아직 없음을 호출자가 이미 확인한 경우(#find 생략) */
+  insertNewWithHash(key, value, h) {
     this.#maybeGrow();
     // 리해시 중이면 새 원소는 새 테이블에만 넣는다 (옛 테이블은 비워지는 중이니까)
     const t = this.tables[1] ?? this.tables[0];
@@ -97,10 +116,14 @@ export class HashTable {
 
   /** @returns {boolean} 지웠으면 true */
   delete(key) {
-    this.#rehashStep();
-    const h = this.hash(key);
-    for (const t of this.tables) {
-      if (!t) continue;
+    return this.deleteWithHash(key, this.computeHash(key));
+  }
+
+  deleteWithHash(key, h) {
+    if (this.rehashIdx !== -1) this.#rehashStep();
+    for (let ti = 0; ti < 2; ti++) {
+      const t = this.tables[ti];
+      if (!t || !t.used) continue;
       const i = h & t.mask;
       let prev = null;
       for (let n = t.buckets[i]; n; prev = n, n = n.next) {
@@ -108,6 +131,14 @@ export class HashTable {
         if (prev) prev.next = n.next;
         else t.buckets[i] = n.next;
         t.used--;
+        // 리해시 도중 옛 테이블의 마지막 원소가 지워졌으면 즉시 리해시를 마친다
+        if (ti === 0 && this.tables[1] && t.used === 0) {
+          const to = this.tables[1];
+          this.tables[0] = to;
+          this.tables[1] = null;
+          this.rehashIdx = -1;
+          this.onEvent?.({ type: 'resize-end', size: to.size });
+        }
         this.#maybeShrink();
         return true;
       }
@@ -136,7 +167,7 @@ export class HashTable {
   randomEntry(rand = Math.random) {
     if (this.size === 0) return null;
     // 리해시 중이면 두 테이블 중 하나를 원소 수에 비례해 고른다 (한쪽 테이블의 키만 뽑히지 않게)
-    const [a, b] = this.tables;
+    const a = this.tables[0], b = this.tables[1];
     const t = b && rand() * (a.used + b.used) >= a.used ? b : a.used ? a : b;
     // 먼저 무작위 버킷을 몇 번 찔러 본다 → 비어 있지 않은 버킷이 모두 같은 확률로 뽑힌다.
     // (한 곳에서 시작해 옆으로 훑기만 하면, 빈 버킷이 길게 이어진 바로 뒤의 버킷만 자주 뽑힌다)
@@ -228,10 +259,13 @@ export class HashTable {
   }
 
   // ---------------------------------------------------------------- 내부
-  #find(key, step = true, h = this.hash(key)) {
-    if (step) this.#rehashStep();
+  #find(key, step = true, h = undefined) {
+    if (step && this.rehashIdx !== -1) this.#rehashStep();
+    const a = this.tables[0];
+    const b = this.tables[1];
+    if (a.used === 0 && (!b || b.used === 0)) return null;
+    if (h === undefined) h = this.computeHash(key);
     // 리해시 중에는 두 테이블을 모두 보지만 해시는 한 번만 계산한다 (버킷 번호만 테이블마다 다르다)
-    const [a, b] = this.tables;
     if (a.used) for (let n = a.buckets[h & a.mask]; n; n = n.next) if (n.key === key) return n;
     if (b && b.used) for (let n = b.buckets[h & b.mask]; n; n = n.next) if (n.key === key) return n;
     return null;
@@ -258,8 +292,8 @@ export class HashTable {
 
   /** 버킷 STEP 개(빈 버킷은 EMPTY_VISITS 개까지)를 옛 테이블 → 새 테이블로 옮긴다 */
   #rehashStep(steps = STEP) {
-    if (!this.isRehashing) return;
-    const [from, to] = this.tables;
+    if (this.rehashIdx === -1) return;
+    const from = this.tables[0], to = this.tables[1];
     let emptyLeft = steps === Infinity ? Infinity : EMPTY_VISITS;
     while (steps > 0 && from.used > 0) {
       while (from.buckets[this.rehashIdx] === null) {
@@ -278,7 +312,7 @@ export class HashTable {
         n = next;
       }
       from.buckets[this.rehashIdx] = null;
-      this.onEvent?.({ type: 'move', bucket: this.rehashIdx });
+      if (this.onEvent) this.onEvent({ type: 'move', bucket: this.rehashIdx });
       this.rehashIdx++;
       steps--;
     }

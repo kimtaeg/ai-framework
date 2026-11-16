@@ -24,12 +24,15 @@ export const VOID_TAGS = new Set([
 /** attribute 가 아닌 DOM property 로 다뤄야 화면에 반영되는 상태값 */
 const BOOLEAN_PROPS = new Set(['checked', 'selected', 'disabled', 'multiple', 'readOnly', 'hidden']);
 
+const EMPTY_PROPS = Object.freeze({});
+export const hasOwn = Object.prototype.hasOwnProperty;
+
 // ------------------------------------------------------------------
 // VNode 생성
 // ------------------------------------------------------------------
 
 export function createText(text) {
-  return { type: TEXT, props: {}, key: null, children: [], text: String(text) };
+  return { type: TEXT, props: EMPTY_PROPS, key: null, children: [], text: typeof text === 'string' ? text : String(text) };
 }
 
 /**
@@ -40,10 +43,33 @@ export function createText(text) {
  * - props.key 는 VNode.key 로 분리 (DOM 속성으로 렌더하지 않음)
  */
 export function h(type, props, ...children) {
-  const p = props ? { ...props } : {};
-  const key = p.key ?? null;
-  delete p.key;
-  for (const c of children) if (Array.isArray(c)) checkListKeys(c, type);
+  let key = null;
+  let p;
+  if (!props) {
+    p = EMPTY_PROPS;
+  } else if (hasOwn.call(props, 'key')) {
+    key = props.key ?? null;
+    p = {};
+    for (const k in props) {
+      if (k !== 'key' && hasOwn.call(props, k)) p[k] = props[k];
+    }
+  } else {
+    p = { ...props };
+  }
+  const n = children.length;
+  if (n === 0) return { type, props: p, key, children: [] };
+  if (n === 1) {
+    const c0 = children[0];
+    if (Array.isArray(c0)) {
+      if (devConfig.warnings) checkListKeys(c0, type);
+      return { type, props: p, key, children: normalizeChildren(c0) };
+    }
+    if (c0 == null || typeof c0 === 'boolean') return { type, props: p, key, children: [] };
+    return { type, props: p, key, children: [typeof c0 === 'object' ? c0 : createText(c0)] };
+  }
+  if (devConfig.warnings) {
+    for (let i = 0; i < n; i++) if (Array.isArray(children[i])) checkListKeys(children[i], type);
+  }
   return { type, props: p, key, children: normalizeChildren(children) };
 }
 
@@ -54,7 +80,8 @@ function checkListKeys(list, parentType) {
   let missing = 0;
   let seen = null;
   let dup = null;
-  for (const c of list) {
+  for (let i = 0; i < list.length; i++) {
+    const c = list[i];
     if (c && typeof c === 'object' && !Array.isArray(c) && c.type !== TEXT) {
       elements++;
       if (c.key == null) missing++;
@@ -71,7 +98,8 @@ function checkListKeys(list, parentType) {
 }
 
 export function normalizeChildren(children, out = []) {
-  for (const c of children) {
+  for (let i = 0; i < children.length; i++) {
+    const c = children[i];
     if (Array.isArray(c)) normalizeChildren(c, out);
     else if (c == null || typeof c === 'boolean') continue;
     else if (typeof c === 'object') out.push(c);
@@ -192,16 +220,21 @@ export function createElement(vnode, parentNs = null) {
   if (vnode.key != null) el.__mrKey = vnode.key; // 포커스가 있는 줄을 diff 에 알려 주기 위해 (focusedKeys)
 
   // <select value> 는 <option> 이 붙은 뒤에 설정해야 반영된다.
-  const deferValue = vnode.type === 'select' && 'value' in vnode.props;
-  for (const [name, value] of Object.entries(vnode.props)) {
-    if (deferValue && name === 'value') continue;
-    setProp(el, name, value, undefined);
+  const props = vnode.props;
+  const deferValue = vnode.type === 'select' && hasOwn.call(props, 'value');
+  if (props !== EMPTY_PROPS) {
+    for (const name in props) {
+      if (!hasOwn.call(props, name)) continue;
+      if (deferValue && name === 'value') continue;
+      setProp(el, name, props[name], undefined);
+    }
   }
 
   const childNs = ns && vnode.type !== 'foreignObject' ? ns : null;
   const target = vnode.type === 'template' && el.content ? el.content : el;
-  for (const child of vnode.children) target.appendChild(createElement(child, childNs));
-  if (deferValue) setProp(el, 'value', vnode.props.value, undefined);
+  const ch = vnode.children;
+  for (let i = 0; i < ch.length; i++) target.appendChild(createElement(ch[i], childNs));
+  if (deferValue) setProp(el, 'value', props.value, undefined);
   return el;
 }
 
@@ -233,7 +266,10 @@ export function childNamespace(parentEl) {
 // ------------------------------------------------------------------
 
 export function isEventProp(name, value, oldValue) {
-  return /^on[A-Za-z]/.test(name) && (typeof value === 'function' || typeof oldValue === 'function');
+  if (typeof value !== 'function' && typeof oldValue !== 'function') return false;
+  if (name.length <= 2 || name.charCodeAt(0) !== 111 || name.charCodeAt(1) !== 110) return false;
+  const c2 = name.charCodeAt(2);
+  return (c2 >= 65 && c2 <= 90) || (c2 >= 97 && c2 <= 122);
 }
 
 /**
@@ -339,12 +375,16 @@ function setStyle(el, value, oldValue) {
     return;
   }
   if (typeof oldValue === 'string') el.removeAttribute('style');
-  const prev = oldValue && typeof oldValue === 'object' ? oldValue : {};
-  for (const k of Object.keys(prev)) {
-    if (!(k in value)) setStyleKey(el.style, k, '');
+  const prev = oldValue && typeof oldValue === 'object' ? oldValue : null;
+  if (prev) {
+    for (const k in prev) {
+      if (hasOwn.call(prev, k) && !hasOwn.call(value, k)) setStyleKey(el.style, k, '');
+    }
   }
-  for (const [k, v] of Object.entries(value)) {
-    if (prev[k] !== v) setStyleKey(el.style, k, v == null ? '' : String(v));
+  for (const k in value) {
+    if (!hasOwn.call(value, k)) continue;
+    const v = value[k];
+    if (!prev || prev[k] !== v) setStyleKey(el.style, k, v == null ? '' : String(v));
   }
 }
 

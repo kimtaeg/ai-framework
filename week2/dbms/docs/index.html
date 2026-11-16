@@ -102,7 +102,7 @@
 
         <section class="card" id="p3">
           <h2>5. Phase 3 · API 서버와 동시성</h2>
-          <p>메인 스레드가 요청을 받아 SQL 을 먼저 파싱해서(문법 오류는 바로 400) 읽는 테이블과 쓰는 테이블을 알아내고, 테이블별 <b>읽기/쓰기 락</b>을 이름 순서로 잡은 뒤 스레드 풀의 쉬는 워커에 맡깁니다.</p>
+          <p>메인 스레드가 요청을 받습니다. 쓰기 요청은 SQL 을 먼저 파싱해서 쓰는 테이블을 알아내고, 테이블별 <b>쓰기 락</b>을 이름 순서로 잡은 뒤 스레드 풀의 쉬는 워커에 맡깁니다. 조회는 기본으로 락이 필요 없어서 파싱하지 않고 바로 워커에 맡깁니다. 문법 오류는 어느 쪽에서 찾든 400 으로 응답합니다.</p>
           <div class="flow"><span>요청</span><i>→</i><span>파싱</span><i>→</i><span>락</span><i>→</i><span>워커</span><i>→</i><span>인덱스 알림</span><i>→</i><span>락 해제</span></div>
           <ul>
             <li>조회끼리는 병렬, INSERT 는 혼자 → id 중복 · 줄 섞임 · 반쯤 쓴 데이터 읽기 방지</li>
@@ -118,10 +118,15 @@ node week2/dbms/cli.js exec "SELECT * FROM users WHERE id = 1"
 node week2/dbms/cli.js seed users 1000000
 node week2/dbms/cli.js info
 npm run bench:dbms      # 100만 건 비교 (임시 폴더)
-npm run dbms            # API 서버 (포트 7000, /sql)</code></pre>
+npm run dbms            # API 서버 (포트 7000, /sql)
+# 서버 옵션 (node week2/dbms/server.js 뒤에 붙인다)
+#   --lock-reads       조회도 읽기 락을 잡는다 (기본: 조회는 락 없이 확정된 곳까지만 읽음)
+#   --no-auto-index    id 가 아닌 열의 = 조건을 항상 선형 탐색으로 (기본: 처음 조회할 때 해시 인덱스를 만듦)
+#   --no-delay         요청의 delayMs(느린 쿼리 흉내)를 무시한다 — 밖에 여는 서버에서는 켠다
+#   --max-pending N    끝나지 않은 요청이 N개(기본 10000)를 넘으면 새 요청을 503 으로 거절</code></pre>
           <table>
             <tr><th>메서드</th><th>주소</th><th>본문</th><th>응답</th></tr>
-            <tr><td>POST</td><td><code>/api/sql</code></td><td>{ sql, delayMs? }</td><td>{ results, workerId, lockMs, waitedMs, execMs } · 400</td></tr>
+            <tr><td>POST</td><td><code>/api/sql</code></td><td>{ sql, delayMs? }</td><td>{ results, workerId, lockMs, waitedMs, execMs } · 400 SQL 오류 · 503 서버가 바쁨</td></tr>
             <tr><td>GET</td><td><code>/api/sql/status</code></td><td>—</td><td>워커 · 대기열 · 락 상태</td></tr>
             <tr><td>GET</td><td><code>/api/sql/tables</code></td><td>—</td><td>테이블별 행 수, B+ 트리 높이</td></tr>
           </table>

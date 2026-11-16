@@ -5,7 +5,7 @@
  *
  * 지원 문법
  *   INSERT INTO 테이블 [(열, ...)] VALUES (값, ...) [, (값, ...)] ;
- *   SELECT * | 열, ... FROM 테이블 [WHERE 조건 [AND 조건 ...]] [LIMIT n] ;
+ *   SELECT * | 열, ... FROM 테이블 [WHERE 조건 [AND 조건 ...]] [LIMIT n | LIMIT ?] ;
  *     조건: 열 (= | != | <> | < | <= | > | >=) 값     |   열 BETWEEN 값 AND 값
  *   값: 정수, 실수, '문자열' (작은따옴표 두 개 '' 는 따옴표 하나), NULL, ? (자리표시자 — 값은 params 로 따로 준다)
  *       ? 를 쓰면 값이 SQL 문자열에 섞이지 않는다 → 값 안의 따옴표로 문장을 바꾸는 SQL 인젝션이 통하지 않는다
@@ -24,73 +24,158 @@ export class SqlError extends Error {
 }
 
 export const KEYWORDS = new Set(['INSERT', 'INTO', 'VALUES', 'SELECT', 'FROM', 'WHERE', 'AND', 'LIMIT', 'NULL', 'BETWEEN']);
-const SYMBOLS = ['<=', '>=', '!=', '<>', '(', ')', ',', ';', '*', '=', '<', '>', '-', '?'];
+const WS_RE = /\s+/y;
+const NUM_RE = /\d*\.?\d+(?:[eE][+-]?\d+)?/y;
+const BAD_NUM_RE = /[\w.]+/y;
+const IDENT_RE = /[A-Za-z_][A-Za-z0-9_]*/y;
+const SINGLE_SYMBOLS = new Set(['(', ')', ',', ';', '*', '=', '-', '?']);
+const COMPARE_OPS = new Set(['=', '!=', '<>', '<', '<=', '>', '>=']);
 
 /**
  * @returns {Array<{ type: 'keyword'|'ident'|'number'|'string'|'symbol'|'eof', value: string, pos: {line, col, offset} }>}
  */
 export function tokenize(src) {
   const tokens = [];
+  const len = src.length;
   let i = 0, line = 1, col = 1;
-  const pos = () => ({ line, col, offset: i });
+
   const advance = (n = 1) => {
     for (let k = 0; k < n; k++) {
       if (src[i] === '\n') { line++; col = 1; } else col++;
       i++;
     }
   };
-  while (i < src.length) {
-    const c = src[i];
-    if (/\s/.test(c)) { advance(); continue; }
-    if (c === '-' && src[i + 1] === '-') { while (i < src.length && src[i] !== '\n') advance(); continue; }
-    if (c === '/' && src[i + 1] === '*') {
-      const start = pos();
-      advance(2);
-      while (i < src.length && !(src[i] === '*' && src[i + 1] === '/')) advance();
-      if (i >= src.length) throw new SqlError('주석(/* */)이 닫히지 않았습니다.', start);
-      advance(2);
+  // 다음 줄바꿈 위치를 기억해 둔다. 매번 indexOf('\n') 로 찾으면 줄바꿈 없는 긴 SQL(대량 INSERT)에서
+  // 토큰마다 SQL 끝까지 훑게 되어 길이의 제곱으로 느려진다 (1000행 INSERT 파싱이 약 2.6배 느렸다)
+  let nextNl = src.indexOf('\n');
+  const advanceRange = (from, to) => {
+    if (nextNl !== -1 && nextNl < from) nextNl = src.indexOf('\n', from); // advance() 가 줄바꿈을 지나간 뒤
+    let cur = from;
+    while (nextNl !== -1 && nextNl < to) {
+      line++;
+      col = 1;
+      cur = nextNl + 1;
+      nextNl = src.indexOf('\n', cur);
+    }
+    col += to - cur;
+  };
+
+  while (i < len) {
+    const code = src.charCodeAt(i);
+    if (code === 32 || (code >= 9 && code <= 13) || code === 160) {
+      WS_RE.lastIndex = i;
+      const m = WS_RE.exec(src);
+      const end = WS_RE.lastIndex;
+      advanceRange(i, end);
+      i = end;
       continue;
     }
-    const p = pos();
-    if (c === "'") {
-      advance();
-      let s = '';
-      for (;;) {
-        if (i >= src.length) throw new SqlError('문자열의 따옴표가 닫히지 않았습니다.', p);
-        if (src[i] === "'") {
-          if (src[i + 1] === "'") { s += "'"; advance(2); continue; }
-          advance();
-          break;
-        }
-        s += src[i];
+    if (code === 45 && src.charCodeAt(i + 1) === 45) { // --
+      const nl = src.indexOf('\n', i + 2);
+      if (nl === -1) { col += len - i; i = len; break; }
+      line++;
+      col = 1;
+      i = nl + 1;
+      continue;
+    }
+    if (code === 47 && src.charCodeAt(i + 1) === 42) { // /*
+      const start = { line, col, offset: i };
+      const end = src.indexOf('*/', i + 2);
+      if (end === -1) throw new SqlError('주석(/* */)이 닫히지 않았습니다.', start);
+      advanceRange(i, end + 2);
+      i = end + 2;
+      continue;
+    }
+    const p = { line, col, offset: i };
+    if (code === 39) { // '
+      const next = src.indexOf("'", i + 1);
+      if (next === -1) throw new SqlError('문자열의 따옴표가 닫히지 않았습니다.', p);
+      let val;
+      if (src.charCodeAt(next + 1) !== 39) {
+        val = src.slice(i + 1, next);
+        advanceRange(i, next + 1);
+        i = next + 1;
+      } else {
         advance();
+        let s = '';
+        for (;;) {
+          if (i >= src.length) throw new SqlError('문자열의 따옴표가 닫히지 않았습니다.', p);
+          if (src[i] === "'") {
+            if (src[i + 1] === "'") { s += "'"; advance(2); continue; }
+            advance();
+            break;
+          }
+          s += src[i];
+          advance();
+        }
+        val = s;
       }
-      tokens.push({ type: 'string', value: s, pos: p });
+      tokens.push({ type: 'string', value: val, pos: p });
       continue;
     }
-    if (/[0-9]/.test(c) || (c === '.' && /[0-9]/.test(src[i + 1] ?? ''))) {
-      const m = src.slice(i).match(/^\d*\.?\d+(?:[eE][+-]?\d+)?/);
-      if (/[A-Za-z_]/.test(src[i + m[0].length] ?? '')) throw new SqlError(`잘못된 숫자 '${src.slice(i).match(/^[\w.]+/)[0]}'`, p);
-      tokens.push({ type: 'number', value: m[0], pos: p });
-      advance(m[0].length);
+    if ((code >= 48 && code <= 57) || (code === 46 && src.charCodeAt(i + 1) >= 48 && src.charCodeAt(i + 1) <= 57)) {
+      NUM_RE.lastIndex = i;
+      const m = NUM_RE.exec(src);
+      const numEnd = NUM_RE.lastIndex;
+      const nextCode = src.charCodeAt(numEnd);
+      if ((nextCode >= 65 && nextCode <= 90) || (nextCode >= 97 && nextCode <= 122) || nextCode === 95) {
+        BAD_NUM_RE.lastIndex = i;
+        throw new SqlError(`잘못된 숫자 '${BAD_NUM_RE.exec(src)[0]}'`, p);
+      }
+      const val = m[0];
+      tokens.push({ type: 'number', value: val, pos: p });
+      i = numEnd;
+      col += val.length;
       continue;
     }
-    if (/[A-Za-z_]/.test(c)) {
-      const m = src.slice(i).match(/^[A-Za-z_][A-Za-z0-9_]*/);
-      const up = m[0].toUpperCase();
-      tokens.push(KEYWORDS.has(up) ? { type: 'keyword', value: up, pos: p } : { type: 'ident', value: m[0], pos: p });
-      advance(m[0].length);
+    if ((code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 95) {
+      IDENT_RE.lastIndex = i;
+      const m = IDENT_RE.exec(src);
+      const val = m[0];
+      const up = val.toUpperCase();
+      tokens.push(KEYWORDS.has(up) ? { type: 'keyword', value: up, pos: p } : { type: 'ident', value: val, pos: p });
+      i = IDENT_RE.lastIndex;
+      col += val.length;
       continue;
     }
-    const sym = SYMBOLS.find((s) => src.startsWith(s, i));
-    if (sym) {
+    const c = src[i];
+    if (c === '<') {
+      const nc = src.charCodeAt(i + 1);
+      const sym = nc === 61 ? '<=' : nc === 62 ? '<>' : '<';
       tokens.push({ type: 'symbol', value: sym, pos: p });
-      advance(sym.length);
+      i += sym.length;
+      col += sym.length;
+      continue;
+    }
+    if (c === '>') {
+      const sym = src.charCodeAt(i + 1) === 61 ? '>=' : '>';
+      tokens.push({ type: 'symbol', value: sym, pos: p });
+      i += sym.length;
+      col += sym.length;
+      continue;
+    }
+    if (c === '!' && src.charCodeAt(i + 1) === 61) {
+      tokens.push({ type: 'symbol', value: '!=', pos: p });
+      i += 2;
+      col += 2;
+      continue;
+    }
+    if (SINGLE_SYMBOLS.has(c)) {
+      tokens.push({ type: 'symbol', value: c, pos: p });
+      i++;
+      col++;
+      continue;
+    }
+    if (/\s/.test(c)) {
+      WS_RE.lastIndex = i;
+      const end = WS_RE.exec(src) ? WS_RE.lastIndex : i + 1;
+      advanceRange(i, end);
+      i = end;
       continue;
     }
     throw new SqlError(`알 수 없는 문자 '${c}'`, p);
   }
-  tokens.push({ type: 'eof', value: '', pos: pos() });
+  tokens.push({ type: 'eof', value: '', pos: { line, col, offset: i } });
   return tokens;
 }
 
@@ -149,8 +234,11 @@ export function parse(src, params = null) {
       columns = [ident('열 이름')];
       while (is('symbol', ',')) { next(); columns.push(ident('열 이름')); }
       expect('symbol', ')');
-      const dup = columns.find((c, i) => columns.indexOf(c) !== i);
-      if (dup) throw new SqlError(`열 '${dup}' 이(가) 두 번 나왔습니다.`, start);
+      for (let a = 0; a < columns.length; a++) {
+        for (let b = a + 1; b < columns.length; b++) {
+          if (columns[a] === columns[b]) throw new SqlError(`열 '${columns[b]}' 이(가) 두 번 나왔습니다.`, start);
+        }
+      }
     }
     expect('keyword', 'VALUES');
     const rows = [];
@@ -167,19 +255,20 @@ export function parse(src, params = null) {
     return { type: 'insert', table, columns, rows, pos: start };
   }
 
-  function condition() {
+  function parseCondition(out) {
     const column = ident('열 이름');
     if (is('keyword', 'BETWEEN')) {
       next();
       const lo = value();
       expect('keyword', 'AND');
       const hi = value();
-      return [{ column, op: '>=', value: lo }, { column, op: '<=', value: hi }];
+      out.push({ column, op: '>=', value: lo }, { column, op: '<=', value: hi });
+      return;
     }
     const t = peek();
-    if (t.type !== 'symbol' || !['=', '!=', '<>', '<', '<=', '>', '>='].includes(t.value)) throw new SqlError(`비교 연산자(=, !=, <, <=, >, >=)가 필요한데 ${desc(t)} 이(가) 있습니다.`, t.pos);
+    if (t.type !== 'symbol' || !COMPARE_OPS.has(t.value)) throw new SqlError(`비교 연산자(=, !=, <, <=, >, >=)가 필요한데 ${desc(t)} 이(가) 있습니다.`, t.pos);
     next();
-    return [{ column, op: t.value === '<>' ? '!=' : t.value, value: value() }];
+    out.push({ column, op: t.value === '<>' ? '!=' : t.value, value: value() });
   }
 
   function select(start) {
@@ -194,14 +283,19 @@ export function parse(src, params = null) {
     const where = [];
     if (is('keyword', 'WHERE')) {
       next();
-      where.push(...condition());
-      while (is('keyword', 'AND')) { next(); where.push(...condition()); }
+      parseCondition(where);
+      while (is('keyword', 'AND')) { next(); parseCondition(where); }
     }
     let limit = null;
     if (is('keyword', 'LIMIT')) {
       next();
-      const t = expect('number', undefined, 'LIMIT 개수');
-      limit = Number(t.value);
+      const t = peek();
+      if (is('symbol', '?')) {
+        next();
+        const v = bind(t.pos); // LIMIT ? 도 다른 값 자리처럼 params 에서
+        if (v.kind !== 'number') throw new SqlError('LIMIT 은 0 이상의 정수여야 합니다.', t.pos);
+        limit = v.value;
+      } else limit = Number(expect('number', undefined, 'LIMIT 개수').value);
       if (!Number.isInteger(limit) || limit < 0) throw new SqlError('LIMIT 은 0 이상의 정수여야 합니다.', t.pos);
     }
     return { type: 'select', table, columns, where, limit, pos: start };

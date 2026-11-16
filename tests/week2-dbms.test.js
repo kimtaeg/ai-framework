@@ -346,13 +346,70 @@ describe('CLI', () => {
 
 // ================================================================ 성능
 describe('성능 비교 (작은 규모)', () => {
-  test('3만 건: id 로 찾기(B+ 트리)가 선형 탐색보다 훨씬 빠르다', () => {
+  // 선형 탐색이 빨라져서 3만 건에서는 20배 기준이 아슬아슬하다(18 ~ 30배) → 같은 기준을 10만 건에서 잰다
+  test('10만 건: id 로 찾기(B+ 트리)가 선형 탐색보다 훨씬 빠르다', () => {
     const dir = tmp();
     try {
-      const r = runBench({ rows: 30_000, queries: 100, scans: 3, dir, log: () => {} });
+      const r = runBench({ rows: 100_000, queries: 100, scans: 3, dir, log: () => {} });
       assert.equal(r.found, true);
       assert.ok(r.speedup > 20, `${r.speedup.toFixed(1)}배`);
       assert.equal(r.rangeRows, 1000);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('최적화 및 정합성 회귀 검증', () => {
+  test('BPlusTree.buildFromSorted 는 다양한 차수 · 크기에서 check() 불변식과 분할 0회를 만족한다', () => {
+    for (const order of [3, 4, 5, 32, 64]) {
+      for (const n of [0, 1, 2, 3, 5, 63, 64, 65, 95, 500]) {
+        const keys = Array.from({ length: n }, (_, i) => (i + 1) * 3);
+        const vals = keys.map((k) => k * 10);
+        const tree = BPlusTree.buildFromSorted(keys, vals, order);
+        assert.equal(tree.check(), true, `order=${order}, n=${n}`);
+        assert.equal(tree.stats.splits, 0);
+        assert.equal(tree.size, n);
+        if (n > 0) {
+          assert.equal(tree.get(keys[0]), vals[0]);
+          assert.equal(tree.get(keys[Math.floor(n / 2)]), vals[Math.floor(n / 2)]);
+          assert.equal(tree.get(keys[n - 1]), vals[n - 1]);
+          assert.equal(tree.get(-999), undefined);
+          assert.deepEqual([...tree.range(keys[0], keys[Math.min(n - 1, 9)])].map(([k]) => k), keys.slice(0, 10));
+        }
+      }
+    }
+  });
+
+  test('커버링 인덱스(SELECT id)는 저장소 read 없이 결과를 반환하고, id = 5 AND id > 10 모순은 빈 결과를 반환한다', () => {
+    const db = memDb(16);
+    seedRows(db, 'users', 200);
+    const readsBefore = db.storage.reads;
+    const p1 = db.execute('SELECT id FROM users WHERE id = 150')[0];
+    assert.deepEqual(p1.rows, [[150]]);
+    assert.equal(p1.plan.scanned, 1);
+    const p2 = db.execute('SELECT id FROM users WHERE id BETWEEN 100 AND 109')[0];
+    assert.equal(p2.rows.length, 10);
+    assert.equal(p2.plan.scanned, 10);
+    assert.equal(db.storage.reads - readsBefore, 0, 'id 열만 필요하므로 저장소 read() 를 호출하지 않음');
+    const empty = db.execute('SELECT * FROM users WHERE id = 5 AND id > 10')[0];
+    assert.deepEqual(empty.rows, []);
+    assert.equal(empty.plan.empty, true);
+  });
+
+  test('FileStorage.read() 는 디스크 영역 · 쓰기 버퍼 영역 모두 조기 flush 없이 정확히 읽는다', () => {
+    const dir = tmp();
+    try {
+      const st = new FileStorage(dir);
+      const loc0 = st.append('users', encodeRow([1, 'disk', 20, 'disk@x']));
+      st.flush();
+      const loc1 = st.append('users', encodeRow([2, 'buf', 21, 'buf@x']));
+      assert.ok(st.files.users.bufferBytes > 0, '버퍼에 데이터가 남아 있음');
+      assert.equal(st.read('users', loc0), '1,disk,20,disk@x');
+      assert.ok(st.files.users.bufferBytes > 0, '앞쪽 오프셋을 읽어도 쓰기 버퍼를 강제 flush 하지 않는다');
+      assert.equal(st.read('users', loc1), '2,buf,21,buf@x');
+      assert.ok(st.files.users.bufferBytes > 0, '버퍼 안의 오프셋도 디스크 flush 없이 메모리에서 읽는다');
+      st.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

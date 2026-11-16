@@ -15,7 +15,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Database, formatResult } from './engine.js';
-import { FileStorage } from './storage-file.js';
+import { FileStorage, lockDataDir } from './storage-file.js';
 import { seedRows } from './seed.js';
 
 export function runCli(argv, { out = (s) => process.stdout.write(s + '\n'), err = (s) => process.stderr.write(s + '\n') } = {}) {
@@ -41,9 +41,21 @@ export function runCli(argv, { out = (s) => process.stdout.write(s + '\n'), err 
     out(usage);
     return cmd ? 0 : 1;
   }
-  let storage;
+  let storage, unlock = null;
   try {
-    storage = new FileStorage(dataDir);
+    // 폴더 락을 잡아 본다. 다른 프로그램(API 서버)이 쓰고 있으면:
+    //   - 읽기만 하는 명령은 그대로 실행한다 (조회는 된다. 다만 그쪽이 쓰는 중일 수 있으니 파일 끝 정리는 하지 않는다)
+    //   - 쓰는 명령(seed, INSERT 가 든 SQL)은 실행하지 않고 이유를 알려 준다
+    let busy = null;
+    try {
+      unlock = lockDataDir(dataDir, 'CLI');
+    } catch (e) {
+      if (e.code !== 'DATA_DIR_LOCKED') throw e;
+      busy = e;
+    }
+    const lockForWrite = () => { if (busy) throw busy; };
+    if (cmd === 'seed') lockForWrite();
+    storage = new FileStorage(dataDir, { repair: !busy });
     const db = new Database(storage);
     if (cmd === 'info') {
       out(json ? JSON.stringify(db.info()) : Object.entries(db.info()).map(([t, i]) => `${t}: ${i.rows.toLocaleString()}행, 다음 id ${i.nextId}, B+ 트리 높이 ${i.height}`).join('\n'));
@@ -67,6 +79,7 @@ export function runCli(argv, { out = (s) => process.stdout.write(s + '\n'), err 
       sql = rest.join(' ');
       if (!sql.trim()) throw new Error('실행할 SQL 을 넣으세요.');
     } else throw new Error(`알 수 없는 명령 '${cmd}'\n${usage}`);
+    if (Database.analyze(sql).writes.length) lockForWrite();
     const results = db.execute(sql);
     if (json) out(JSON.stringify(results.map(({ entries, ...r }) => r)));
     else for (const r of results) out(formatResult(r));
@@ -76,6 +89,7 @@ export function runCli(argv, { out = (s) => process.stdout.write(s + '\n'), err 
     return 1;
   } finally {
     storage?.close();
+    unlock?.();
   }
 }
 

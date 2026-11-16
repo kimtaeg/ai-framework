@@ -26,7 +26,8 @@ export function startRedisServer({ port = 6380, host = '127.0.0.1', aofPath = nu
   let client = null;
   const products = createProductApi({ prefix: '/demo', latencyMs, cache: () => client });
   const server = createServer(async (req, res) => {
-    if (await products(req, res)) return;
+    // /demo 로 시작하지 않는 요청(레디스 API 의 대부분)은 데모 처리기를 거치지 않는다 (요청마다 주소를 한 번 더 해석하지 않게)
+    if (req.url.startsWith('/demo') && (await products(req, res))) return;
     await api(req, res);
   });
   return new Promise((ok) => {

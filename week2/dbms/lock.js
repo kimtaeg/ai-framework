@@ -8,16 +8,24 @@
  *  - 락 이름은 key 함수로 하나로 맞춘다: SQL 에 USERS / users 로 적혀도 같은 테이블이면 같은 락
  *    (이름을 적힌 그대로 쓰면 한 테이블에 쓰기 락이 두 개 생겨서 INSERT 가 겹친다)
  */
+const NOOP_RELEASE = () => {};
+
 export class RWLock {
   constructor(name = '') {
     this.name = name;
     this.readers = 0;
     this.writer = false;
     this.queue = []; // { mode, resolve }
+    this.queueHead = 0;
   }
 
   /** @returns {Promise<() => void>} 해제 함수 */
   acquire(mode) {
+    if (this.queueHead >= this.queue.length && !this.writer && (mode === 'read' || this.readers === 0)) {
+      if (mode === 'write') this.writer = true;
+      else this.readers++;
+      return Promise.resolve(this.#release(mode));
+    }
     return new Promise((resolve) => {
       this.queue.push({ mode, resolve });
       this.#drain();
@@ -25,19 +33,31 @@ export class RWLock {
   }
 
   #drain() {
-    while (this.queue.length) {
-      const head = this.queue[0];
+    while (this.queueHead < this.queue.length) {
+      const head = this.queue[this.queueHead];
       if (head.mode === 'write') {
         if (this.writer || this.readers > 0) return;
         this.writer = true;
-        this.queue.shift();
+        this.queueHead++;
+        this.#compact();
         head.resolve(this.#release('write'));
         return;
       }
       if (this.writer) return; // 읽기는 쓰는 중이 아닐 때만, 그리고 앞에 기다리는 쓰기가 없을 때만 (queue 순서)
       this.readers++;
-      this.queue.shift();
+      this.queueHead++;
       head.resolve(this.#release('read'));
+    }
+    this.#compact();
+  }
+
+  #compact() {
+    if (this.queueHead >= this.queue.length) {
+      this.queue.length = 0;
+      this.queueHead = 0;
+    } else if (this.queueHead >= 32 && this.queueHead * 2 >= this.queue.length) {
+      this.queue = this.queue.slice(this.queueHead);
+      this.queueHead = 0;
     }
   }
 
@@ -53,7 +73,7 @@ export class RWLock {
   }
 
   state() {
-    return { readers: this.readers, writer: this.writer, waiting: this.queue.length };
+    return { readers: this.readers, writer: this.writer, waiting: this.queue.length - this.queueHead };
   }
 }
 
@@ -70,22 +90,34 @@ export class LockManager {
   }
 
   #lock(name) {
-    if (!this.locks.has(name)) this.locks.set(name, new RWLock(name));
-    return this.locks.get(name);
+    let l = this.locks.get(name);
+    if (!l) this.locks.set(name, (l = new RWLock(name)));
+    return l;
   }
 
   /**
    * @param {{ read?: string[], write?: string[] }} want
    * @returns {Promise<() => void>} 전부 해제하는 함수
    */
-  async acquire({ read = [], write = [] }) {
+  acquire({ read = [], write = [] }) {
+    const needRead = this.readLocks && read.length > 0;
+    const needWrite = write.length > 0;
+    if (!needRead && !needWrite) return Promise.resolve(NOOP_RELEASE);
+    if (!needRead && write.length === 1) return this.#lock(this.key(write[0])).acquire('write');
+    if (needRead && read.length === 1 && !needWrite) return this.#lock(this.key(read[0])).acquire('read');
+    return this.#acquireMany(read, write, needRead);
+  }
+
+  async #acquireMany(read, write, needRead) {
     const modes = new Map();
-    if (this.readLocks) for (const t of read) modes.set(this.key(t), 'read');
+    if (needRead) for (const t of read) modes.set(this.key(t), 'read');
     for (const t of write) modes.set(this.key(t), 'write'); // 같은 테이블을 읽고 쓰면 쓰기 락
     const order = [...modes.keys()].sort();
     const releases = [];
     for (const t of order) releases.push(await this.#lock(t).acquire(modes.get(t)));
-    return () => releases.reverse().forEach((r) => r());
+    return () => {
+      for (let i = releases.length - 1; i >= 0; i--) releases[i]();
+    };
   }
 
   state() {

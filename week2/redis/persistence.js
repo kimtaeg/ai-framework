@@ -20,7 +20,7 @@
  *
  *  복원: 파일을 1MB 씩 읽어 줄 단위로 다시 실행한다 (파일 전체를 문자열 하나로 올리지 않음 → 큰 AOF 도 읽을 수 있다)
  */
-import { openSync, writeSync, fsyncSync, closeSync, readSync, existsSync, mkdirSync, renameSync, statSync, writeFileSync } from 'node:fs';
+import { openSync, writeSync, fsyncSync, closeSync, readSync, existsSync, mkdirSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { StringDecoder } from 'node:string_decoder';
 import { MiniRedis } from './miniredis.js';
@@ -80,7 +80,7 @@ export class AofFile {
     const line = JSON.stringify(args) + '\n';
     this.writes++;
     this.grown += Buffer.byteLength(line);
-    if (this.rewriting) this.rewriting.tail += line; // 재작성 중에 들어온 명령은 새 파일 끝에도 붙여야 한다
+    if (this.rewriting) this.rewriting.tail.push(line); // 재작성 중에 들어온 명령은 새 파일 끝에도 붙여야 한다
     if (this.policy === 'always') {
       writeSync(this.fd, line);
       fsyncSync(this.fd);
@@ -110,7 +110,7 @@ export class AofFile {
     if (this.rewriting || this.fd === null) return false;
     this.flush();
     const tmp = `${this.path}.tmp`;
-    this.rewriting = { fd: openSync(tmp, 'w'), tmp, cursor: 0, next, tail: '', bytes: 0, immediate: null };
+    this.rewriting = { fd: openSync(tmp, 'w'), tmp, cursor: 0, next, tail: [], bytes: 0, immediate: null };
     this.#rewriteLater();
     return true;
   }
@@ -134,18 +134,35 @@ export class AofFile {
     r.cursor = piece.cursor;
     if (r.cursor !== 0) return true;
     // 다 훑었다: 그동안 들어온 명령을 붙이고, 디스크에 확정한 뒤 원래 파일과 바꾼다
-    if (r.tail) writeSync(r.fd, r.tail);
+    const tailText = r.tail.length ? r.tail.join('') : '';
+    if (tailText) writeSync(r.fd, tailText);
     fsyncSync(r.fd);
     closeSync(r.fd);
-    this.flush();
-    closeSync(this.fd);
-    renameSync(r.tmp, this.path);
-    this.fd = openSync(this.path, 'a');
-    this.rewrites++;
-    this.baseSize = r.bytes;
-    this.grown = Buffer.byteLength(r.tail);
+    this.flush(false); // 곧 교체할 옛 파일에 불필요한 fsync 를 하지 않는다
+    if (this.#replaceFile(r.tmp)) {
+      this.rewrites++;
+      this.baseSize = r.bytes;
+      this.grown = tailText ? Buffer.byteLength(tailText) : 0;
+    }
     this.rewriting = null;
     return false;
+  }
+
+  /** 임시 파일로 원본을 교체한다 (Windows 파일 잠금 EPERM/EBUSY 시 fd 가 닫힌 채 남지 않도록 복구) */
+  #replaceFile(tmp) {
+    closeSync(this.fd);
+    try {
+      renameSync(tmp, this.path);
+    } catch (e) {
+      this.fd = openSync(this.path, 'a');
+      if (e.code === 'EPERM' || e.code === 'EBUSY') {
+        try { unlinkSync(tmp); } catch {}
+        return false;
+      }
+      throw e;
+    }
+    this.fd = openSync(this.path, 'a');
+    return true;
   }
 
   /** 진행 중인 나눠 쓰기를 지금 끝까지 마친다 (종료할 때 · 테스트) */
@@ -164,12 +181,11 @@ export class AofFile {
     const fd = openSync(tmp, 'r+');
     fsyncSync(fd);
     closeSync(fd);
-    closeSync(this.fd);
-    renameSync(tmp, this.path);
-    this.fd = openSync(this.path, 'a');
-    this.rewrites++;
-    this.baseSize = Buffer.byteLength(content);
-    this.grown = 0;
+    if (this.#replaceFile(tmp)) {
+      this.rewrites++;
+      this.baseSize = Buffer.byteLength(content);
+      this.grown = 0;
+    }
   }
 
   /** 마지막 재작성 뒤로 충분히 자랐는지 (자동 재작성 기준) */

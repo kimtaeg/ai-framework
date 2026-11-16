@@ -12,12 +12,14 @@
  */
 import http from 'node:http';
 
-const agent = new http.Agent({ keepAlive: true });
+const agent = new http.Agent({ keepAlive: true, noDelay: true });
 
 export function nodeFetch(url, { method = 'GET', headers, body } = {}) {
   return new Promise((resolve, reject) => {
-    const h = { ...headers };
-    if (body !== undefined) h['Content-Length'] = Buffer.byteLength(body);
+    let h = headers;
+    if (body !== undefined) {
+      h = headers ? { ...headers, 'Content-Length': Buffer.byteLength(body) } : { 'Content-Length': Buffer.byteLength(body) };
+    }
     const req = http.request(url, { method, headers: h, agent }, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));

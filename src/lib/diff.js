@@ -23,8 +23,8 @@
  * 모듈 전역 변수를 쓰지 않으므로 diff 안에서 diff 를 다시 불러도 서로 섞이지 않는다.
  */
 
-import { TEXT } from './vdom.js';
-import { warn } from './warn.js';
+import { TEXT, hasOwn } from './vdom.js';
+import { warn, devConfig } from './warn.js';
 import { longestIncreasingSubsequence } from './lis.js';
 import { FenwickSum } from './fenwick.js';
 
@@ -108,7 +108,6 @@ export function isSameNode(a, b) {
 }
 
 const NO_CHANGES = Object.freeze([]);
-const hasOwn = Object.prototype.hasOwnProperty;
 
 /**
  * props 비교 (공개 API) — 반환: [{ name, value, oldValue }] (value === undefined 이면 삭제)
@@ -126,14 +125,18 @@ export function diffProps(oldProps = {}, newProps = {}) {
  *    이벤트가 일어나면 최신 VNode 에서 핸들러를 찾아 부르므로 DOM 에 새 함수를 넣어 둘 필요가 없다.
  */
 function compareProps(oldProps, newProps, liveHandlers) {
+  if (oldProps === newProps) return NO_CHANGES;
   // 자기 속성만 비교한다 — createElement 도 Object.entries 로 자기 속성만 그리므로 처음 그릴 때와 규칙이 같다.
   // (for..in 은 물려받은 속성까지 돌아서, Object.create(기본값) 처럼 만든 props 의 기본값 변화가 패치로 나갔다)
   // Object.keys 는 V8 이 같은 모양의 객체마다 캐시해 두어 싸다. 비용이 컸던 건 결과 배열이었으므로 그것만 만들지 않는다.
   let changes = null;
+  let matchedOld = 0;
   const nk = Object.keys(newProps);
   for (let i = 0; i < nk.length; i++) {
     const name = nk[i];
-    const a = hasOwn.call(oldProps, name) ? oldProps[name] : undefined; // 물려받은 옛 값은 없는 것으로
+    const had = hasOwn.call(oldProps, name);
+    if (had) matchedOld++;
+    const a = had ? oldProps[name] : undefined; // 물려받은 옛 값은 없는 것으로
     const b = newProps[name];
     if (Object.is(a, b)) continue;
     if (liveHandlers && typeof a === 'function' && typeof b === 'function' && name.length > 2 && name[0] === 'o' && name[1] === 'n') continue;
@@ -141,9 +144,11 @@ function compareProps(oldProps, newProps, liveHandlers) {
     (changes ??= []).push({ name, value: b, oldValue: a });
   }
   const ok = Object.keys(oldProps);
-  for (let i = 0; i < ok.length; i++) {
-    const name = ok[i];
-    if (!hasOwn.call(newProps, name)) (changes ??= []).push({ name, value: undefined, oldValue: oldProps[name] });
+  if (ok.length !== matchedOld) {
+    for (let i = 0; i < ok.length; i++) {
+      const name = ok[i];
+      if (!hasOwn.call(newProps, name)) (changes ??= []).push({ name, value: undefined, oldValue: oldProps[name] });
+    }
   }
   return changes ?? NO_CHANGES;
 }
@@ -165,25 +170,54 @@ function childrenAt(ctx, oldCh, newCh, depth, patches) {
   if (oldCh.length === 0 && newCh.length === 0) return;
   const { stack } = ctx;
 
-  // ---- 빠른 길: key 가 하나도 없고 개수가 같으면 → i 번째끼리 짝, 삭제·이동·삽입 없음 ----
-  if (oldCh.length === newCh.length && allUnkeyed(oldCh) && allUnkeyed(newCh)) {
-    for (let i = 0; i < newCh.length; i++) {
+  // ---- 빠른 길: 개수가 같고 모두 unkeyed 이거나 거의 모든 줄이 같은 자리에 같은 key ----
+  if (oldCh.length === newCh.length && diffMostlyInPlace(ctx, oldCh, newCh, depth, patches)) return;
+
+  const oldLen = oldCh.length;
+  const newLen = newCh.length;
+  // ---- 빠른 길 3: 앞/뒤 같은 key 구간 잘라내기 (리스트 앞·중간·끝 삽입/삭제 시 Map/LIS 생략) ----
+  let s = 0;
+  let oldEnd = oldLen - 1;
+  let newEnd = newLen - 1;
+  if (!devConfig.warnings || Math.min(oldLen, newLen) >= 16) {
+    while (s < oldLen && s < newLen) {
+      const ok = oldCh[s].key;
+      if (ok == null || ok !== newCh[s].key) break;
+      s++;
+    }
+    while (oldEnd >= s && newEnd >= s) {
+      const ok = oldCh[oldEnd].key;
+      if (ok == null || ok !== newCh[newEnd].key) break;
+      oldEnd--;
+      newEnd--;
+    }
+  }
+  const parentPath = pathTo(ctx, depth); // 이 단계의 REMOVE · MOVE · INSERT 가 함께 쓰는 경로
+  const oldSub = oldEnd - s + 1;
+  const newSub = newEnd - s + 1;
+  if (oldSub === 0) {
+    for (let i = s; i <= newEnd; i++) patches.push({ type: PatchType.INSERT, path: parentPath, index: i, node: newCh[i] });
+    for (let i = 0; i < s; i++) { stack[depth] = i; diffNode(ctx, oldCh[i], newCh[i], depth + 1, patches); }
+    for (let i = s; i < oldLen; i++) {
+      stack[depth] = i + newSub;
+      diffNode(ctx, oldCh[i], newCh[i + newSub], depth + 1, patches);
+    }
+    return;
+  }
+  if (newSub === 0) {
+    for (let i = oldEnd; i >= s; i--) patches.push({ type: PatchType.REMOVE, path: parentPath, index: i, node: oldCh[i] });
+    for (let i = 0; i < s; i++) { stack[depth] = i; diffNode(ctx, oldCh[i], newCh[i], depth + 1, patches); }
+    for (let i = s; i < newLen; i++) {
       stack[depth] = i;
-      diffNode(ctx, oldCh[i], newCh[i], depth + 1, patches);
+      diffNode(ctx, oldCh[i + oldSub], newCh[i], depth + 1, patches);
     }
     return;
   }
 
-  // ---- 빠른 길 2: 개수가 같고 거의 모든 줄이 같은 자리에 같은 key → 어긋난 몇 자리만 처리 ----
-  if (oldCh.length === newCh.length && diffMostlyInPlace(ctx, oldCh, newCh, depth, patches)) return;
-  const parentPath = pathTo(ctx, depth); // 이 단계의 REMOVE · MOVE · INSERT 가 함께 쓰는 경로
-
   // ---- 1. 매칭 ----  (노드 대신 old 인덱스로 다뤄 Map · Set 을 줄인다)
-  const oldLen = oldCh.length;
-  const newLen = newCh.length;
   const keyed = new Map(); // key → old 인덱스
   const unkeyed = []; // key 없는 old 인덱스
-  for (let i = 0; i < oldLen; i++) {
+  for (let i = s; i <= oldEnd; i++) {
     const c = oldCh[i];
     if (c.key != null) {
       if (!keyed.has(c.key)) keyed.set(c.key, i);
@@ -193,8 +227,10 @@ function childrenAt(ctx, oldCh, newCh, depth, patches) {
   }
   const used = new Uint8Array(oldLen);
   const matchIdx = new Int32Array(newLen).fill(-1); // 새 인덱스 → 짝이 된 old 인덱스 (없으면 -1)
+  for (let i = 0; i < s; i++) { used[i] = 1; matchIdx[i] = i; }
+  for (let oi = oldEnd + 1, ni = newEnd + 1; oi < oldLen; oi++, ni++) { used[oi] = 1; matchIdx[ni] = oi; }
   let u = 0;
-  for (let i = 0; i < newLen; i++) {
+  for (let i = s; i <= newEnd; i++) {
     const c = newCh[i];
     let m = -1;
     if (c.key != null) {
@@ -245,42 +281,47 @@ function keepWeights(ctx, oldCh, len, oldIndexOf) {
 const MAX_MISPLACED = 8;
 function diffMostlyInPlace(ctx, oldCh, newCh, depth, patches) {
   const n = oldCh.length;
-  const mis = [];
+  let mis = null;
   for (let i = 0; i < n; i++) {
     const a = oldCh[i].key ?? null;
     const b = newCh[i].key ?? null;
     if (a === b) continue;
-    if (a === null || b === null || mis.length === MAX_MISPLACED) return false;
-    mis.push(i);
+    if (a === null || b === null || (mis && mis.length === MAX_MISPLACED)) return false;
+    (mis ??= []).push(i);
+  }
+  if (!mis) {
+    for (let i = 0; i < n; i++) {
+      ctx.stack[depth] = i;
+      diffNode(ctx, oldCh[i], newCh[i], depth + 1, patches);
+    }
+    return true;
   }
   const k = mis.length;
-  const matchOf = newCh.length ? oldCh.slice() : [];
+  const matchOf = oldCh.slice();
   let parentPath = null; // 이 단계의 MOVE 가 함께 쓰는 경로 (MOVE 가 있을 때만 만든다)
-  if (k > 0) {
-    const taken = new Uint8Array(k);
-    const seq = new Int32Array(n);
-    for (let i = 0; i < n; i++) seq[i] = i;
-    for (let x = 0; x < k; x++) {
-      const key = oldCh[mis[x]].key;
-      let found = -1;
-      for (let y = 0; y < k; y++) if (newCh[mis[y]].key === key) { found = y; break; }
-      if (found === -1 || taken[found]) return false;
-      taken[found] = 1;
-      seq[mis[x]] = mis[found];
-      matchOf[mis[found]] = oldCh[mis[x]];
-    }
-    const stable = new Uint8Array(n);
-    for (const p of longestIncreasingSubsequence(seq, keepWeights(ctx, oldCh, n, (p) => p))) stable[seq[p]] = 1;
-    const live = oldCh.slice();
-    for (let i = n - 1; i >= 0; i--) {
-      if (stable[i]) continue;
-      const m = matchOf[i];
-      const from = live.indexOf(m);
-      live.splice(from, 1);
-      const to = i + 1 < n ? live.indexOf(matchOf[i + 1]) : live.length;
-      live.splice(to, 0, m);
-      if (from !== to) patches.push({ type: PatchType.MOVE, path: (parentPath ??= pathTo(ctx, depth)), from, to, key: m.key });
-    }
+  const taken = new Uint8Array(k);
+  const seq = new Int32Array(n);
+  for (let i = 0; i < n; i++) seq[i] = i;
+  for (let x = 0; x < k; x++) {
+    const key = oldCh[mis[x]].key;
+    let found = -1;
+    for (let y = 0; y < k; y++) if (newCh[mis[y]].key === key) { found = y; break; }
+    if (found === -1 || taken[found]) return false;
+    taken[found] = 1;
+    seq[mis[x]] = mis[found];
+    matchOf[mis[found]] = oldCh[mis[x]];
+  }
+  const stable = new Uint8Array(n);
+  for (const p of longestIncreasingSubsequence(seq, keepWeights(ctx, oldCh, n, (p) => p))) stable[seq[p]] = 1;
+  const live = oldCh.slice();
+  for (let i = n - 1; i >= 0; i--) {
+    if (stable[i]) continue;
+    const m = matchOf[i];
+    const from = live.indexOf(m);
+    live.splice(from, 1);
+    const to = i + 1 < n ? live.indexOf(matchOf[i + 1]) : live.length;
+    live.splice(to, 0, m);
+    if (from !== to) patches.push({ type: PatchType.MOVE, path: (parentPath ??= pathTo(ctx, depth)), from, to, key: m.key });
   }
   for (let i = 0; i < n; i++) {
     ctx.stack[depth] = i;
@@ -356,11 +397,6 @@ function place(ctx, oldCh, newCh, used, matchIdx, parentPath, patches) {
   }
 }
 
-function allUnkeyed(list) {
-  for (let i = 0; i < list.length; i++) if (list[i].key != null) return false;
-  return true;
-}
-
 function isPlainObject(v) {
   return v !== null && typeof v === 'object' && !Array.isArray(v);
 }
@@ -369,7 +405,11 @@ function shallowEqual(a, b) {
   const ka = Object.keys(a);
   const kb = Object.keys(b);
   if (ka.length !== kb.length) return false;
-  return ka.every((k) => Object.is(a[k], b[k]));
+  for (let i = 0; i < ka.length; i++) {
+    const k = ka[i];
+    if (!hasOwn.call(b, k) || !Object.is(a[k], b[k])) return false;
+  }
+  return true;
 }
 
 /** 패치 목록 요약 (UI / 로그용) */

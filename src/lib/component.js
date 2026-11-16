@@ -24,7 +24,7 @@
  *   - 예외: useContext 는 상태를 만들지 않고 값을 "읽기만" 하므로 자식에서도 쓸 수 있다.
  */
 
-import { TEXT, createElement, createText, normalizeChildren, focusedKeys } from './vdom.js';
+import { TEXT, createElement, createText, normalizeChildren, focusedKeys, hasOwn } from './vdom.js';
 import { diff } from './diff.js';
 import { applyPatches } from './patch.js';
 import { warn } from './warn.js';
@@ -133,6 +133,7 @@ export class FunctionComponent {
 
   /** 이번 렌더에서 다시 쓰이지 않은 memo 결과를 버린다 (사라진 줄의 결과가 쌓이지 않게) */
   sweepMemo() {
+    if (this.memoCache.size === 0) return;
     for (const [fn, byKey] of this.memoCache) {
       for (const [key, entry] of byKey) if (entry.gen !== this.renderGen) byKey.delete(key);
       if (byKey.size === 0) this.memoCache.delete(fn);
@@ -338,9 +339,26 @@ export function mount(fn, container, props, options) {
  */
 export function resolve(node) {
   if (node == null || typeof node === 'boolean') return null;
-  if (Array.isArray(node)) return normalizeChildren(node).flatMap((n) => toArray(resolve(n)));
+  if (Array.isArray(node)) {
+    const flat = normalizeChildren(node);
+    const out = [];
+    for (let i = 0; i < flat.length; i++) {
+      const r = resolve(flat[i]);
+      if (r == null) continue;
+      if (Array.isArray(r)) {
+        for (let j = 0; j < r.length; j++) if (r[j] != null) out.push(r[j]);
+      } else {
+        out.push(r);
+      }
+    }
+    return out;
+  }
   if (typeof node !== 'object') return createText(node);
   if (node.type === TEXT) return node;
+  if (typeof node.type === 'string') {
+    const ch = node.children;
+    if (ch.length === 0 || (ch.length === 1 && ch[0].type === TEXT)) return node;
+  }
 
   // VNode 는 불변이고 자식 컴포넌트는 순수 함수이므로, 같은 VNode 객체의 펼친 결과는 항상 같다.
   // → 캐시해 두면 useMemo 로 재사용된 VNode 는 같은 참조가 되어 diff 가 통째로 건너뛴다.
@@ -386,15 +404,24 @@ function resolveUncached(node) {
     return callChild(node);
   }
 
-  const children = [];
-  let same = true;
-  for (const c of node.children) {
+  const ch = node.children;
+  const len = ch.length;
+  let children = null;
+  for (let i = 0; i < len; i++) {
+    const c = ch[i];
     const r = resolve(c);
-    if (r !== c) same = false;
-    children.push(...toArray(r));
+    if (r !== c && children === null) children = ch.slice(0, i);
+    if (children !== null) {
+      if (r == null) continue;
+      if (Array.isArray(r)) {
+        for (let j = 0; j < r.length; j++) if (r[j] != null) children.push(r[j]);
+      } else {
+        children.push(r);
+      }
+    }
   }
   // 바뀐 것이 없으면 원래 객체를 그대로 반환 (참조 동일성 유지)
-  return same ? node : { ...node, children };
+  return children === null ? node : { type: node.type, props: node.props, key: node.key, children };
 }
 
 /** 자식 컴포넌트를 순수 함수로 실행하고 펼친다 (Hook 금지 구역) */
@@ -426,7 +453,10 @@ export function shallowEqualProps(a, b) {
   if (a === b) return true;
   const ka = Object.keys(a);
   if (ka.length !== Object.keys(b).length) return false;
-  for (const k of ka) if (!Object.is(a[k], b[k])) return false;
+  for (let i = 0; i < ka.length; i++) {
+    const k = ka[i];
+    if (!hasOwn.call(b, k) || !Object.is(a[k], b[k])) return false;
+  }
   return true;
 }
 

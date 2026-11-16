@@ -32,7 +32,9 @@ export class ThreadPool {
     this.maxBatch = Math.max(1, opts.maxBatch ?? 1);
     this.canBatch = opts.canBatch ?? (() => true);
     this.queue = [];
+    this.queueHead = 0;
     this.workers = [];
+    this._readyWaiters = [];
     this.seq = 0;
     this.closed = false;
     this.broken = null;
@@ -51,6 +53,9 @@ export class ThreadPool {
     worker.on('message', (m) => {
       if (m.type === 'ready') {
         slot.ready = true;
+        if (this._readyWaiters.length && this.workers.every((w) => w.ready)) {
+          for (const w of this._readyWaiters.splice(0)) w.resolve();
+        }
         return this.#next();
       }
       const batch = slot.busy;
@@ -68,7 +73,7 @@ export class ThreadPool {
       } else {
         this.stats.completed++;
         // 묶음 안의 일은 앞의 일이 끝난 때부터 실행된 것으로 본다
-        job.resolve({ result: m.result, workerId: id, waitedMs: batch.lastAt - job.enqueuedAt, execMs: now - batch.lastAt });
+        job.resolve({ result: m.result, json: m.json, group: m.group, workerId: id, waitedMs: batch.lastAt - job.enqueuedAt, execMs: now - batch.lastAt });
       }
       batch.lastAt = now;
       if (batch.jobs.size) {
@@ -90,21 +95,24 @@ export class ThreadPool {
     if (this.closed) return;
     const i = this.workers.indexOf(slot);
     if (i === -1) return;
+    const jobs = slot.busy ? [...slot.busy.jobs.values()] : [];
     if (slot.busy) {
       clearTimeout(slot.busy.timer);
-      for (const job of slot.busy.jobs.values()) {
-        this.stats.failed++;
-        job.reject(error);
-      }
+      this.stats.failed += jobs.length;
       slot.busy = null;
     }
     slot.worker.removeAllListeners();
-    slot.worker.terminate().catch(() => {});
+    // 실패는 워커가 정말 끝난 뒤에 알린다: 그 전에는 아직 파일에 쓰는 중일 수 있어서, 부른 쪽이 파일을 되돌릴 수 없다
+    slot.worker.terminate().catch(() => {}).then(() => {
+      for (const job of jobs) job.reject(error);
+    });
     // 시작도 못 하고 죽는 워커를 끝없이 다시 만들지 않는다 (스크립트 오류 등)
     if (!slot.ready && ++this.startupFailures > this.size * 2) {
       this.broken = new Error(`워커를 시작할 수 없습니다: ${error.message}`);
-      for (const job of this.queue) job.reject(this.broken);
+      for (let j = this.queueHead; j < this.queue.length; j++) this.queue[j].reject(this.broken);
       this.queue = [];
+      this.queueHead = 0;
+      for (const w of this._readyWaiters.splice(0)) w.reject(this.broken);
       this.workers.splice(i, 1);
       return;
     }
@@ -118,37 +126,69 @@ export class ThreadPool {
     if (this.broken) return Promise.reject(this.broken);
     return new Promise((resolve, reject) => {
       this.queue.push({ task, resolve, reject, seq: ++this.seq, enqueuedAt: performance.now() });
-      this.stats.maxQueue = Math.max(this.stats.maxQueue, this.queue.length);
+      const queued = this.queue.length - this.queueHead;
+      if (queued > this.stats.maxQueue) this.stats.maxQueue = queued;
       this.#next();
     });
   }
 
   #next() {
-    while (this.queue.length) {
+    while (this.queueHead < this.queue.length) {
       // 돌아가며 맡긴다 (round-robin) — 항상 0번 워커에만 일이 몰리지 않게
       const n = this.workers.length;
       let slot = null;
-      for (let k = 0; k < n && !slot; k++) {
-        const w = this.workers[(this.rr + k) % n];
-        if (w.ready && !w.busy) slot = w;
+      let slotIdx = -1;
+      for (let k = 0; k < n; k++) {
+        const idx = (this.rr + k) % n;
+        const w = this.workers[idx];
+        if (w.ready && !w.busy) {
+          slot = w;
+          slotIdx = idx;
+          break;
+        }
       }
       if (!slot) return;
-      this.rr = (this.workers.indexOf(slot) + 1) % n;
+      this.rr = (slotIdx + 1) % n;
       // 이 워커가 가져갈 개수: 밀린 일을 워커 수로 나눈 몫까지, 맨 앞부터 묶어도 되는 일이 이어지는 만큼
+      const remaining = this.queue.length - this.queueHead;
       let take = 1;
-      if (this.maxBatch > 1 && this.canBatch(this.queue[0].task)) {
-        const share = Math.min(this.maxBatch, Math.ceil(this.queue.length / n));
-        while (take < share && this.canBatch(this.queue[take].task)) take++;
+      if (this.maxBatch > 1 && this.canBatch(this.queue[this.queueHead].task)) {
+        const share = Math.min(this.maxBatch, Math.ceil(remaining / n));
+        while (take < share && this.canBatch(this.queue[this.queueHead + take].task)) take++;
       }
-      const picked = this.queue.splice(0, take);
-      const batch = {
-        jobs: new Map(picked.map((j) => [j.seq, j])),
-        lastAt: performance.now(),
-        timer: setTimeout(() => this.#crash(slot, new Error(`요청이 ${this.timeoutMs}ms 안에 끝나지 않았습니다.`)), this.timeoutMs),
-      };
-      slot.busy = batch;
-      if (take === 1) slot.worker.postMessage({ type: 'task', seq: picked[0].seq, task: picked[0].task });
-      else slot.worker.postMessage({ type: 'batch', tasks: picked.map((j) => ({ seq: j.seq, task: j.task })) });
+      const jobs = new Map();
+      const head = this.queueHead;
+      const timer = setTimeout(() => this.#crash(slot, new Error(`요청이 ${this.timeoutMs}ms 안에 끝나지 않았습니다.`)), this.timeoutMs);
+      if (head === 0 && remaining === take) {
+        const picked = this.queue.splice(0, take);
+        for (let k = 0; k < take; k++) jobs.set(picked[k].seq, picked[k]);
+        slot.busy = { jobs, lastAt: performance.now(), timer };
+        if (take === 1) slot.worker.postMessage({ type: 'task', seq: picked[0].seq, task: picked[0].task });
+        else slot.worker.postMessage({ type: 'batch', tasks: picked.map((j) => ({ seq: j.seq, task: j.task })) });
+      } else if (take === 1) {
+        const j = this.queue[head];
+        this.queueHead = head + 1;
+        jobs.set(j.seq, j);
+        slot.busy = { jobs, lastAt: performance.now(), timer };
+        slot.worker.postMessage({ type: 'task', seq: j.seq, task: j.task });
+      } else {
+        const tasks = new Array(take);
+        for (let k = 0; k < take; k++) {
+          const j = this.queue[head + k];
+          jobs.set(j.seq, j);
+          tasks[k] = { seq: j.seq, task: j.task };
+        }
+        this.queueHead = head + take;
+        slot.busy = { jobs, lastAt: performance.now(), timer };
+        slot.worker.postMessage({ type: 'batch', tasks });
+      }
+      if (this.queueHead === this.queue.length) {
+        this.queue.length = 0;
+        this.queueHead = 0;
+      } else if (this.queueHead >= 64 && this.queueHead * 2 >= this.queue.length) {
+        this.queue = this.queue.slice(this.queueHead);
+        this.queueHead = 0;
+      }
     }
   }
 
@@ -160,24 +200,25 @@ export class ThreadPool {
   status() {
     return {
       size: this.size,
-      queued: this.queue.length,
+      queued: this.queue.length - this.queueHead,
       workers: this.workers.map((w) => ({ id: w.id, busy: !!w.busy, done: w.done, ready: w.ready })),
       ...this.stats,
     };
   }
 
   /** 모든 워커가 준비될 때까지 */
-  async ready() {
-    while (!this.workers.every((w) => w.ready)) {
-      if (this.broken) throw this.broken;
-      await new Promise((r) => setTimeout(r, 10));
-    }
+  ready() {
+    if (this.broken) return Promise.reject(this.broken);
+    if (this.workers.every((w) => w.ready)) return Promise.resolve();
+    return new Promise((resolve, reject) => this._readyWaiters.push({ resolve, reject }));
   }
 
   async close() {
     this.closed = true;
-    for (const job of this.queue) job.reject(new Error('스레드 풀이 닫혔습니다.'));
+    for (let j = this.queueHead; j < this.queue.length; j++) this.queue[j].reject(new Error('스레드 풀이 닫혔습니다.'));
     this.queue = [];
+    this.queueHead = 0;
+    for (const w of this._readyWaiters.splice(0)) w.reject(new Error('스레드 풀이 닫혔습니다.'));
     // 워커에서 실행 중이던 요청도 실패로 끝낸다 — 워커를 끝내면 응답이 오지 않으므로, 그대로 두면 영원히 기다린다
     for (const w of this.workers) {
       if (!w.busy) continue;

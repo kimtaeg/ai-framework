@@ -114,6 +114,7 @@
             <li><b>DEL</b> — 원본 수정 직후 삭제 (덮어쓰기보다 안전)</li>
             <li><b>TAG / INVALIDATE</b> — 이름표를 붙여 관련 키를 한꺼번에 (tag → 키 집합 색인 유지)</li>
             <li><b>DELPATTERN</b> — <code>product:*</code> 처럼 패턴으로</li>
+            <li><b>DELIF</b> — <code>DELIF key value</code>: 지금 값이 같을 때만 삭제. 분산 락을 풀 때 "아직 내 락일 때만" 지우는 용도 (값 확인과 삭제가 한 명령이라 사이에 끼어들 수 없음)</li>
           </ul>
         </section>
 

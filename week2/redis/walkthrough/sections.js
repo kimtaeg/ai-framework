@@ -176,13 +176,13 @@ const truncated = badLast;   // 마지막 줄이 깨져 있으면 "쓰다 죽은
       id: 'api', group: '영속성 · API', file: 'week2/redis/api.js',
       title: 'createRedisApi — 외부에서 쓰는 HTTP API',
       summary: '주소와 메서드로 명령을 고르고, 입력을 검사하고, 결과를 상태 코드로 구분해 JSON 으로 돌려줍니다.',
-      must: ["if (value === null) return send(res, 404, { error: 'NOT_FOUND'", "if (typeof body.value !== 'string') throw new HttpError(400, 'BAD_VALUE'", "if (r === null) return send(res, 409, { error: 'CONDITION'"],
+      must: ["if (found === null) return send(res, 404, { error: 'NOT_FOUND'", "if (typeof body.value !== 'string') throw new HttpError(400, 'BAD_VALUE'", "if (r === null) return send(res, 409, { error: 'CONDITION'"],
       chunks: [
         { code: `if (!sub && req.method === 'GET') {
-  const value = run(['GET', key]);
-  if (value === null) return send(res, 404, { error: 'NOT_FOUND', message: '키가 없거나 만료되었습니다.', key });
-  return send(res, 200, { key, value, ttl: run(['TTL', key]) });
-}`, note: 'GET /keys/:key → 내부적으로는 그냥 GET 명령. 없거나 만료면 404. 클라이언트 라이브러리는 404 를 null 로 바꿔 줍니다.' },
+  const found = run(['GETTTL', key]); // 값과 TTL 을 한 번의 조회로
+  if (found === null) return send(res, 404, { error: 'NOT_FOUND', message: '키가 없거나 만료되었습니다.', key });
+  return send(res, 200, { key, value: found[0], ttl: found[1] });
+}`, note: 'GET /keys/:key → 내부적으로는 GETTTL 명령 하나 (값과 남은 TTL 을 같은 순간에 함께 읽는다. GET 과 TTL 을 따로 부르면 그 사이에 만료 시각이 지나 값은 있는데 ttl 은 -2 인 답이 나올 수 있다). 없거나 만료면 404. 클라이언트 라이브러리는 404 를 null 로 바꿔 줍니다.' },
         { code: `const body = await readJson(req);
 if (typeof body.value !== 'string') throw new HttpError(400, 'BAD_VALUE', ...);
 const args = ['SET', key, body.value];

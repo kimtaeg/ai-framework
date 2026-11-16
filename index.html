@@ -306,7 +306,7 @@
           <section class="card flow">
             <b>SQL 하나의 흐름</b>
             <ol>
-              <li><code>POST /api/sql</code> → 메인 스레드가 파싱 (문법 에러는 바로 400)</li>
+              <li><code>POST /api/sql</code> → 쓰기 요청은 메인 스레드가, 조회는 워커가 파싱 (문법 에러는 400)</li>
               <li>테이블 읽기/쓰기 락 → 쉬는 워커에게 전달 (스레드 풀)</li>
               <li>워커: 실행 계획 — <code>id = ?</code> 면 B+ 트리, 아니면 선형 탐색</li>
               <li>파일의 그 위치(offset)에서 한 줄 읽기 / 파일 끝에 추가</li>

@@ -245,7 +245,7 @@
         <section class="card" id="api" data-level="core">
           <div class="sec-head"><h2>API 서버 구조</h2><span class="lv core">과제 핵심</span></div>
           <p class="one">메인 스레드는 요청을 받고 나누는 일만, 실제 SQL 실행은 워커가 합니다.</p>
-<pre><code>클라이언트 ──HTTP──▶ [메인 스레드]  요청 받기 · SQL 미리 파싱(문법 에러는 바로 400) · 락 · 일 나눠주기
+<pre><code>클라이언트 ──HTTP──▶ [메인 스레드]  요청 받기 · 쓰기 요청은 SQL 미리 파싱 · 락 · 일 나눠주기 (문법 에러는 400)
                            │
             ┌──────────────┼──────────────┐
          [워커 0]       [워커 1]  …    [워커 N-1]     각자 Database(처리기 + B+ 트리)

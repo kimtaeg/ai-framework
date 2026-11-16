@@ -47,14 +47,20 @@ export class MiniRedisClient {
    * @returns {Promise<boolean>} 저장됐으면 true
    */
   async set(key, value, opts = {}) {
-    const { jitter, ...send } = opts;
-    if (jitter > 0 && (send.ttl || send.px)) {
-      const ms = send.px ?? send.ttl * 1000;
+    const body = { value };
+    const { jitter, ttl, px, nx, xx, tags } = opts;
+    if (jitter > 0 && (ttl || px)) {
+      const ms = px ?? ttl * 1000;
       const spread = Math.min(1, jitter) * (Math.random() * 2 - 1); // -jitter ~ +jitter
-      send.px = Math.max(1, Math.round(ms * (1 + spread)));
-      delete send.ttl;
+      body.px = Math.max(1, Math.round(ms * (1 + spread)));
+    } else {
+      if (ttl !== undefined) body.ttl = ttl;
+      if (px !== undefined) body.px = px;
     }
-    const r = await this.#call('PUT', `/keys/${encodeURIComponent(key)}`, { value, ...send });
+    if (nx !== undefined) body.nx = nx;
+    if (xx !== undefined) body.xx = xx;
+    if (tags !== undefined) body.tags = tags;
+    const r = await this.#call('PUT', `/keys/${encodeURIComponent(key)}`, body);
     if (r.status === 409) return false;
     if (r.status >= 300) this.#fail(r);
     return true;
@@ -110,6 +116,28 @@ export class MiniRedisClient {
   }
 
   /**
+   * 고정 윈도우 Rate Limiter (INCR + TTL): windowSec 안에 max 번까지만 허용한다.
+   * 여러 API 서버가 같은 MiniRedis 를 바라보므로 서버를 늘려도 한도가 서버 수만큼 뚫리지 않는다.
+   * @returns {Promise<{ allowed: boolean, count: number, remaining: number, ttl: number }>}
+   */
+  async limit(key, max, windowSec) {
+    const k = String(key);
+    const [rCount, rTtl] = await this.pipeline([['INCR', k], ['TTL', k]]);
+    if (rCount.error) throw new Error(rCount.error);
+    if (rTtl.error) throw new Error(rTtl.error);
+    const count = rCount.ok;
+    const ttl = rTtl.ok;
+    // 첫 요청이거나 INCR 직후 장애로 TTL 이 빠진 키(-1)에는 만료 시간을 보정해 영구 차단을 막는다
+    if (ttl === -1) await this.expire(k, windowSec);
+    return {
+      allowed: count <= max,
+      count,
+      remaining: Math.max(0, max - count),
+      ttl: ttl === -1 ? windowSec : ttl,
+    };
+  }
+
+  /**
    * 캐시 우선 조회 (cache-aside): 있으면 캐시에서, 없으면 loader() 로 가져와서 저장
    * @param {object} [opts]  set 의 옵션(ttl, tags, jitter ...) +
    *   lockMs: 0 보다 크면 서버끼리 공유하는 락(분산 락)을 건다. API 서버가 여러 대일 때,
@@ -123,7 +151,7 @@ export class MiniRedisClient {
     // 캐시 스탬피드 방어 1: 이 서버 안에서 같은 키를 동시에 놓친 요청들은 loader(DB 조회)를 한 번만 실행한다
     const { value, hit } = await this.flights.run(key, async () => {
       if (lockMs > 0) return this.#loadWithLock(key, loader, setOpts, lockMs);
-      const v = await loader();
+      const v = loaded(await loader());
       await this.set(key, JSON.stringify(v), setOpts);
       return { value: v, hit: false };
     }).then((r) => r.value);
@@ -134,33 +162,50 @@ export class MiniRedisClient {
    * 캐시 스탬피드 방어 2 (분산 락): SET lock:키 NX PX 로 "내가 가져오는 중" 을 서버끼리 알린다.
    *   락을 잡은 한 곳만 loader 를 실행하고, 못 잡은 곳은 잠깐씩 기다리며 캐시가 채워지기를 본다.
    *   락에는 수명(PX)이 있어서, 잡은 서버가 죽어도 영원히 잠기지 않는다.
+   *   락의 값은 요청마다 다른 토큰이고, 풀 때는 DELIF 로 "아직 내 토큰일 때만" 지운다.
+   *   (고정 값 + DEL 이면: 내 락이 만료된 뒤 다른 서버가 잡은 락을, 늦게 끝난 내가 지워 버릴 수 있다.
+   *    내 쪽 시계로 "아직 수명이 남았다" 고 판단하는 것은 네트워크 지연 · 멈춤 앞에서 믿을 수 없다)
    */
   async #loadWithLock(key, loader, setOpts, lockMs) {
     const lockKey = `lock:${key}`;
     const deadline = Date.now() + lockMs;
+    const token = lockToken();
     for (;;) {
-      const t0 = Date.now();
-      if (await this.set(lockKey, '1', { px: lockMs, nx: true })) {
+      if (await this.set(lockKey, token, { px: lockMs, nx: true })) {
         try {
-          const v = await loader();
+          const v = loaded(await loader());
           await this.set(key, JSON.stringify(v), setOpts);
           return { value: v, hit: false };
         } finally {
-          // 락의 수명이 남아 있을 때만 지운다 (이미 만료됐다면 다른 서버가 새로 잡은 락일 수 있다)
-          if (Date.now() - t0 < lockMs) await this.del(lockKey).catch(() => {});
+          // 아직 내 락일 때만 지운다 (이미 만료돼 다른 서버가 새로 잡았다면 값이 달라서 지워지지 않는다)
+          await this.command('DELIF', lockKey, token).catch(() => {});
         }
       }
-      await new Promise((r) => setTimeout(r, 25));
+      // 기다리는 서버들이 같은 순간에 한꺼번에 다시 물어보지 않도록 간격을 조금씩 흩는다
+      await new Promise((r) => setTimeout(r, 15 + Math.random() * 20));
       const cached = await this.get(key);
       if (cached !== null) return { value: JSON.parse(cached), hit: true };
       if (Date.now() >= deadline) {
         // 락을 잡은 쪽이 끝내지 못했다 → 더 기다리지 않고 직접 가져온다
-        const v = await loader();
+        const v = loaded(await loader());
         await this.set(key, JSON.stringify(v), setOpts);
         return { value: v, hit: false };
       }
     }
   }
+}
+
+/**
+ * loader 가 돌려준 값을 캐시에 넣을 수 있는 값으로. undefined 는 JSON 으로 쓸 수 없어서
+ * (JSON.stringify(undefined) 는 문자열이 아니라 undefined → 서버가 400) "없음" 을 뜻하는 null 로 저장한다.
+ */
+function loaded(v) {
+  return v === undefined ? null : v;
+}
+
+/** 락마다 다른 값. 브라우저와 Node 양쪽에서 동작하도록 crypto 가 없으면 난수로 */
+function lockToken() {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 }
 
 /**

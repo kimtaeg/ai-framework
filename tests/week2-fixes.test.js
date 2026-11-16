@@ -21,7 +21,7 @@ import { FileStorage, DEFAULT_SCHEMA } from '../week2/dbms/storage-file.js';
 import { Database } from '../week2/dbms/engine.js';
 import { seedRows } from '../week2/dbms/seed.js';
 import { createDbService } from '../week2/dbms/service.js';
-import { createApp, isLoopback } from '../server.js';
+import { createApp, createWeek2, isLoopback } from '../server.js';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'week2-fixes-'));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -65,6 +65,22 @@ describe('해시 테이블 커서 순회 (scan)', () => {
 
   test('빈 테이블은 바로 끝난다', () => {
     assert.equal(new HashTable().scan(0, () => assert.fail('부르면 안 됨')), 0);
+  });
+
+  test('리해시 중 옛 테이블의 마지막 원소를 delete 하면 즉시 리해시를 마친다', () => {
+    const events = [];
+    const t = new HashTable({ onEvent: (e) => events.push(e.type) });
+    for (let i = 0; i < 6; i++) t.set(`k${i}`, i); // 확장 리해시 시작
+    assert.ok(t.isRehashing);
+    // tables[0]에 남은 키들을 전부 지워서 tables[0].used === 0 만들기
+    const remaining = [];
+    for (const head of t.tables[0].buckets) {
+      for (let n = head; n; n = n.next) remaining.push(n.key);
+    }
+    for (const k of remaining) t.delete(k);
+    assert.equal(t.isRehashing, false);
+    assert.equal(t.tables[1], null);
+    assert.ok(events.includes('resize-end'));
   });
 });
 
@@ -120,6 +136,31 @@ describe('메모리 상한 (maxMemory → 오래 안 쓴 키부터 지움)', () 
     assert.ok(r.command(['GET', 'hot']) !== null, '자주 쓰는 키는 남아 있다');
     assert.equal(logged.filter((a) => a[0] === 'DEL').length, r.evicted, '지운 키는 AOF 에 DEL 로 남는다');
     assert.deepEqual(r.command(['INFO']).memory, { usedBytes: r.usedBytes, maxMemory: 20_000, evicted: r.evicted });
+  });
+
+  test('만료된 키 때문에 상한을 넘기면 만료 키부터 비워 살아있는 키를 지우지 않는다', () => {
+    let t = 0;
+    const r = new MiniRedis({ now: () => t, maxMemory: 900 });
+    r.command(['SET', 'live', 'A'.repeat(40)]);
+    for (let i = 0; i < 3; i++) r.command(['SET', `dead${i}`, 'B'.repeat(50), 'PX', '50']);
+    t = 100; // dead0..2 만료 (타이머가 꺼져 있어 아직 메모리에 있음)
+    r.command(['SET', 'fresh', 'C'.repeat(200)]);
+    assert.ok(r.usedBytes <= 900, `usedBytes ${r.usedBytes}`);
+    assert.equal(r.evicted, 0, '만료 키를 먼저 비웠으므로 살아있는 키는 축출되지 않는다');
+    assert.equal(r.command(['GET', 'live']), 'A'.repeat(40));
+    assert.equal(r.command(['GET', 'fresh']), 'C'.repeat(200));
+  });
+
+  test('evictionPolicy: volatile-lru 는 TTL 없는 영구 키를 축출하지 않는다', () => {
+    const r = new MiniRedis({ maxMemory: 600, evictionPolicy: 'volatile-lru' });
+    r.command(['SET', 'perm1', 'P'.repeat(40)]);
+    r.command(['SET', 'perm2', 'P'.repeat(40)]);
+    for (let i = 0; i < 10; i++) r.command(['SET', `cache:${i}`, 'C'.repeat(40), 'EX', '60']);
+    assert.ok(r.usedBytes <= 600, `usedBytes ${r.usedBytes}`);
+    assert.ok(r.evicted > 0, 'TTL 있는 캐시 키가 축출된다');
+    assert.equal(r.command(['GET', 'perm1']), 'P'.repeat(40));
+    assert.equal(r.command(['GET', 'perm2']), 'P'.repeat(40));
+    assert.throws(() => new MiniRedis({ evictionPolicy: 'bad-policy' }), /알 수 없는 축출 정책/);
   });
 
   test('상한이 없으면(기본) 아무것도 지우지 않는다', () => {
@@ -446,9 +487,11 @@ describe('DB 서비스: 묶음 처리 · params · 상한', () => {
 
 // ================================================================ 웹 서버
 describe('웹 서버: 정적 파일 · API 접근 제한', () => {
-  let app, base;
+  let app, base, dataDir;
   before(async () => {
-    app = createApp();
+    // 실제 week2/data 가 아니라 임시 폴더를 쓴다 (테스트가 실제 데이터를 다시 쓰지 않고, 서버가 켜져 있어도 통과하게)
+    dataDir = tmp();
+    app = createApp({ week2: createWeek2(dataDir) });
     await new Promise((r) => app.listen(0, '127.0.0.1', r));
     base = `http://127.0.0.1:${app.address().port}`;
   });
@@ -456,6 +499,7 @@ describe('웹 서버: 정적 파일 · API 접근 제한', () => {
     await app.week2.close();
     app.closeAllConnections?.();
     await new Promise((r) => app.close(r));
+    rmSync(dataDir, { recursive: true, force: true });
   });
 
   test('글자 파일은 gzip 으로 줄여 보내고, 내용은 원본과 같다', async () => {

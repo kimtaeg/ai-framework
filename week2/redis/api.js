@@ -49,7 +49,8 @@ export function readJson(req, limit = MAX_BODY) {
       chunks.push(c);
     });
     req.on('end', () => {
-      const text = Buffer.concat(chunks).toString('utf8');
+      if (!chunks.length) return resolve({});
+      const text = (chunks.length === 1 ? chunks[0] : Buffer.concat(chunks)).toString('utf8');
       if (!text.trim()) return resolve({});
       try {
         const v = JSON.parse(text);
@@ -91,20 +92,28 @@ export function createRedisApi(redis, opts = {}) {
     }
   };
 
-  async function route(req, res, path, url) {
-    const m = path.match(/^\/keys\/(.+?)(\/expire|\/incr)?$/);
-    if (m) {
-      let key;
-      try {
-        key = checkKey(decodeURIComponent(m[1]));
-      } catch (e) {
-        throw e instanceof HttpError ? e : new HttpError(400, 'BAD_KEY', '키 주소가 올바르지 않습니다.');
+  async function route(req, res, path) {
+    if (path.startsWith('/keys/')) {
+      let rawKey = path.slice(6);
+      let sub = null;
+      if (rawKey.endsWith('/expire')) {
+        sub = '/expire';
+        rawKey = rawKey.slice(0, -7);
+      } else if (rawKey.endsWith('/incr')) {
+        sub = '/incr';
+        rawKey = rawKey.slice(0, -5);
       }
-      const sub = m[2];
+      if (rawKey) {
+        let key;
+        try {
+          key = checkKey(rawKey.indexOf('%') === -1 ? rawKey : decodeURIComponent(rawKey));
+        } catch (e) {
+          throw e instanceof HttpError ? e : new HttpError(400, 'BAD_KEY', '키 주소가 올바르지 않습니다.');
+        }
       if (!sub && req.method === 'GET') {
-        const value = run(['GET', key]);
-        if (value === null) return send(res, 404, { error: 'NOT_FOUND', message: '키가 없거나 만료되었습니다.', key });
-        return send(res, 200, { key, value, ttl: run(['TTL', key]) });
+        const found = run(['GETTTL', key]); // 값과 TTL 을 한 번의 조회로 (같은 순간의 상태)
+        if (found === null) return send(res, 404, { error: 'NOT_FOUND', message: '키가 없거나 만료되었습니다.', key });
+        return send(res, 200, { key, value: found[0], ttl: found[1] });
       }
       if (!sub && req.method === 'PUT') {
         const body = await readJson(req);
@@ -142,9 +151,12 @@ export function createRedisApi(redis, opts = {}) {
         return send(res, 200, { value: run(['INCRBY', key, String(by)]) });
       }
       throw new HttpError(405, 'METHOD', '이 주소에서 지원하지 않는 메서드입니다.');
+      }
     }
     if (path === '/keys' && req.method === 'GET') {
-      return send(res, 200, { keys: run(['KEYS', url.searchParams.get('pattern') || '*']) });
+      const q = req.url.indexOf('?');
+      const pattern = q === -1 ? '*' : (new URLSearchParams(req.url.slice(q + 1)).get('pattern') || '*');
+      return send(res, 200, { keys: run(['KEYS', pattern]) });
     }
     if (path === '/invalidate' && req.method === 'POST') {
       const body = await readJson(req);
@@ -171,18 +183,21 @@ export function createRedisApi(redis, opts = {}) {
       const body = await readJson(req);
       if (!Array.isArray(body.commands) || !body.commands.every(Array.isArray)) throw new HttpError(400, 'BAD_ARG', 'commands 는 배열의 배열이어야 합니다.');
       if (body.commands.length > 1000) throw new HttpError(400, 'BAD_ARG', '한 번에 최대 1000개 명령입니다.');
-      return send(res, 200, { results: redis.pipeline(body.commands.map((c) => c.map(String))) });
+      return send(res, 200, { results: redis.pipeline(body.commands) });
     }
     if (path === '/info' && req.method === 'GET') return send(res, 200, redis.command(['INFO']));
     throw new HttpError(404, 'NO_ROUTE', '없는 API 주소입니다.');
   }
 
   return async function handle(req, res) {
-    const url = new URL(req.url, 'http://x');
-    if (prefix && url.pathname !== prefix && !url.pathname.startsWith(prefix + '/')) return false;
-    const path = url.pathname.slice(prefix.length) || '/';
+    const rawUrl = req.url;
+    const q = rawUrl.indexOf('?');
+    let pathname = q === -1 ? rawUrl : rawUrl.slice(0, q);
+    if (pathname.startsWith('http://') || pathname.startsWith('https://')) pathname = new URL(rawUrl).pathname;
+    if (prefix && pathname !== prefix && !pathname.startsWith(prefix + '/')) return false;
+    const path = pathname.slice(prefix.length) || '/';
     try {
-      await route(req, res, path, url);
+      await route(req, res, path);
     } catch (e) {
       if (e instanceof HttpError) send(res, e.status, { error: e.code, message: e.message });
       else send(res, 500, { error: 'INTERNAL', message: e.message });

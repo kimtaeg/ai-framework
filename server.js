@@ -56,7 +56,7 @@ export function loadEnv(file = join(ROOT, '.env')) {
 
 /** 브라우저에 보여주면 안 되는 파일: .env 같은 점(.)으로 시작하는 파일/폴더, node_modules, 서버 코드 */
 function isPrivate(relPath) {
-  const parts = relPath.split(/[\\/]/).filter(Boolean);
+  const parts = relPath.toLowerCase().split(/[\\/]/).filter(Boolean); // 소문자로: Windows 는 /Server/ · /WEEK2/Data/ 도 같은 폴더다
   return parts.some((p) => p.startsWith('.') || p === 'node_modules') || parts[0] === 'server' || (parts[0] === 'week2' && parts[1] === 'data');
 }
 
@@ -138,19 +138,20 @@ export function createApp({ week2 = createWeek2(), testlab = createTestLab({ roo
         res.writeHead(304, headers).end();
         return;
       }
-      let body = await readFile(file);
+      let body;
       // 글자로 된 파일은 gzip 으로 줄여 보낸다 (번들 JS 는 보통 1/4 ~ 1/5 로 준다)
-      if (COMPRESSIBLE.has(ext) && body.length >= GZIP_MIN && /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''))) {
+      if (COMPRESSIBLE.has(ext) && info.size >= GZIP_MIN && /\bgzip\b/.test(String(req.headers['accept-encoding'] ?? ''))) {
         let hit = gzipCache.get(file);
         if (!hit || hit.etag !== etag) {
-          hit = { etag, body: await gzipAsync(body) };
+          // 압축해 둔 것이 없거나 파일이 바뀌었을 때만 디스크에서 읽는다 (있으면 파일을 다시 읽지 않는다)
+          hit = { etag, body: await gzipAsync(await readFile(file)) };
           if (gzipCache.size >= GZIP_CACHE_MAX) gzipCache.delete(gzipCache.keys().next().value);
           gzipCache.set(file, hit);
         }
         body = hit.body;
         headers['Content-Encoding'] = 'gzip';
         headers.Vary = 'Accept-Encoding';
-      }
+      } else body = await readFile(file);
       headers['Content-Length'] = body.length;
       res.writeHead(200, headers);
       res.end(body);

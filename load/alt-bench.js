@@ -102,11 +102,16 @@ export async function benchPool({ rows = 20_000, queries = 120, concurrency = 4,
     out.push({ label: '요청마다 새 워커', metrics: { msPerQuery: r2(ms / few.length), mainBusy: Math.round(lag) } });
 
     // 3) 메인 스레드에서 바로 (워커 없음)
-    const mainDb = new Database(new FileStorage(dir), { order: 64 });
-    stop = lagMeter(); t0 = now();
-    for (const sql of sqls) { mainDb.execute(sql); await yieldNow(); }
-    ms = now() - t0; lag = stop();
-    out.push({ label: '메인 스레드에서 바로', metrics: { msPerQuery: r2(ms / queries), mainBusy: Math.round(lag) } });
+    const mainStorage = new FileStorage(dir);
+    try {
+      const mainDb = new Database(mainStorage, { order: 64 });
+      stop = lagMeter(); t0 = now();
+      for (const sql of sqls) { mainDb.execute(sql); await yieldNow(); }
+      ms = now() - t0; lag = stop();
+      out.push({ label: '메인 스레드에서 바로', metrics: { msPerQuery: r2(ms / queries), mainBusy: Math.round(lag) } });
+    } finally {
+      mainStorage.close();
+    }
 
     for (const v of out) log(`${v.label}: 쿼리 1개당 ${v.metrics.msPerQuery}ms · 메인 스레드 사용 ${v.metrics.mainBusy}%`);
     return { main: 'msPerQuery', variants: out, note: `users ${rows.toLocaleString()}행에서 email 로 찾기(전체 읽기) · 동시에 ${concurrency}개씩` };

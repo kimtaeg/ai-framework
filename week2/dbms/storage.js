@@ -20,8 +20,19 @@
 
 export const NULL_MARK = '\\N';
 
+/** 그대로 쓸 수 없는 값인지: 역슬래시 · 줄바꿈 · 따옴표 · 쉼표가 있거나, 앞뒤가 공백이거나, 빈 문자열 */
+const NEEDS_ESCAPE = /[\\\r\n",]|^\s|\s$/;
+
+/** 파일에 따옴표 · 이스케이프 없이 그대로 적히는 글자열인지 (그런 값은 파일의 바이트에서 바로 검색할 수 있다) */
+export function isPlainText(s) {
+  return typeof s === 'string' && s !== '' && !NEEDS_ESCAPE.test(s);
+}
+
 function escapeField(v) {
   if (v === null || v === undefined) return NULL_MARK;
+  if (typeof v === 'number') return String(v); // 숫자에는 바꿀 글자가 없다
+  // 대부분의 값은 바꿀 것이 없다 → 검사 한 번으로 끝낸다 (아래의 치환 세 번 + 검사를 건너뜀. 대량 INSERT 에서 가장 많이 불리는 함수)
+  if (typeof v === 'string' && v !== '' && !NEEDS_ESCAPE.test(v)) return v;
   let s = String(v).replace(/\\/g, '\\\\').replace(/\r/g, '\\r').replace(/\n/g, '\\n');
   if (s === NULL_MARK) s = '\\\\N';
   if (/[",]|^\s|\s$/.test(s) || s === '') s = `"${s.replace(/"/g, '""')}"`;
@@ -36,7 +47,11 @@ function unescapeField(s) {
 
 /** 값 배열 → 한 줄 */
 export function encodeRow(values) {
-  return values.map(escapeField).join(',');
+  const n = values.length;
+  if (n === 0) return '';
+  let out = escapeField(values[0]);
+  for (let i = 1; i < n; i++) out += ',' + escapeField(values[i]);
+  return out;
 }
 
 /**
@@ -53,8 +68,28 @@ export function decodeField(line, i) {
   }
   let e = line.indexOf(',', s);
   if (e === -1) e = line.length;
+  if (e - s === 2 && line.charCodeAt(s) === 92 && line.charCodeAt(s + 1) === 78) return null;
   const raw = line.slice(s, e);
-  return raw === NULL_MARK ? null : unescapeField(raw);
+  return raw.indexOf('\\') === -1 ? raw : unescapeField(raw);
+}
+
+/** 따옴표·백슬래시가 없는 일반 줄에서 i번째 열이 val 과 같은지 0-할당으로 확인한다. 판단 불가면 null */
+export function fieldEqualsPlain(line, i, val) {
+  if (line.indexOf('"') !== -1 || line.indexOf('\\') !== -1) return null;
+  let s = 0;
+  for (let k = 0; k < i; k++) {
+    const c = line.indexOf(',', s);
+    if (c === -1) return false;
+    s = c + 1;
+  }
+  let e = line.indexOf(',', s);
+  if (e === -1) e = line.length;
+  const vlen = val.length;
+  if (e - s !== vlen) return false;
+  if (vlen === 0) return true;
+  if (line.charCodeAt(s) !== val.charCodeAt(0)) return false;
+  if (vlen > 1 && line.charCodeAt(e - 1) !== val.charCodeAt(vlen - 1)) return false;
+  return line.startsWith(val, s);
 }
 
 /** 한 줄 → 값 배열 (문자열 또는 null) */
@@ -62,6 +97,7 @@ export function decodeRow(line) {
   // 따옴표가 없는 줄(대부분)은 쉼표로 나누기만 하면 된다 — 아래 일반 경로와 결과가 같다
   if (line.indexOf('"') === -1) {
     const out = line.split(',');
+    if (line.indexOf('\\') === -1) return out;
     for (let k = 0; k < out.length; k++) out[k] = out[k] === NULL_MARK ? null : unescapeField(out[k]);
     return out;
   }
@@ -118,11 +154,19 @@ export class MemoryStorage {
     return this.files[table][locator];
   }
 
-  *scan(table, from = 0) {
+  *scan(table, from = 0, _grow = false) {
     const f = this.files[table];
     for (let i = from; i < f.length; i++) {
       this.reads++;
       yield [i, f[i]];
+    }
+  }
+
+  forEachLine(table, from = 0, _grow = false, fn) {
+    const f = this.files[table];
+    for (let i = from; i < f.length; i++) {
+      this.reads++;
+      if (fn(i, f[i]) === false) return;
     }
   }
 
