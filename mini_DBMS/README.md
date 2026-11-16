@@ -8,48 +8,6 @@ Java 17로 직접 구현한 파일 기반 미니 DBMS. 외부 라이브러리는
 | 2 | 메모리 B+ 트리 id 인덱스 + 100만 건 성능 비교 | ✅ |
 | 3 | JDK HttpServer + ThreadPoolExecutor API 서버 | ✅ |
 
-## 빠른 시작
-
-```bash
-./gradlew test        # 전체 테스트
-./gradlew jar         # build/libs/mini-dbms.jar 생성 (의존성 포함)
-
-java -jar build/libs/mini-dbms.jar run sql/sample.sql --data ./data
-java -jar build/libs/mini-dbms.jar repl --data ./data
-```
-
-| 명령 | 설명 |
-|---|---|
-| `run <file.sql> [--data DIR]` | 파일의 문장을 순서대로 실행. 마지막 `;`는 생략 가능 |
-| `repl [--data DIR]` | 대화형. `;`가 나올 때까지 여러 줄 입력, `.exit` 또는 EOF로 종료 |
-| `generate --table T --count N [--seed 42]` | 대용량 테스트 데이터 생성 ([아래](#대용량-데이터-생성)) |
-| `bench --table T [--queries 1000]` | 인덱스 조회 vs 선형 탐색 벤치마크 → `bench-result.md` ([아래](#벤치마크)) |
-| `serve [--port 8080] [--threads 8] [--queue 1000] [--max-rows 10000] [--query-timeout 5000] [--grace 10]` | HTTP API 서버 ([아래](#api-서버)) |
-| `loadtest [--url URL] [--clients 1,4,16,64]` | 동시 클라이언트 수별 TPS·지연 ([아래](#부하-테스트)) |
-
-- `--data` 기본값은 `./data`. 디렉터리가 미리 있어야 한다.
-- 한 문장이 실패해도 `ERROR: ...`를 출력하고 다음 문장을 계속 실행한다. run 모드는 `[line N]`으로 문장 위치를 알려준다.
-- 종료 코드: `0` 성공 · `1` 실패한 문장이 있음 · `2` 사용법/파일 오류
-
-```text
-mini-dbms> INSERT INTO users (name) VALUES ('kim');
-1 row inserted (id=1)
-mini-dbms> SELECT * FROM users
-        -> WHERE id >= 1;
-+----+------+------+
-| id | name | age  |
-+----+------+------+
-|  1 | kim  | NULL |
-+----+------+------+
-1 row (index range, 0.041 ms)
-mini-dbms> EXPLAIN SELECT * FROM users WHERE id = 1;
-+-------+--------------+-----------------+
-| table | access_path  | detail          |
-+-------+--------------+-----------------+
-| users | INDEX_LOOKUP | id = 1 (id = 1) |
-+-------+--------------+-----------------+
-```
-
 ## 지원 SQL
 
 ```sql
