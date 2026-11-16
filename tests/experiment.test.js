@@ -14,9 +14,9 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, connect as netConnect } from 'node:net';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, execFile } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, availableParallelism } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { RespClient, startRespServer, parseRequest, encodeReply as serverReply } from '../experiment/resp.js';
@@ -53,6 +53,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const temps = [];
 const tempDir = (p) => { const d = mkdtempSync(join(tmpdir(), p)); temps.push(d); return d; };
 after(() => { for (const d of temps) rmSync(d, { recursive: true, force: true }); });
+// B · C 는 케이스마다 node 를 따로 띄운다 (110번). 하나씩 기다리면 묶음 하나가 15~19초 걸려 제한 시간 20초에 닿으므로 여러 개를 함께 돌린다.
+// 무작위 값은 케이스 본문이 첫 await 전에 다 뽑으므로, 함께 돌려도 뽑는 순서(= SEED 재현)는 그대로다.
+const PARALLEL = { concurrency: Math.max(2, Math.min(8, availableParallelism())), timeout: 120_000 }; // 묶음 전체 제한 (케이스 하나는 그대로 20초)
+const runNode = (file) => new Promise((ok) => execFile(process.execPath, [file], { encoding: 'utf8' }, (err, stdout, stderr) => ok({ status: err ? (err.code ?? 1) : 0, stdout, stderr })));
 
 function randomText(maxLen = 12) {
   const parts = ['a', 'Z', '7', ' ', '-', ':', '\r\n', '\n', '한', '글', '😀', '$', '*', '+', '\\', '"'];
@@ -183,7 +187,7 @@ describe('A. RESP 클라이언트: 명령 인코딩 · 응답 파싱 · 파이�
 });
 
 // ---------- B. check.js 신뢰도 (60) ----------
-describe('B. check.js: 무작위 회차 → 독립 계산과 같은 신뢰도', () => {
+describe('B. check.js: 무작위 회차 → 독립 계산과 같은 신뢰도', PARALLEL, () => {
   for (let i = 0; i < 60; i++) {
     const keys = Array.from({ length: ri(0, 6) }, (_, k) => `E${ri(1, 4)}_k${k}_vu50`);
     const runs = [];
@@ -194,12 +198,12 @@ describe('B. check.js: 무작위 회차 → 독립 계산과 같은 신뢰도', 
         runs.push({ key, file: `${key}_r${r}.json`, rps: bad && rand() < 0.5 ? 0 : base * rf(0.7, 1.3), errorRate: bad ? rf(0.011, 0.5) : rf(0, 0.009) });
       }
     }
-    test(`케이스 ${i + 1}: 조건 ${keys.length}개 · 회차 ${runs.length}개`, () => {
+    test(`케이스 ${i + 1}: 조건 ${keys.length}개 · 회차 ${runs.length}개`, async () => {
       const dir = tempDir('exp-check-');
       mkdirSync(join(dir, 'results', 'raw'), { recursive: true });
       copyFileSync(join(EXP, 'check.js'), join(dir, 'check.js'));
       for (const r of runs) writeFileSync(join(dir, 'results', 'raw', r.file), JSON.stringify({ rps: r.rps, errorRate: r.errorRate }));
-      const out = spawnSync(process.execPath, [join(dir, 'check.js')], { encoding: 'utf8' }).stdout.trim();
+      const out = (await runNode(join(dir, 'check.js'))).stdout.trim();
       // 독립 계산
       const ok = runs.filter((r) => r.rps > 0 && r.errorRate < 0.01);
       const by = {};
@@ -219,7 +223,7 @@ describe('B. check.js: 무작위 회차 → 독립 계산과 같은 신뢰도', 
 });
 
 // ---------- C. analyze.js 통계 · 공식 (50) ----------
-describe('C. analyze.js: 정답을 아는 합성 데이터로 통계 · 공식 · 손익분기 검사', () => {
+describe('C. analyze.js: 정답을 아는 합성 데이터로 통계 · 공식 · 손익분기 검사', PARALLEL, () => {
   const HITS2 = [0, 0.5, 0.8, 0.9, 0.95, 0.99, 1];
   const HITS1 = [0, 0.5, 0.9, 0.99, 1];
   const HITS3 = [0, 0.9, 1];
@@ -230,7 +234,7 @@ describe('C. analyze.js: 정답을 아는 합성 데이터로 통계 · 공식 �
     const Tm = rf(30, 150), Th = { mini: rf(0.3, 1), redis: rf(0.1, 0.5) };
     const e3 = { none: rf(3000, 6000) };
     for (const b of ['mini', 'redis']) { const s = [rf(0.3, 1.1), rf(0.5, 3), rf(0.8, 4.5)].sort((a, z) => a - z); e3[b] = s.map((x) => x * e3.none); }
-    test(`케이스 ${i + 1}: 반복 ${reps}회 · 잡음 ±${(noise * 100).toFixed(1)}%`, () => {
+    test(`케이스 ${i + 1}: 반복 ${reps}회 · 잡음 ±${(noise * 100).toFixed(1)}%`, async () => {
       const dir = tempDir('exp-analyze-');
       const raw = join(dir, 'results', 'raw');
       mkdirSync(raw, { recursive: true });
@@ -260,7 +264,7 @@ describe('C. analyze.js: 정답을 아는 합성 데이터로 통계 · 공식 �
       for (const b of ['mini', 'redis']) HITS3.forEach((h, k) => put('E3', b, 'index', h, 50, () => e3[b][k], () => 10));
       for (const b of ['none', 'mini', 'redis']) for (const w of ['A', 'B', 'C']) put('E4', b, 'index', null, 50, () => rf(1000, 9000), () => 5, { WORKLOAD: w, hit: rf(0.3, 0.9) });
 
-      const res = spawnSync(process.execPath, [join(dir, 'analyze.js')], { encoding: 'utf8' });
+      const res = await runNode(join(dir, 'analyze.js'));
       assert.equal(res.status, 0, res.stderr);
       const s = JSON.parse(readFileSync(join(dir, 'results', 'summary.json'), 'utf8'));
       assert.equal(s.conditions.length, Object.keys(truth).length, '조건 개수');

@@ -280,6 +280,7 @@ export class MiniRedis {
 
   /** 메모리 상한을 넘었으면 내려갈 때까지 지운다: 만료 키를 먼저 치운 뒤 표본 중 가장 오래 안 쓴 키부터 (어림 LRU) */
   #evict() {
+    if (this.replaying) return; // 복원 중에는 곧 치울 만료 키가 섞여 있다 → 끝난 뒤 한 번에 (loadAof)
     if (this.expires.size > 0) this.activeExpireCycle();
     if (this.usedBytes <= this.maxMemory) return;
 
@@ -344,6 +345,9 @@ export class MiniRedis {
     const entry = this.data.getWithHash(key, h);
     if (!entry) return null;
     if (entry.expireAt !== null && entry.expireAt <= this.now()) {
+      // AOF 를 다시 실행하는 동안에는 시간으로 지우지 않는다: 만료를 걸었다가 해제 · 연장한 키는, 처음 건 시각이
+      // 지난 뒤에 다시 켜면 그 줄에서 지워져 뒤의 PERSIST · PEXPIREAT 가 헛돈다. 정말 만료된 키는 loadAof 끝에서 치운다.
+      if (this.replaying) return entry;
       this.#removeHash(key, entry, h);
       this.stats.expiredLazy++;
       if (!this.replaying && this.onWrite) this.onWrite(['DEL', key]); // 다른 복제본/AOF 도 지우도록 (Redis 도 만료 삭제를 DEL 로 전파)
@@ -501,7 +505,7 @@ export class MiniRedis {
     const h = this.data.computeHash(key);
     const prev = this.#lookupHash(key, h);
     if ((nx && prev) || (xx && !prev)) return null;
-    if (isAbs && expireAt <= this.now()) {
+    if (isAbs && !this.replaying && expireAt <= this.now()) {
       if (prev) {
         this.#removeHash(key, prev, h);
         if (!this.replaying && this.onWrite) this.onWrite(['DEL', key]);
@@ -605,7 +609,7 @@ export class MiniRedis {
     if (!Number.isSafeInteger(at)) throw err('만료 시각이 너무 큽니다.');
     const e = this.#lookup(key);
     if (!e) return 0;
-    if (at <= this.now()) {
+    if (!this.replaying && at <= this.now()) {
       // 과거 시각으로 만료 = 바로 삭제 (Redis 와 동일)
       this.#remove(key, e);
       if (!this.replaying && this.onWrite) this.onWrite(['DEL', key]);
@@ -854,8 +858,14 @@ export class MiniRedis {
         }
       }
     } finally {
+      // 복원이 끝난 지금 기준으로 만료된 키를 치운다 (꺼져 있는 동안 만료된 키가 메모리를 차지하지 않게)
+      const now = this.now();
+      const dead = [];
+      for (const [k, at] of this.expires.entries()) if (at <= now) dead.push(k);
+      for (const k of dead) this.#remove(k);
       this.replaying = false;
     }
+    if (this.maxMemory && this.usedBytes > this.maxMemory) this.#evict();
     const truncated = badLast; // 마지막 줄이 깨져 있으면 = 쓰다 만 줄
     this.stats.commands = 0;
     return { applied, truncated, errors };

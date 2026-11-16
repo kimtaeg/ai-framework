@@ -459,6 +459,22 @@ describe('AOF (서버가 꺼져도 데이터 유지)', () => {
     }
   });
 
+  test('만료를 걸었다가 해제 · 연장한 키는, 처음 건 시각이 지난 뒤에 복원해도 남아 있다', () => {
+    let clock = 1000;
+    const log = [];
+    const r = new MiniRedis({ now: () => clock, onWrite: (a) => log.push(JSON.stringify(a)) });
+    r.exec('SET session A'); r.exec('PEXPIRE session 300'); r.exec('PERSIST session');
+    r.exec('SET cart B'); r.exec('PEXPIRE cart 300'); r.exec('PEXPIRE cart 60000');
+    r.exec('SET gone C'); r.exec('PEXPIRE gone 300');
+    clock += 500; // 처음 건 300ms 가 지난 뒤에 다시 켠다
+    const r2 = new MiniRedis({ now: () => clock });
+    r2.loadAof(log.join('\n'));
+    assert.equal(r2.exec('GET session'), 'A');
+    assert.equal(r2.exec('TTL session'), -1);
+    assert.equal(r2.exec('GET cart'), 'B');
+    assert.equal(r2.exec('GET gone'), null, '정말 만료된 키는 복원 뒤에 읽으면 없다');
+  });
+
   test('AOF 중간의 깨진 줄은 건너뛰고 errors 로 센다', () => {
     const r = new MiniRedis();
     const out = r.loadAof('["SET","a","1"]\nGARBAGE\n["NOPE"]\n["SET","b","2"]\n');
