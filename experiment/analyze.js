@@ -218,6 +218,8 @@ const pts = (exp, b, field, delay = 0) => conds.filter((c) => c.exp === exp && c
 const modelLine = (rows, field) => rows.map((m) => ({ h: m.hitMeasured, y: m[field] })).filter((m) => Number.isFinite(m.y));
 const svg = (name, s) => writeFileSync(join(HERE, 'results', name), s);
 const has = (b, exp) => conds.some((c) => c.exp === exp && c.BACKEND === b);
+// 그래프에 쓸 핵심 한 줄용: 설정 히트율이 HIT 인 점의 값
+const at = (exp, b, field, HIT, delay = 0) => { const c = find(exp, b, { HIT, DELAY_MS: delay }); return c ? med(c[field]) : NaN; };
 const none1 = find('E1', 'none'), none2 = find('E2', 'none');
 if (models.E1.length) svg('e1-latency.svg', renderHitChart({
   title: 'E1 · 응답시간은 공식대로 줄어든다 (VU 1, 전체 읽기 쿼리)',
@@ -234,6 +236,7 @@ if (models.E2.length) svg('e2-throughput.svg', renderHitChart({
   series: ['mini', 'redis'].map((b) => ({ key: b, color: COLORS[b], points: pts('E2', b, 'rps'), model: modelLine(models.E2.filter((m) => m.backend === b), 'predictedRps') })),
   baseline: none2 && { y: med(none2.rps), label: `캐시 없음 ${f(med(none2.rps))}/s` },
   legendItems: [[NAME.mini, COLORS.mini], [NAME.redis, COLORS.redis], ['공식 예측', COLORS.soft, true]],
+  note: none2 && `히트율 90% → 공식 10배, 실측 ${f(at('E2', 'mini', 'rps', 0.9) / med(none2.rps), 1)}배 · ${f(at('E2', 'redis', 'rps', 0.9) / med(none2.rps), 1)}배`,
 }));
 const none3 = find('E3', 'none');
 if (none3) {
@@ -262,6 +265,7 @@ if (none5) svg('e5-delay.svg', renderHitChart({
   series: LIGHT.filter((b) => has(b, 'E5')).map((b) => ({ key: b, color: COLORS[b], points: pts('E5', b, 'rps', DELAY), model: pts('E3', b, 'rps').map(({ h, y }) => ({ h, y })) })),
   baseline: { y: med(none5.rps), label: `캐시 없음 ${f(med(none5.rps), 0)}/s` },
   legendItems: [...LIGHT.filter((b) => has(b, 'E5')).map((b) => [NAME[b], COLORS[b]]), ['지연 없음', COLORS.soft, true]],
+  note: `히트율 100%에서 +${DELAY}ms 로 처리량 ` + [['redis', 'Redis'], ['miniresp', 'RESP'], ['mini', 'HTTP']].map(([b, n]) => `${n} ${f((at('E5', b, 'rps', 1, DELAY) / at('E3', b, 'rps', 1) - 1) * 100, 0)}%`).join(' · '),
 }));
 // E6: VU 1 응답시간 — 지연이 그대로 보이는 경우
 const none6 = find('E6', 'none', { DELAY_MS: 0 });
@@ -272,6 +276,7 @@ if (none6 && DELAY) svg('e6-latency-delay.svg', renderHitChart({
   series: LIGHT.filter((b) => has(b, 'E6')).map((b) => ({ key: b, color: COLORS[b], points: pts('E6', b, 'avg', DELAY), model: pts('E6', b, 'avg', 0).map(({ h, y }) => ({ h, y })) })),
   baseline: { y: med(none6.avg), label: `캐시 없음 ${f(med(none6.avg), 2)}ms` },
   legendItems: [...LIGHT.filter((b) => has(b, 'E6')).map((b) => [NAME[b], COLORS[b]]), ['지연 없음', COLORS.soft, true]],
+  note: `+${DELAY}ms 면 히트율 100%여도 ${f(at('E6', 'redis', 'avg', 1, DELAY), 2)}ms · 캐시 없음(${f(med(none6.avg), 2)}ms)보다 느림 (Redis 7)`,
 }));
 // 통신 방식: 요청 하나당 CPU (앱 서버 · 캐시 서버)
 if (protocol.length && protocol.every((p) => p.appMsPerReq != null && p.cacheMsPerReq != null)) svg('e3-cpu-protocol.svg', renderBarChart({

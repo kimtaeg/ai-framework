@@ -11,6 +11,8 @@ const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
 const fmt = (x) => (x === 0 ? '0' : x >= 1000 ? `${(x / 1000).toFixed(x >= 10000 ? 0 : 1)}k` : x >= 10 ? x.toFixed(0) : x >= 1 ? x.toFixed(1) : String(+x.toFixed(3)));
 // 글자 폭 어림 (14px 기준: 한글 14 · 그 밖 8) — 범례 항목 간격을 글자 길이에 맞춘다
 const textW = (s) => [...String(s)].reduce((w, ch) => w + (ch.charCodeAt(0) > 0x2e80 ? 14 : 8), 0);
+// 선 위에 놓이는 글자는 배경색 테두리를 둘러 선과 겹쳐도 읽히게
+const HALO = `paint-order="stroke" stroke="${C.bg}" stroke-width="5" stroke-linejoin="round"`;
 
 function frame(w, h, title, subtitle, body) {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" ${FONT}>
@@ -36,8 +38,8 @@ function legend(x, y, items) {
  * 히트율(x) 그래프. series: [{ key, color, points:[{h, y, ci}], model:[{h,y}] }]
  * logY: 처리량처럼 범위가 큰 값
  */
-export function renderHitChart({ title, subtitle, yLabel, series, baseline, logY = false, legendItems }) {
-  const W = 880, H = 520, L = 88, R = 32, T = 104, B = 72;
+export function renderHitChart({ title, subtitle, yLabel, series, baseline, logY = false, legendItems, note }) {
+  const W = 880, H = 540, L = 88, R = 96, T = 128, B = 72; // 오른쪽 여백: 캐시 없음 이름표 자리
   const pw = W - L - R, ph = H - T - B;
   const ys = series.flatMap((s) => [...s.points.map((p) => p.y + (p.ci || 0)), ...(s.model || []).map((m) => m.y)]).concat(baseline ? [baseline.y] : []).filter((v) => v > 0 && Number.isFinite(v));
   let y0 = logY ? Math.pow(10, Math.floor(Math.log10(Math.min(...ys)))) : 0;
@@ -49,11 +51,11 @@ export function renderHitChart({ title, subtitle, yLabel, series, baseline, logY
   let g = '';
   // 격자
   const ticks = logY ? Array.from({ length: Math.round(Math.log10(y1 / y0)) + 1 }, (_, i) => y0 * 10 ** i) : Array.from({ length: 6 }, (_, i) => (y1 / 5) * i);
-  for (const t of ticks) g += `<line x1="${L}" y1="${sy(t)}" x2="${W - R}" y2="${sy(t)}" stroke="${C.grid}"/><text x="${L - 10}" y="${sy(t) + 5}" font-size="13" fill="${C.soft}" text-anchor="end">${fmt(t)}</text>`;
-  for (const h of [0, 0.25, 0.5, 0.75, 1]) g += `<text x="${sx(h)}" y="${T + ph + 24}" font-size="13" fill="${C.soft}" text-anchor="middle">${h * 100}%</text>`;
+  for (const t of ticks) g += `<line x1="${L}" y1="${sy(t)}" x2="${W - R}" y2="${sy(t)}" stroke="${C.grid}"/><text x="${L - 10}" y="${sy(t) + 5}" font-size="14" fill="${C.soft}" text-anchor="end">${fmt(t)}</text>`;
+  for (const h of [0, 0.25, 0.5, 0.75, 1]) g += `<text x="${sx(h)}" y="${T + ph + 24}" font-size="14" fill="${C.soft}" text-anchor="middle">${h * 100}%</text>`;
   g += `<text x="${L + pw / 2}" y="${H - 18}" font-size="14" fill="${C.ink}" text-anchor="middle">캐시 히트율</text>`;
   g += `<text x="22" y="${T + ph / 2}" font-size="14" fill="${C.ink}" text-anchor="middle" transform="rotate(-90 22 ${T + ph / 2})">${esc(yLabel)}</text>`;
-  if (baseline) g += `<line x1="${L}" y1="${sy(baseline.y)}" x2="${W - R}" y2="${sy(baseline.y)}" stroke="${C.none}" stroke-width="2" stroke-dasharray="2 4"/><text x="${W - R - 4}" y="${sy(baseline.y) - 8}" font-size="13" fill="${C.soft}" text-anchor="end">${esc(baseline.label)}</text>`;
+  if (baseline) g += `<line x1="${L}" y1="${sy(baseline.y)}" x2="${W - R}" y2="${sy(baseline.y)}" stroke="${C.none}" stroke-width="2" stroke-dasharray="2 4"/>`;
   for (const s of series) {
     if (s.model?.length) g += `<polyline fill="none" stroke="${s.color}" stroke-width="2" stroke-dasharray="6 5" opacity="0.8" points="${s.model.map((m) => `${sx(m.h)},${sy(m.y)}`).join(' ')}"/>`;
     g += `<polyline fill="none" stroke="${s.color}" stroke-width="2.5" points="${s.points.map((p) => `${sx(p.h)},${sy(p.y)}`).join(' ')}"/>`;
@@ -62,7 +64,14 @@ export function renderHitChart({ title, subtitle, yLabel, series, baseline, logY
       g += `<circle cx="${sx(p.h)}" cy="${sy(p.y)}" r="5" fill="${s.color}"/>`;
     }
   }
-  g += legend(L, T - 16, legendItems);
+  // 캐시 없음 이름표는 그래프 오른쪽 바깥에 두 줄로 (실측 선과 겹치지 않게): "캐시 없음 4950/s" → "캐시 없음" / "4950/s"
+  if (baseline) {
+    const cut = baseline.label.lastIndexOf(' ');
+    g += `<text x="${W - R + 8}" y="${sy(baseline.y) - 4}" font-size="13" font-weight="600" fill="${C.soft}" ${HALO}>${esc(baseline.label.slice(0, cut))}<tspan x="${W - R + 8}" dy="17">${esc(baseline.label.slice(cut + 1))}</tspan></text>`;
+  }
+  // 발표에서 읽을 핵심 한 줄 (그래프 왼쪽 위 빈 곳)
+  if (note) g += `<text x="${L + 16}" y="${T + 26}" font-size="16" font-weight="700" fill="${C.ink}" ${HALO}>${esc(note)}</text>`;
+  g += legend(L, T - 26, legendItems);
   return frame(W, H, title, subtitle, g);
 }
 
