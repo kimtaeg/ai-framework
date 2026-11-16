@@ -130,8 +130,8 @@ export class FileStorage {
     this.dir = dir;
     this.sync = opts.sync ?? false;
     this.poolPages = Math.max(0, opts.poolPages ?? POOL_PAGES);
-    this.pool = { hits: 0, misses: 0, evictions: 0 }; // 버퍼 풀 통계 (hits: 메모리에서 바로 꺼냄, misses: 디스크에서 읽음, evictions: 쫓겨난 페이지)
-    this.poolBypassed = 0; // 적중률이 낮아 풀을 건너뛴 조회 수
+    // 버퍼 풀 통계 (hits: 메모리에서 바로 꺼냄, misses: 디스크에서 읽음, evictions: 쫓겨난 페이지, bypassed: 적중률이 낮아 풀을 건너뛴 조회)
+    this.pool = { hits: 0, misses: 0, evictions: 0, bypassed: 0 };
     mkdirSync(dir, { recursive: true });
     const schemaFile = join(dir, 'schema.json');
     if (!existsSync(schemaFile)) writeFileSync(schemaFile, JSON.stringify(opts.schema ?? DEFAULT_SCHEMA, null, 2));
@@ -322,7 +322,7 @@ export class FileStorage {
     // 버퍼 풀: 확정된 끝(및 이미 디스크에 기록된 구간) 아래의 꽉 찬 페이지에 있는 줄이면 페이지에서 바로 꺼낸다
     if (f.bypass > 0) {
       f.bypass--;
-      this.poolBypassed++;
+      this.pool.bypassed++;
     } else if (this.poolPages > 0 && f.visible !== Infinity) {
       if (f.winHits + f.winMisses >= POOL_WINDOW) {
         if (f.winHits < POOL_MIN_HIT * (f.winHits + f.winMisses)) f.bypass = POOL_BYPASS;

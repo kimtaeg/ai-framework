@@ -116,16 +116,16 @@ describe('버퍼 풀: 적중률이 낮으면 건너뛴다', () => {
       const check = (id) => assert.deepEqual(db.execute(`SELECT id, email FROM users WHERE id = ${id}`)[0].rows, [[id, `e${id}@x`]]);
       // 1) 전체에 고르게 흩어진 조회: 대부분 빗나간다 → 건너뛰기 시작
       for (let i = 0; i < 12000; i++) check(1 + ((i * 7919) % 20000));
-      assert.ok(storage.poolBypassed > 0, `건너뛴 조회 ${storage.poolBypassed}`);
+      assert.ok(storage.pool.bypassed > 0, `건너뛴 조회 ${storage.pool.bypassed}`);
       const missesAfterRandom = storage.pool.misses;
       assert.ok(missesAfterRandom < 9000, `빗나간 횟수 ${missesAfterRandom} (건너뛰지 않았다면 1만 번 넘게 빗나간다)`);
       // 2) 좁은 구간 반복: 건너뛰는 기간이 끝나면 다시 풀을 쓰고, 이번에는 잘 맞으므로 계속 쓴다
       const hitsBefore = storage.pool.hits;
       for (let i = 0; i < 60000; i++) check(100 + (i % 50));
       assert.ok(storage.pool.hits - hitsBefore > 30000, `적중 ${storage.pool.hits - hitsBefore}`);
-      const bypassedHot = storage.poolBypassed;
+      const bypassedHot = storage.pool.bypassed;
       for (let i = 0; i < 5000; i++) check(100 + (i % 50));
-      assert.equal(storage.poolBypassed, bypassedHot, '잘 맞는 동안에는 건너뛰지 않는다');
+      assert.equal(storage.pool.bypassed, bypassedHot, '잘 맞는 동안에는 건너뛰지 않는다');
       storage.close();
     } finally {
       rmSync(dir, { recursive: true, force: true });

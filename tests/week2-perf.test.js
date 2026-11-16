@@ -46,9 +46,9 @@ describe('미니 DBMS 버퍼 풀', () => {
     const s = new FileStorage(dir, { poolPages: 2 });
     const db = new Database(s);
     one(db, 'SELECT * FROM products WHERE id = 1');
-    assert.deepEqual(s.pool, { hits: 0, misses: 1, evictions: 0 });
+    assert.deepEqual(s.pool, { hits: 0, misses: 1, evictions: 0, bypassed: 0 });
     one(db, 'SELECT * FROM products WHERE id = 2');
-    assert.deepEqual(s.pool, { hits: 1, misses: 1, evictions: 0 });
+    assert.deepEqual(s.pool, { hits: 1, misses: 1, evictions: 0, bypassed: 0 });
     one(db, 'SELECT * FROM products WHERE id = 1000');
     one(db, 'SELECT * FROM products WHERE id = 2000'); // 세 번째 페이지 → 가장 오래 안 쓴 첫 페이지를 버린다
     assert.equal(s.pool.evictions, 1);
