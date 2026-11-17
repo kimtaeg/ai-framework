@@ -96,7 +96,11 @@ export function renderBarChart({ title, subtitle, yLabel, groups }) {
       g += `<rect x="${x + 4}" y="${sy(b.y)}" width="${bw - 8}" height="${T + ph - sy(b.y)}" fill="${C[b.key]}" rx="3"/>`;
       if (b.ci) g += `<line x1="${x + bw / 2}" y1="${sy(Math.max(0, b.y - b.ci))}" x2="${x + bw / 2}" y2="${sy(b.y + b.ci)}" stroke="${C.ink}" stroke-width="1.5"/>`;
       // 막대가 좁으면(한 묶음에 막대가 많을 때) 숫자를 작게 써서 옆 막대 숫자와 겹치지 않게
-      g += `<text x="${x + bw / 2}" y="${sy(b.y + (b.ci || 0)) - 8}" font-size="${bw < 44 ? 11 : 13}" fill="${C.ink}" text-anchor="middle">${esc(b.note ?? fmt(b.y))}</text>`;
+      // "10.3k (43%)" 처럼 괄호가 붙은 라벨은 막대보다 넓어 옆 라벨과 겹치므로 괄호 부분을 아랫줄로 내린다
+      const [main, sub] = String(b.note ?? fmt(b.y)).split(/ (?=\()/);
+      const ty = sy(b.y + (b.ci || 0)) - 8, fs = bw < 44 ? 11 : 13;
+      if (sub) g += `<text x="${x + bw / 2}" y="${ty}" font-size="${fs - 1}" fill="${C.soft}" text-anchor="middle">${esc(sub)}</text>`;
+      g += `<text x="${x + bw / 2}" y="${sub ? ty - fs - 2 : ty}" font-size="${fs}" fill="${C.ink}" text-anchor="middle">${esc(main)}</text>`;
     });
     g += `<text x="${L + gi * gw + gw / 2}" y="${T + ph + 26}" font-size="14" fill="${C.ink}" text-anchor="middle">${esc(grp.label)}</text>`;
   });
