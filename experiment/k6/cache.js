@@ -71,6 +71,9 @@ function scramble(rank) {
 
 const rnd = (n) => 1 + Math.floor(Math.random() * n);
 const url = (id, extra = '') => `${BASE}/item/${id}?backend=${BACKEND}&origin=${ORIGIN}${DB_WAIT ? `&dbwait=${DB_WAIT}` : ''}${extra}`;
+// URL grouping: MISS 요청은 URL 이 매번 유일하다(&v=…). k6 는 URL 마다 통계를 따로 쌓아서, 그대로 두면 유일 URL 이 많을수록
+// 부하 생성기 자신이 느려져 처리량이 낮게 재진다 (11월 10일 E3 · E5 가 그랬다). 이름 하나로 묶는다. NAMED=0 이면 예전 방식
+const NAME = E.NAMED === '0' ? undefined : { tags: { name: 'item' } };
 
 export function setup() {
   const r = http.post(`${BASE}/admin/reset`, null, { timeout: '60s' }); // 캐시 비우기 + DB 를 정확히 ROWS 건으로
@@ -87,11 +90,11 @@ export default function () {
   const measuring = exec.scenario.name === 'measure';
   let r, write = false;
   if (MODE === 'hit') {
-    r = Math.random() < HIT ? http.get(url(rnd(HOT))) : http.get(url(rnd(ROWS), `&v=${exec.vu.idInTest}-${exec.scenario.iterationInTest}-${exec.scenario.name}`));
+    r = Math.random() < HIT ? http.get(url(rnd(HOT)), NAME) : http.get(url(rnd(ROWS), `&v=${exec.vu.idInTest}-${exec.scenario.iterationInTest}-${exec.scenario.name}`), NAME);
   } else {
     const id = scramble(zipfRank());
     write = Math.random() < WRITE_RATIO;
-    r = write ? http.post(url(id)) : http.get(url(id));
+    r = write ? http.post(url(id), null, NAME) : http.get(url(id), NAME);
   }
   if (!measuring) return;
   const ok = r.status === 200 || r.status === 404;

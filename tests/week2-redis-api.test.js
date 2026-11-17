@@ -29,6 +29,14 @@ describe('HTTP API + 클라이언트', () => {
     assert.equal(await c.del('user:1'), 0);
   });
 
+  test('잘못된 tags 로 PUT 하면 400 이고, 기존 값과 태그는 그대로다', async () => {
+    await c.set('t:1', 'old', { tags: ['keep'] });
+    const r = await fetch(`${base}/keys/t:1`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: 'new', tags: [123] }) });
+    assert.equal(r.status, 400);
+    assert.equal(await c.get('t:1'), 'old');
+    assert.equal(await c.invalidate({ tags: ['keep'] }), 1, '태그도 지워지지 않았다');
+  });
+
   test('처음 저장은 201, 덮어쓰기는 200', async () => {
     const put = (v) => fetch(`${base}/keys/status`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: v }) });
     assert.equal((await put('a')).status, 201);

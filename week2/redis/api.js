@@ -121,6 +121,8 @@ export function createRedisApi(redis, opts = {}) {
         const ttl = intOrNull(body.ttl, 'ttl');
         const px = intOrNull(body.px, 'px');
         if (ttl && px) throw new HttpError(400, 'BAD_ARG', 'ttl 과 px 는 하나만 쓸 수 있습니다.');
+        // 저장하기 전에 검사한다: 저장한 뒤에 거절하면 400 을 받았는데도 값이 바뀌어 있다
+        if (Array.isArray(body.tags) && !body.tags.every((t) => typeof t === 'string' && t)) throw new HttpError(400, 'BAD_ARG', 'tags 는 문자열 배열이어야 합니다.');
         const existed = run(['EXISTS', key]) === 1;
         const args = ['SET', key, body.value];
         if (ttl) args.push('EX', String(ttl));
@@ -129,10 +131,7 @@ export function createRedisApi(redis, opts = {}) {
         if (body.xx) args.push('XX');
         const r = run(args);
         if (r === null) return send(res, 409, { error: 'CONDITION', message: body.nx ? '이미 있는 키입니다 (nx).' : '없는 키입니다 (xx).' });
-        if (Array.isArray(body.tags) && body.tags.length) {
-          if (!body.tags.every((t) => typeof t === 'string' && t)) throw new HttpError(400, 'BAD_ARG', 'tags 는 문자열 배열이어야 합니다.');
-          run(['TAG', key, ...body.tags]);
-        }
+        if (Array.isArray(body.tags) && body.tags.length) run(['TAG', key, ...body.tags]);
         return send(res, existed ? 200 : 201, { ok: true, created: !existed });
       }
       if (!sub && req.method === 'DELETE') return send(res, 200, { deleted: run(['DEL', key]) });
