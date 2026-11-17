@@ -7,16 +7,16 @@ import './setup.js';
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Playground } from '../phase1/playground.js';
-import { createElement, htmlToVNode, childrenToHTML } from '../src/lib/vdom.js';
-import { FunctionComponent } from '../src/lib/component.js';
-import { App, STORAGE_KEY, DEFAULT_TODOS } from '../phase2/app.js';
+import { Playground } from '../mini_react/phase1/playground.js';
+import { createElement, htmlToVNode, childrenToHTML } from '../mini_react/src/lib/vdom.js';
+import { FunctionComponent } from '../mini_react/src/lib/component.js';
+import { App, STORAGE_KEY, DEFAULT_TODOS } from '../mini_react/phase2/app.js';
 import { container, flushMicrotasks, memoryStorage } from './setup.js';
 
 // ================================================================ Phase 1
 describe('Phase 1 Playground', () => {
   // 실제 phase1/index.html 의 샘플 HTML 을 그대로 사용
-  const page = readFileSync(new URL('../phase1/index.html', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../mini_react/phase1/index.html', import.meta.url), 'utf8');
   const sample = page.match(/<div id="actual" class="sample">([\s\S]*?)<\/div>\s*<div id="overlay"/)[1];
 
   let actual, testArea, pg, commits;

@@ -5,17 +5,17 @@ import { test, describe, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { JSDOM } from 'jsdom';
-import { MiniRedis } from '../week2/redis/miniredis.js';
-import { Database } from '../week2/dbms/engine.js';
-import { MemoryStorage } from '../week2/dbms/storage.js';
-import { seedRows } from '../week2/dbms/seed.js';
-import * as RX from '../week2/redis/examples/apps.js';
-import * as DX from '../week2/dbms/examples/apps.js';
-import { TEMPLATES as R_TPL, SNIPPETS as R_SNIP } from '../week2/redis/sandbox/templates.js';
-import { TEMPLATES as D_TPL, SNIPPETS as D_SNIP } from '../week2/dbms/sandbox/templates.js';
-import { createEnv, runCode } from '../week2/shared/sandbox-runner.js';
-import * as RL from '../week2/redis/deepdive/labs.js';
-import * as DL from '../week2/dbms/deepdive/labs.js';
+import { MiniRedis } from '../mini_redis/miniredis.js';
+import { Database } from '../mini_DBMS/engine.js';
+import { MemoryStorage } from '../mini_DBMS/storage.js';
+import { seedRows } from '../mini_DBMS/seed.js';
+import * as RX from '../mini_redis/examples/apps.js';
+import * as DX from '../mini_DBMS/examples/apps.js';
+import { TEMPLATES as R_TPL, SNIPPETS as R_SNIP } from '../mini_redis/sandbox/templates.js';
+import { TEMPLATES as D_TPL, SNIPPETS as D_SNIP } from '../mini_DBMS/sandbox/templates.js';
+import { createEnv, runCode } from '../shared/sandbox-runner.js';
+import * as RL from '../mini_redis/deepdive/labs.js';
+import * as DL from '../mini_DBMS/deepdive/labs.js';
 import { openBundle } from './bundle-helper.js';
 
 const read = (p) => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8');
@@ -218,9 +218,9 @@ describe('코드 해설 (레디스 · DBMS)', () => {
   for (const [track, n] of [['redis', 7], ['dbms', 9]]) {
     test(`${track}: ${n}개 함수가 1주차와 같은 모양으로 그려지고, 핵심 줄이 실제 코드에 그대로 있다`, () => {
       const dom = new JSDOM('<aside id="wt-toc"></aside><article id="wt-content"></article>', { runScripts: 'outside-only' });
-      dom.window.eval(read(`week2/${track}/walkthrough/sections.js`));
+      dom.window.eval(read(`mini_${track === 'redis' ? 'redis' : 'DBMS'}/walkthrough/sections.js`));
       const S = dom.window.WALKTHROUGH.sections;
-      dom.window.eval(read('week2/shared/walkthrough-render.js'));
+      dom.window.eval(read('shared/walkthrough-render.js'));
       const d = dom.window.document;
       assert.equal(S.length, n);
       assert.equal(d.querySelectorAll('.wt-sec').length, n);
@@ -305,7 +305,7 @@ describe('2주차 학습 페이지 열기 (파일로 열었을 때)', () => {
   const click = (w, el) => el.dispatchEvent(new w.Event('click', { bubbles: true }));
 
   test('레디스 예제: 망가뜨리기 버튼이 1주차와 같은 실험실 막대로, 버튼이 동작한다', async () => {
-    const { w, d, errors, dom } = openBundle('week2/redis/examples');
+    const { w, d, errors, dom } = openBundle('mini_redis/examples');
     try {
       assert.deepEqual(errors, []);
       assert.equal(d.querySelectorAll('.ex.card').length, 4);
@@ -327,7 +327,7 @@ describe('2주차 학습 페이지 열기 (파일로 열었을 때)', () => {
   });
 
   test('DBMS 예제: 가입 · 페이지 · 이메일, 이스케이프 끄면 만들어지는 SQL 이 바뀐다', () => {
-    const { w, d, errors, dom } = openBundle('week2/dbms/examples');
+    const { w, d, errors, dom } = openBundle('mini_DBMS/examples');
     try {
       assert.deepEqual(errors, []);
       click(w, d.querySelector('#su-quote'));
@@ -349,7 +349,7 @@ describe('2주차 학습 페이지 열기 (파일로 열었을 때)', () => {
 
   for (const track of ['redis', 'dbms']) {
     test(`${track} 샌드박스: 1주차 샌드박스 구조, 틀을 실행하면 콘솔과 상태가 보인다`, async () => {
-      const { w, d, errors, dom } = openBundle(`week2/${track}/sandbox`);
+      const { w, d, errors, dom } = openBundle(`mini_${track === 'redis' ? 'redis' : 'DBMS'}/sandbox`);
       try {
         assert.deepEqual(errors, []);
         for (const sel of ['.sb-bar', '.sb-edit .card-head', '#snip-list .snip-group', '#gutter', '.sb-tip #tpl-try li', '.sb-insp']) assert.ok(d.querySelector(sel), sel);
@@ -364,7 +364,7 @@ describe('2주차 학습 페이지 열기 (파일로 열었을 때)', () => {
     });
 
     test(`${track} 더 파고들기: 8개 주제 · 이해 체크 · 목차가 맞고 실험이 돈다`, () => {
-      const { w, d, errors, dom } = openBundle(`week2/${track}/deepdive`);
+      const { w, d, errors, dom } = openBundle(`mini_${track === 'redis' ? 'redis' : 'DBMS'}/deepdive`);
       try {
         assert.deepEqual(errors, []);
         const ids = [...d.querySelectorAll('section.deep')].map((s) => s.id);
@@ -380,7 +380,7 @@ describe('2주차 학습 페이지 열기 (파일로 열었을 때)', () => {
     });
 
     test(`${track} 이론: 1주차 이론 페이지 구조 + 직접 해보는 예제`, () => {
-      const { w, d, errors, dom } = openBundle(`week2/${track}/theory`);
+      const { w, d, errors, dom } = openBundle(`mini_${track === 'redis' ? 'redis' : 'DBMS'}/theory`);
       try {
         assert.deepEqual(errors, []);
         for (const sel of ['#progress', '.guide.card', '#toc #search', '#content .part', 'section.card[data-level] .sec-head .lv', '.one', '.easy', '.mini', '.sum', '#qa details.qa', '#to-top']) assert.ok(d.querySelector(sel), sel);
@@ -399,12 +399,12 @@ describe('2주차 학습 페이지 열기 (파일로 열었을 때)', () => {
   }
 
   test('이론 예제: 해시 버킷 · 토큰과 실행 계획', () => {
-    const r = openBundle('week2/redis/theory');
+    const r = openBundle('mini_redis/theory');
     r.d.querySelector('#hd-key').value = 'user:1';
     click(r.w, r.d.querySelector('#hd-add'));
     assert.match(r.d.querySelector('#hd-msg').textContent, /버킷 #\d/);
     r.dom.window.close();
-    const d = openBundle('week2/dbms/theory');
+    const d = openBundle('mini_DBMS/theory');
     assert.ok(d.d.querySelectorAll('#pd-tokens .tok').length > 5);
     assert.match(d.d.querySelector('#pl-msg').textContent, /읽은 레코드 1 \/ 1,000/);
     d.dom.window.close();
@@ -412,10 +412,10 @@ describe('2주차 학습 페이지 열기 (파일로 열었을 때)', () => {
 
   test('한 장 요약은 1주차와 같은 모양(칸 10개), 설명서는 번호 목차 + 번호 섹션', () => {
     for (const t of ['redis', 'dbms']) {
-      const cs = new JSDOM(read(`week2/${t}/cheatsheet/index.html`)).window.document;
+      const cs = new JSDOM(read(`mini_${t === 'redis' ? 'redis' : 'DBMS'}/cheatsheet/index.html`)).window.document;
       assert.equal(cs.querySelectorAll('.cs > div').length, 10);
       assert.ok(cs.querySelector('.cs-top .no-print'));
-      const docs = new JSDOM(read(`week2/${t}/docs/index.html`)).window.document;
+      const docs = new JSDOM(read(`mini_${t === 'redis' ? 'redis' : 'DBMS'}/docs/index.html`)).window.document;
       const toc = [...docs.querySelectorAll('.doc .toc a')];
       const secs = [...docs.querySelectorAll('.doc article section.card')];
       assert.equal(toc.length, secs.length);

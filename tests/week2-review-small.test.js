@@ -5,12 +5,12 @@
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { MiniRedis } from '../week2/redis/miniredis.js';
-import { startRedisServer } from '../week2/redis/server.js';
-import { MiniRedisClient } from '../week2/redis/client.js';
-import { Database } from '../week2/dbms/engine.js';
-import { MemoryStorage } from '../week2/dbms/storage.js';
-import { parse } from '../week2/dbms/sql.js';
+import { MiniRedis } from '../mini_redis/miniredis.js';
+import { startRedisServer } from '../mini_redis/server.js';
+import { MiniRedisClient } from '../mini_redis/client.js';
+import { Database } from '../mini_DBMS/engine.js';
+import { MemoryStorage } from '../mini_DBMS/storage.js';
+import { parse } from '../mini_DBMS/sql.js';
 
 describe('GET + TTL 을 한 번에 (GETTTL)', () => {
   test('GETTTL: 값과 남은 초를 함께, 통계는 한 번만', () => {

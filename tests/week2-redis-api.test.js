@@ -6,8 +6,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { startRedisServer } from '../week2/redis/server.js';
-import { MiniRedisClient } from '../week2/redis/client.js';
+import { startRedisServer } from '../mini_redis/server.js';
+import { MiniRedisClient } from '../mini_redis/client.js';
 import { createApp, createWeek2 } from '../server.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -231,8 +231,8 @@ describe('메인 서버(npm start)에 붙은 2주차 API', () => {
     assert.equal(body.results[1].rows[0][1], 'a');
   });
 
-  test('week2/data 폴더(실제 데이터 파일)는 브라우저로 열 수 없다', async () => {
-    assert.equal((await fetch(`${base}/week2/data/redis.aof`)).status, 403);
-    assert.equal((await fetch(`${base}/week2/data/db/users.tbl`)).status, 403);
+  test('data 폴더(실제 데이터 파일)는 브라우저로 열 수 없다', async () => {
+    assert.equal((await fetch(`${base}/data/redis.aof`)).status, 403);
+    assert.equal((await fetch(`${base}/data/db/users.tbl`)).status, 403);
   });
 });

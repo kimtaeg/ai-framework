@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createDbService } from '../week2/dbms/service.js';
+import { createDbService } from '../mini_DBMS/service.js';
 
 // 한글 행 12,000개 = 파일에 1MB 넘게 쓴다 → 요청이 끝나기 전에 일부가 파일에 기록된다
 const BIG = 'INSERT INTO users (name, age, email) VALUES ' + Array.from({ length: 12000 }, (_, i) => `('${'가나다라마바사아자차'.repeat(3)}', ${i % 50}, 'u${i}@x')`).join(',');

@@ -1,7 +1,7 @@
 import './setup.js';
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { StateHistory } from '../src/lib/history.js';
+import { StateHistory } from '../mini_react/src/lib/history.js';
 
 describe('StateHistory', () => {
   test('push / back / forward', () => {

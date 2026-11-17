@@ -1,9 +1,9 @@
 // 의존성 없는 개발 서버
 //  - 정적 파일 제공 (ES Module 은 file:// 에서 로드되지 않으므로 필요)
 //  - POST /api/chat : 학습 가이드 챗봇. API 키는 서버에만 두고 브라우저에는 절대 보내지 않는다.
-//  - /api/redis/*    : 2주차 미니 레디스 HTTP API (AOF: week2/data/redis.aof)
+//  - /api/redis/*    : 2주차 미니 레디스 HTTP API (AOF: data/redis.aof)
 //  - /api/demo/*     : 미니 레디스를 캐시로 쓰는 느린 상품 API (cache-aside 예시)
-//  - /api/sql        : 2주차 미니 DBMS API (스레드 풀, 데이터: week2/data/db)
+//  - /api/sql        : 2주차 미니 DBMS API (스레드 풀, 데이터: data/db)
 import { createServer } from 'node:http';
 import { randomInt } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
@@ -13,12 +13,12 @@ import { gzip } from 'node:zlib';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { handleChat } from './server/chat.js';
-import { openPersistentRedis } from './week2/redis/persistence.js';
-import { createRedisApi } from './week2/redis/api.js';
-import { createProductApi } from './week2/redis/demo-api.js';
-import { MiniRedisClient } from './week2/redis/client.js';
-import { nodeFetch } from './week2/redis/node-fetch.js';
-import { createDbService, createSqlApi } from './week2/dbms/service.js';
+import { openPersistentRedis } from './mini_redis/persistence.js';
+import { createRedisApi } from './mini_redis/api.js';
+import { createProductApi } from './mini_redis/demo-api.js';
+import { MiniRedisClient } from './mini_redis/client.js';
+import { nodeFetch } from './mini_redis/node-fetch.js';
+import { createDbService, createSqlApi } from './mini_DBMS/service.js';
 import { createTestLab } from './server/testlab.js';
 
 const ROOT = resolve(fileURLToPath(new URL('.', import.meta.url)));
@@ -57,12 +57,12 @@ export function loadEnv(file = join(ROOT, '.env')) {
 
 /** 브라우저에 보여주면 안 되는 파일: .env 같은 점(.)으로 시작하는 파일/폴더, node_modules, 서버 코드 */
 function isPrivate(relPath) {
-  const parts = relPath.toLowerCase().split(/[\\/]/).filter(Boolean); // 소문자로: Windows 는 /Server/ · /WEEK2/Data/ 도 같은 폴더다
-  return parts.some((p) => p.startsWith('.') || p === 'node_modules') || parts[0] === 'server' || (parts[0] === 'week2' && parts[1] === 'data');
+  const parts = relPath.toLowerCase().split(/[\\/]/).filter(Boolean); // 소문자로: Windows 는 /Server/ · /DATA/ 도 같은 폴더다
+  return parts.some((p) => p.startsWith('.') || p === 'node_modules') || parts[0] === 'server' || parts[0] === 'data';
 }
 
 /** 2주차 서비스: 처음 요청이 올 때 연다 (테스트·1주차만 쓸 때는 파일이나 스레드를 만들지 않도록) */
-export function createWeek2(dataDir = join(ROOT, 'week2', 'data'), { fsync = 'everysec', dbWorkers } = {}) {
+export function createWeek2(dataDir = join(ROOT, 'data'), { fsync = 'everysec', dbWorkers } = {}) {
   let redis = null, db = null, client = null;
   const getRedis = () => {
     if (!redis) {

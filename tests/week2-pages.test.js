@@ -15,7 +15,7 @@ const submit = (w, form) => form.dispatchEvent(new w.Event('submit', { bubbles: 
 
 describe('미니 레디스 Playground', () => {
   test('에러 없이 열리고 콘솔 명령이 실행된다', () => {
-    const { w, d, errors, dom } = openBundle('week2/redis');
+    const { w, d, errors, dom } = openBundle('mini_redis');
     try {
       assert.deepEqual(errors, []);
       for (const line of ['SET greeting "안녕 레디스" EX 30', 'GET greeting', 'NOPE']) {
@@ -33,7 +33,7 @@ describe('미니 레디스 Playground', () => {
   });
 
   test('1주차 Phase 페이지처럼: 위쪽 툴바 + 머리줄이 있는 카드 7개', () => {
-    const { d, dom } = openBundle('week2/redis');
+    const { d, dom } = openBundle('mini_redis');
     try {
       assert.ok(d.querySelector('.toolbar.card'));
       const panels = d.querySelectorAll('section.card.panel');
@@ -46,7 +46,7 @@ describe('미니 레디스 Playground', () => {
   });
 
   test('해시 테이블: 키를 추가하면 버킷이 그려지고 확장이 시작된다', () => {
-    const { w, d, dom } = openBundle('week2/redis');
+    const { w, d, dom } = openBundle('mini_redis');
     try {
       click(w, d.querySelector('#ht-reset'));
       for (let i = 0; i < 5; i++) click(w, d.querySelector('#ht-add1'));
@@ -58,7 +58,7 @@ describe('미니 레디스 Playground', () => {
   });
 
   test('동시성: INCR 은 하나도 잃지 않는다 · AOF: always 는 강제 종료에도 복원', async () => {
-    const { w, d, dom } = openBundle('week2/redis');
+    const { w, d, dom } = openBundle('mini_redis');
     try {
       d.querySelector('#race-n').value = '40';
       click(w, d.querySelector('#race-incr'));
@@ -78,7 +78,7 @@ describe('미니 레디스 Playground', () => {
 
 describe('미니 DBMS Phase 1 · 2 · 3', () => {
   test('Phase 1: 첫 예시가 인덱스 조회, 모든 예시 실행, 에러 예시는 에러', () => {
-    const { w, d, errors, dom } = openBundle('week2/dbms/phase1');
+    const { w, d, errors, dom } = openBundle('mini_DBMS/phase1');
     try {
       assert.deepEqual(errors, []);
       assert.match(d.querySelector('#sql-out').textContent, /B\+ 트리 인덱스 조회/);
@@ -98,7 +98,7 @@ describe('미니 DBMS Phase 1 · 2 · 3', () => {
   });
 
   test('Phase 2: B+ 트리 삽입 · 검색 경로 · 중복 거절', () => {
-    const { w, d, errors, dom } = openBundle('week2/dbms/phase2');
+    const { w, d, errors, dom } = openBundle('mini_DBMS/phase2');
     try {
       assert.deepEqual(errors, []);
       d.querySelector('#bpt-key').value = '33';
@@ -115,7 +115,7 @@ describe('미니 DBMS Phase 1 · 2 · 3', () => {
   });
 
   test('Phase 3: 락을 켜면 id 가 겹치지 않는다', async () => {
-    const { w, d, errors, dom } = openBundle('week2/dbms/phase3');
+    const { w, d, errors, dom } = openBundle('mini_DBMS/phase3');
     try {
       assert.deepEqual(errors, []);
       click(w, d.querySelector('#sim-writes'));
@@ -130,7 +130,7 @@ describe('미니 DBMS Phase 1 · 2 · 3', () => {
 
   test('Phase 페이지끼리 이동 막대가 있고 지금 Phase 가 표시된다', () => {
     for (const n of [1, 2, 3]) {
-      const d = new JSDOM(read(`week2/dbms/phase${n}/index.html`)).window.document;
+      const d = new JSDOM(read(`mini_DBMS/phase${n}/index.html`)).window.document;
       const on = d.querySelector('.phase-steps a.on');
       assert.match(on.textContent, new RegExp(`Phase ${n}`));
       assert.equal(d.querySelectorAll('.phase-steps a').length, 3);
@@ -220,9 +220,9 @@ describe('메뉴 · 챗봇 · 링크', () => {
 
   test('1주차 스타일 파일을 그대로 쓴다 (생김새가 같게)', () => {
     const uses = {
-      guide: '../../../guide/guide.css', examples: '../../../examples/examples.css', sandbox: '../../../sandbox/sandbox.css',
-      walkthrough: '../../../walkthrough/walkthrough.css', theory: '../../../theory/theory.css', deepdive: '../../../deepdive/deepdive.css',
+      guide: '../../mini_react/guide/guide.css', examples: '../../mini_react/examples/examples.css', sandbox: '../../mini_react/sandbox/sandbox.css',
+      walkthrough: '../../mini_react/walkthrough/walkthrough.css', theory: '../../mini_react/theory/theory.css', deepdive: '../../mini_react/deepdive/deepdive.css',
     };
-    for (const t of ['redis', 'dbms']) for (const [dir, css] of Object.entries(uses)) assert.match(read(`week2/${t}/${dir}/index.html`), new RegExp(css.replace(/[.\/]/g, '\\$&')), `${t}/${dir}`);
+    for (const t of ['redis', 'dbms']) for (const [dir, css] of Object.entries(uses)) assert.match(read(`mini_${t === 'redis' ? 'redis' : 'DBMS'}/${dir}/index.html`), new RegExp(css.replace(/[.\/]/g, '\\$&')), `${t}/${dir}`);
   });
 });

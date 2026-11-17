@@ -5,14 +5,14 @@ import './setup.js';
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Playground } from '../phase1/playground.js';
-import { PRESETS } from '../phase1/presets.js';
-import { childrenToHTML, createElement } from '../src/lib/vdom.js';
-import { FunctionComponent } from '../src/lib/component.js';
+import { Playground } from '../mini_react/phase1/playground.js';
+import { PRESETS } from '../mini_react/phase1/presets.js';
+import { childrenToHTML, createElement } from '../mini_react/src/lib/vdom.js';
+import { FunctionComponent } from '../mini_react/src/lib/component.js';
 import {
   CartApp, FormApp, KanbanApp, ListApp, StopwatchApp,
   validate, passwordScore, kanbanReducer, KANBAN_CARDS, formatMs,
-} from '../examples/apps.js';
+} from '../mini_react/examples/apps.js';
 import { container, flushMicrotasks } from './setup.js';
 
 const fire = (node, type) => node.dispatchEvent(new window.Event(type, { bubbles: true, cancelable: true }));
@@ -21,7 +21,7 @@ const types = (patches) => [...new Set(patches.map((p) => p.type))].sort();
 
 // ================================================================ Phase 1 예시 케이스
 describe('Phase 1 예시 케이스', () => {
-  const page = readFileSync(new URL('../phase1/index.html', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../mini_react/phase1/index.html', import.meta.url), 'utf8');
   const sample = page.match(/<div id="actual" class="sample">([\s\S]*?)<\/div>\s*<div id="overlay"/)[1];
   let actual, pg;
   beforeEach(() => {
@@ -284,7 +284,7 @@ describe('예제: 스톱워치', () => {
 });
 
 // ================================================================ 일부러 망가뜨리기 실험
-import { flags, clearLeakedTimers, EXPERIMENTS } from '../examples/experiments.js';
+import { flags, clearLeakedTimers, EXPERIMENTS } from '../mini_react/examples/experiments.js';
 import { afterEach } from 'node:test';
 
 describe('실험: 일부러 망가뜨리기', () => {

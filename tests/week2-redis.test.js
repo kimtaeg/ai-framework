@@ -6,9 +6,9 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readFileSync, appendFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { HashTable, fnv1a, MIN_SIZE } from '../week2/redis/hashtable.js';
-import { MiniRedis, parseCommandLine, globToRegExp, formatReply } from '../week2/redis/miniredis.js';
-import { AofFile, openPersistentRedis } from '../week2/redis/persistence.js';
+import { HashTable, fnv1a, MIN_SIZE } from '../mini_redis/hashtable.js';
+import { MiniRedis, parseCommandLine, globToRegExp, formatReply } from '../mini_redis/miniredis.js';
+import { AofFile, openPersistentRedis } from '../mini_redis/persistence.js';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'miniredis-'));
 

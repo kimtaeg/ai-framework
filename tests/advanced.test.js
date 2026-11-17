@@ -4,10 +4,10 @@
 import './setup.js';
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { h } from '../src/lib/vdom.js';
-import { diff } from '../src/lib/diff.js';
-import { FunctionComponent, useState, useMemo, createContext, useContext } from '../src/lib/component.js';
-import { devConfig, resetWarnings } from '../src/lib/warn.js';
+import { h } from '../mini_react/src/lib/vdom.js';
+import { diff } from '../mini_react/src/lib/diff.js';
+import { FunctionComponent, useState, useMemo, createContext, useContext } from '../mini_react/src/lib/component.js';
+import { devConfig, resetWarnings } from '../mini_react/src/lib/warn.js';
 import { container, flushMicrotasks } from './setup.js';
 
 const mountApp = (fn, opts) => new FunctionComponent(fn, {}, opts).mount(container());
@@ -142,7 +142,7 @@ describe('커밋 정보 (Inspector 용)', () => {
 
   test('onEffects 는 useEffect 가 실제로 돈 뒤 호출', async () => {
     const effects = [];
-    const { useEffect } = await import('../src/lib/component.js');
+    const { useEffect } = await import('../mini_react/src/lib/component.js');
     mountApp(() => {
       useEffect(() => {}, []);
       return h('p');

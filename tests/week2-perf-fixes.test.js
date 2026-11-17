@@ -8,11 +8,11 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { BPlusTree } from '../week2/dbms/bptree.js';
-import { Database } from '../week2/dbms/engine.js';
-import { MemoryStorage, encodeRow, decodeRow } from '../week2/dbms/storage.js';
-import { FileStorage } from '../week2/dbms/storage-file.js';
-import { MiniRedis } from '../week2/redis/miniredis.js';
+import { BPlusTree } from '../mini_DBMS/bptree.js';
+import { Database } from '../mini_DBMS/engine.js';
+import { MemoryStorage, encodeRow, decodeRow } from '../mini_DBMS/storage.js';
+import { FileStorage } from '../mini_DBMS/storage-file.js';
+import { MiniRedis } from '../mini_redis/miniredis.js';
 
 const tmp = (name) => mkdtempSync(join(tmpdir(), `${name}-`));
 const SCHEMA = { users: { columns: [{ name: 'id', type: 'INT' }, { name: 'name', type: 'TEXT' }, { name: 'age', type: 'INT' }, { name: 'email', type: 'TEXT' }] } };

@@ -9,12 +9,12 @@ import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { lockDataDir } from '../week2/dbms/storage-file.js';
-import { createDbService } from '../week2/dbms/service.js';
-import { runCli } from '../week2/dbms/cli.js';
+import { lockDataDir } from '../mini_DBMS/storage-file.js';
+import { createDbService } from '../mini_DBMS/service.js';
+import { runCli } from '../mini_DBMS/cli.js';
 
 const tmp = (name) => mkdtempSync(join(tmpdir(), `${name}-`));
-const CLI = fileURLToPath(new URL('../week2/dbms/cli.js', import.meta.url));
+const CLI = fileURLToPath(new URL('../mini_DBMS/cli.js', import.meta.url));
 const cli = (dir, ...args) => {
   const r = spawnSync(process.execPath, [CLI, ...args, '--data', dir], { encoding: 'utf8' });
   return { code: r.status, out: r.stdout, err: r.stderr };
@@ -93,7 +93,7 @@ describe('데이터 폴더 락', () => {
     const dir = tmp('minidb-lock-two');
     // 락을 잡고 기다리는 다른 프로세스
     const holder = spawn(process.execPath, ['--input-type=module', '-e', `
-      import { lockDataDir } from ${JSON.stringify(new URL('../week2/dbms/storage-file.js', import.meta.url).href)};
+      import { lockDataDir } from ${JSON.stringify(new URL('../mini_DBMS/storage-file.js', import.meta.url).href)};
       lockDataDir(${JSON.stringify(dir)}, '먼저 켠 서버');
       process.stdout.write('locked');
       setInterval(() => {}, 1000);

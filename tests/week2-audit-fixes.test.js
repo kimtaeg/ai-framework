@@ -1,15 +1,15 @@
 /**
  * 코드 점검에서 찾은 문제의 회귀 테스트
  *   1) id = ? 와 다른 id 조건이 함께 있을 때의 조회 결과
- *   2) 비공개 경로(server/, week2/data/)가 대소문자를 바꿔도 열리지 않는지
+ *   2) 비공개 경로(server/, data/)가 대소문자를 바꿔도 열리지 않는지
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Database } from '../week2/dbms/engine.js';
-import { FileStorage } from '../week2/dbms/storage-file.js';
+import { Database } from '../mini_DBMS/engine.js';
+import { FileStorage } from '../mini_DBMS/storage-file.js';
 import { createApp, createWeek2 } from '../server.js';
 
 test('id = ? 에 다른 id 조건이 붙으면 그 조건도 검사한다', () => {
@@ -37,7 +37,7 @@ test('비공개 경로는 대소문자를 바꿔도 열리지 않는다', async 
   await new Promise((r) => app.listen(0, '127.0.0.1', r));
   try {
     const base = `http://127.0.0.1:${app.address().port}`;
-    for (const p of ['/server/chat.js', '/Server/chat.js', '/SERVER/testlab.js', '/week2/data/x', '/Week2/Data/x', '/WEEK2/DATA/db/schema.json', '/Node_Modules/x', '/.ENV']) {
+    for (const p of ['/server/chat.js', '/Server/chat.js', '/SERVER/testlab.js', '/data/x', '/Data/x', '/DATA/db/schema.json', '/Node_Modules/x', '/.ENV']) {
       const res = await fetch(base + p);
       await res.arrayBuffer();
       assert.equal(res.status, 403, p);

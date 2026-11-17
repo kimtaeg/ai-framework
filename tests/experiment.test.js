@@ -1,5 +1,5 @@
 /**
- * 캐시 실험 코드(experiment/) 무작위 검증 — 400 케이스
+ * 캐시 실험 코드(mini_redis/experiment/) 무작위 검증 — 400 케이스
  *   node --test tests/experiment.test.js            (매번 다른 씨앗)
  *   SEED=12345 node --test tests/experiment.test.js  (실패한 씨앗 그대로 재현)
  *
@@ -19,14 +19,14 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, rmSy
 import { tmpdir, availableParallelism } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { RespClient, startRespServer, parseRequest, encodeReply as serverReply } from '../experiment/resp.js';
-import { MiniRedis } from '../week2/redis/miniredis.js';
-import { netemScript, parseMs } from '../experiment/netem.js';
-import { renderHitChart, renderBarChart } from '../experiment/charts.js';
-import { startRedisServer } from '../week2/redis/server.js';
+import { RespClient, startRespServer, parseRequest, encodeReply as serverReply } from '../mini_redis/experiment/resp.js';
+import { MiniRedis } from '../mini_redis/miniredis.js';
+import { netemScript, parseMs } from '../mini_redis/experiment/netem.js';
+import { renderHitChart, renderBarChart } from '../mini_redis/experiment/charts.js';
+import { startRedisServer } from '../mini_redis/server.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const EXP = join(ROOT, 'experiment');
+const EXP = join(ROOT, 'mini_redis', 'experiment');
 const SEED = Number(process.env.SEED) || (Date.now() % 1_000_000_007);
 console.log(`# experiment 검증 SEED=${SEED}  (재현: SEED=${SEED} node --test tests/experiment.test.js)`);
 

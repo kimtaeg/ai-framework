@@ -115,7 +115,7 @@ describe('챗봇 서버 (/api/chat)', () => {
       assert.ok(r.status === 403 || r.status === 404, `${p} → ${r.status}`);
       await r.text();
     }
-    const ok = await fetch(`${appUrl}/guide/index.html`);
+    const ok = await fetch(`${appUrl}/mini_react/guide/index.html`);
     assert.equal(ok.status, 200);
     assert.match(await ok.text(), /chat\.js/);
   });
@@ -241,9 +241,9 @@ describe('챗봇: 모든 페이지 + 지금 보는 페이지', async () => {
   });
 
   test('보고 있는 페이지가 시스템 프롬프트에 들어간다', () => {
-    const req = buildGeminiRequest({ messages: [{ role: 'user', text: '이 페이지에서 뭘 해?' }], page: 'Phase 1 · Diff (/phase1/index.html)' });
+    const req = buildGeminiRequest({ messages: [{ role: 'user', text: '이 페이지에서 뭘 해?' }], page: 'Phase 1 · Diff (/mini_react/phase1/index.html)' });
     const prompt = req.systemInstruction.parts[0].text;
-    assert.match(prompt, /## 학생이 지금 보고 있는 페이지\nPhase 1 · Diff \(\/phase1\/index\.html\)/);
+    assert.match(prompt, /## 학생이 지금 보고 있는 페이지\nPhase 1 · Diff \(\/mini_react\/phase1\/index\.html\)/);
     assert.match(systemPrompt(), /\(알 수 없음\)/);
   });
 

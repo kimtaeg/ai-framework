@@ -62,7 +62,7 @@ describe('비밀번호가 설정되지 않았으면 잠긴 채로 열리지 않�
   after(() => s.close());
   test('페이지 503, 로그인 503', async () => {
     assert.equal((await fetch(s.base + '/testlab/index.html', { redirect: 'manual' })).status, 503);
-    assert.equal((await fetch(s.base + '/bench/index.html', { redirect: 'manual' })).status, 503);
+    assert.equal((await fetch(s.base + '/mini_react/bench/index.html', { redirect: 'manual' })).status, 503);
     assert.equal((await post(s.base, '/api/testlab/login', { password: '' })).status, 503);
   });
 });
@@ -82,13 +82,13 @@ describe('잠금과 로그인', () => {
   after(() => s.close());
 
   test('로그인 전: 실험실·벤치마크 페이지는 로그인으로, 파일은 401, 로그인 페이지와 다른 페이지는 열림', async () => {
-    for (const p of ['/testlab/', '/testlab/index.html', '/bench/index.html', '/load/limit-report.html']) {
+    for (const p of ['/testlab/', '/testlab/index.html', '/mini_react/bench/index.html', '/mini_redis/load/limit-report.html']) {
       const r = await fetch(s.base + p, { redirect: 'manual' });
       assert.equal(r.status, 302, p);
       assert.equal(r.headers.get('location'), `/testlab/login.html?next=${encodeURIComponent(p)}`);
     }
-    for (const p of ['/testlab/main.js', '/bench/results.json', '/load/k6-mixed.js', '/%62ench/results.json', '/BENCH/results.json']) assert.equal((await fetch(s.base + p)).status, 401, p);
-    for (const p of ['/%62ench/index.html', '/BENCH/index.html']) assert.equal((await fetch(s.base + p, { redirect: 'manual' })).status, 302, p);
+    for (const p of ['/testlab/main.js', '/mini_react/bench/results.json', '/mini_redis/load/k6-mixed.js', '/mini_react/%62ench/results.json', '/MINI_REACT/BENCH/results.json']) assert.equal((await fetch(s.base + p)).status, 401, p);
+    for (const p of ['/mini_react/%62ench/index.html', '/MINI_REACT/BENCH/index.html']) assert.equal((await fetch(s.base + p, { redirect: 'manual' })).status, 302, p);
     assert.equal((await fetch(s.base + '/testlab/login.html')).status, 200);
     assert.equal((await fetch(s.base + '/index.html')).status, 200, '다른 페이지는 그대로');
     assert.equal((await fetch(s.base + '/api/testlab/state')).status, 401);
@@ -105,7 +105,7 @@ describe('잠금과 로그인', () => {
     assert.match(sc, /HttpOnly/);
     assert.match(sc, /SameSite=Strict/);
     assert.equal((await fetch(s.base + '/testlab/index.html', { headers: { cookie } })).status, 200);
-    assert.equal((await fetch(s.base + '/bench/results.json', { headers: { cookie } })).status, 200);
+    assert.equal((await fetch(s.base + '/mini_react/bench/results.json', { headers: { cookie } })).status, 200);
     assert.equal((await fetch(s.base + '/testlab/index.html', { headers: { cookie: 'testlab=forged' }, redirect: 'manual' })).status, 302, '가짜 쿠키');
   });
 
@@ -153,13 +153,13 @@ describe('잠금과 로그인', () => {
 
   test('실험실 페이지끼리 서로 이어져 있고, 링크가 모두 열린다 · 홈에서 실험실로 들어갈 수 있다', async () => {
     const { cookie } = await login(s.base);
-    const pages = ['/testlab/', '/bench/index.html'];
+    const pages = ['/testlab/', '/mini_react/bench/index.html'];
     const hrefsOf = (html) => [...html.matchAll(/href="([^"]+)"/g)].map((m) => m[1]).filter((h) => h.startsWith('/') && !h.startsWith('//'));
     const seen = new Set();
     for (const p of pages) {
       const html = await (await fetch(s.base + p, { headers: { cookie } })).text();
       const links = hrefsOf(html);
-      for (const want of ['/index.html', '/testlab/', '/bench/index.html', '/testlab/#reports']) assert.ok(links.includes(want), `${p} → ${want}`);
+      for (const want of ['/index.html', '/testlab/', '/mini_react/bench/index.html', '/testlab/#reports']) assert.ok(links.includes(want), `${p} → ${want}`);
       for (const h of links) {
         const path = h.split('#')[0];
         if (seen.has(path)) continue;

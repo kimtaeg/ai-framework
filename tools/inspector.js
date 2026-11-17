@@ -9,8 +9,8 @@
  *   - 커밋 로그
  * 앱 컴포넌트 바깥에서 일반 DOM 으로 그리므로 앱의 렌더링에 영향을 주지 않는다.
  */
-import { summarizePatches } from '../src/lib/diff.js';
-import { countNodes } from '../src/lib/vdom.js';
+import { summarizePatches } from '../mini_react/src/lib/diff.js';
+import { countNodes } from '../mini_react/src/lib/vdom.js';
 
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const ms = (n) => (n < 0.05 ? '<0.1' : n.toFixed(1));

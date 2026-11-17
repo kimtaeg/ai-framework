@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import {
   h, TEXT, domToVNode, containerToVNode, htmlToVNode, createElement, normalizeDom,
   vnodeToHTML, childrenToHTML, setProp, countNodes, SVG_NS,
-} from '../src/lib/vdom.js';
+} from '../mini_react/src/lib/vdom.js';
 import { container } from './setup.js';
 
 describe('h()', () => {

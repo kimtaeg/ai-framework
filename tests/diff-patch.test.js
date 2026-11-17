@@ -1,9 +1,9 @@
 import './setup.js';
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { h, createElement, htmlToVNode, TEXT, focusedKeys } from '../src/lib/vdom.js';
-import { diff, PatchType, longestIncreasingSubsequence, diffProps } from '../src/lib/diff.js';
-import { applyPatches, moveNode } from '../src/lib/patch.js';
+import { h, createElement, htmlToVNode, TEXT, focusedKeys } from '../mini_react/src/lib/vdom.js';
+import { diff, PatchType, longestIncreasingSubsequence, diffProps } from '../mini_react/src/lib/diff.js';
+import { applyPatches, moveNode } from '../mini_react/src/lib/patch.js';
 
 /** old 를 그리고 diff/patch 로 new 로 바꾼 결과가 new 를 처음부터 그린 결과와 같은지 검증 */
 function check(oldV, newV) {

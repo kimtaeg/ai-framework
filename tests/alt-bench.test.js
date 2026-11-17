@@ -1,15 +1,15 @@
 /**
- * 대안 기술 비교: 서버 안 메모리 캐시, 그리고 load/alt-bench.js 의 세 비교가 "맞는 결과" 를 내는지 (작은 크기로)
+ * 대안 기술 비교: 서버 안 메모리 캐시, 그리고 mini_redis/load/alt-bench.js 의 세 비교가 "맞는 결과" 를 내는지 (작은 크기로)
  */
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { LocalCache } from '../week2/redis/demo-api.js';
+import { LocalCache } from '../mini_redis/demo-api.js';
 import { createApp, createWeek2 } from '../server.js';
 import { createTestLab } from '../server/testlab.js';
-import { benchIndex, benchPool, benchPersist } from '../load/alt-bench.js';
+import { benchIndex, benchPool, benchPersist } from '../mini_redis/load/alt-bench.js';
 
 const quiet = () => {};
 

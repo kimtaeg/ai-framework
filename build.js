@@ -5,9 +5,9 @@
  * <script type="module"> 이 다른 파일을 import 하지 못한다.
  * 그래서 각 페이지의 진입점(main.js)과 import 하는 모듈들을 하나의 일반 스크립트로 합친다.
  *
- *   node build.js   →  phase1/bundle.js, phase2/bundle.js
+ *   node build.js   →  mini_react/phase1/bundle.js, … (페이지마다 bundle.js)
  *
- * 원본(소스)은 여전히 src/ 와 phase*\/main.js 이고, bundle.js 는 생성물이다.
+ * 원본(소스)은 여전히 mini_react/src/ 와 각 페이지의 main.js 이고, bundle.js 는 생성물이다.
  * 서버(npm start)로 열면 원본 모듈을, file:// 로 열면 bundle.js 를 사용한다.
  */
 import { readFileSync, writeFileSync } from 'node:fs';
@@ -47,7 +47,7 @@ function bundle(entry) {
   return `/* 자동 생성 파일 (node build.js) — 직접 수정하지 마세요. file:// 로 열 때만 사용됩니다. */\n(() => {\n'use strict';\n${body}\n})();\n`;
 }
 
-for (const page of ['phase1', 'phase2', 'examples', 'sandbox', 'deepdive', 'week2/redis', 'week2/redis/examples', 'week2/redis/sandbox', 'week2/redis/theory', 'week2/redis/deepdive', 'week2/dbms/phase1', 'week2/dbms/phase2', 'week2/dbms/phase3', 'week2/dbms/examples', 'week2/dbms/sandbox', 'week2/dbms/theory', 'week2/dbms/deepdive']) {
+for (const page of ['mini_react/phase1', 'mini_react/phase2', 'mini_react/examples', 'mini_react/sandbox', 'mini_react/deepdive', 'mini_redis', 'mini_redis/examples', 'mini_redis/sandbox', 'mini_redis/theory', 'mini_redis/deepdive', 'mini_DBMS/phase1', 'mini_DBMS/phase2', 'mini_DBMS/phase3', 'mini_DBMS/examples', 'mini_DBMS/sandbox', 'mini_DBMS/theory', 'mini_DBMS/deepdive']) {
   const out = resolve(ROOT, page, 'bundle.js');
   const code = bundle(`${page}/main.js`);
   // 여러 모듈을 한 스코프에 합치므로 같은 이름이 두 번 선언되면 문법 에러가 난다 → 빌드 단계에서 바로 알린다

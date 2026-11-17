@@ -62,39 +62,39 @@
   // ---------------------------------------------------------------- 사이트 탭 (답변 속 링크/이름 → 바로 가기)
   // [경로, 화면에 보일 이름, 답변에서 이 탭을 가리키는 표현들]
   const TABS = [
-    ['/guide/index.html', '학습 가이드', ['학습 가이드']],
+    ['/mini_react/guide/index.html', '학습 가이드', ['학습 가이드']],
     // 'Phase 1' 만으로는 2주차 DBMS 의 Phase 1 과 헷갈리므로, 1주차 페이지를 가리키는 표현만 센다
-    ['/phase1/index.html', 'Phase 1 · Diff', ['Phase 1 · Diff', 'Diff Playground', 'Phase 1 페이지']],
-    ['/phase2/index.html', 'Phase 2 · Hooks', ['Phase 2 · Hooks', '스터디 플래너', 'Phase 2 페이지']],
-    ['/examples/index.html', '예제', ['예제 모음', '예제 페이지', '예제 탭']],
-    ['/sandbox/index.html', '샌드박스', ['샌드박스']],
-    ['/walkthrough/index.html', '코드 해설', ['코드 해설']],
-    ['/theory/index.html', 'React 이론', ['React 이론', '이론 페이지', '이론 탭']],
-    ['/deepdive/index.html', '개념 더 파고들기', ['개념 더 파고들기', '더 파고들기']],
-    ['/cheatsheet/index.html', '한 장 요약', ['한 장 요약']],
-    ['/docs/index.html', '설명서', ['설명서']],
-    ['/week2/redis/guide/index.html', '레디스 가이드', ['미니 레디스 학습 가이드', '레디스 가이드']],
-    ['/week2/redis/index.html', '미니 레디스 Playground', ['미니 레디스 Playground', '레디스 Playground', 'Mini Redis', 'MiniRedis']],
-    ['/week2/redis/examples/index.html', '레디스 예제', ['미니 레디스 예제', '레디스 예제']],
-    ['/week2/redis/sandbox/index.html', '레디스 샌드박스', ['미니 레디스 샌드박스', '레디스 샌드박스']],
-    ['/week2/redis/walkthrough/index.html', '레디스 코드 해설', ['미니 레디스 코드 해설', '레디스 코드 해설']],
-    ['/week2/redis/theory/index.html', '레디스 이론', ['레디스 이론']],
-    ['/week2/redis/deepdive/index.html', '레디스 더 파고들기', ['미니 레디스 개념 더 파고들기', '레디스 더 파고들기']],
-    ['/week2/redis/cheatsheet/index.html', '레디스 한 장 요약', ['미니 레디스 한 장 요약', '레디스 한 장 요약']],
-    ['/week2/redis/docs/index.html', '레디스 설명서', ['미니 레디스 설명서', '레디스 설명서']],
-    ['/week2/dbms/guide/index.html', 'DBMS 가이드', ['미니 DBMS 학습 가이드', 'DBMS 가이드']],
-    ['/week2/dbms/phase1/index.html', 'Phase 1 · SQL', ['Phase 1 · SQL', 'SQL 처리기 Playground']],
-    ['/week2/dbms/phase2/index.html', 'Phase 2 · B+ 트리', ['Phase 2 · B+ 트리', 'B+ 트리 인덱스 Playground']],
-    ['/week2/dbms/phase3/index.html', 'Phase 3 · API 서버', ['Phase 3 · API 서버', 'API 서버 Playground']],
-    ['/week2/dbms/examples/index.html', 'DBMS 예제', ['미니 DBMS 예제', 'DBMS 예제']],
-    ['/week2/dbms/sandbox/index.html', 'DBMS 샌드박스', ['미니 DBMS 샌드박스', 'DBMS 샌드박스']],
-    ['/week2/dbms/walkthrough/index.html', 'DBMS 코드 해설', ['미니 DBMS 코드 해설', 'DBMS 코드 해설']],
-    ['/week2/dbms/theory/index.html', 'DBMS 이론', ['DBMS 이론']],
-    ['/week2/dbms/deepdive/index.html', 'DBMS 더 파고들기', ['미니 DBMS 개념 더 파고들기', 'DBMS 더 파고들기']],
-    ['/week2/dbms/cheatsheet/index.html', 'DBMS 한 장 요약', ['미니 DBMS 한 장 요약', 'DBMS 한 장 요약']],
-    ['/week2/dbms/docs/index.html', 'DBMS 설명서', ['미니 DBMS 설명서', 'DBMS 설명서']],
+    ['/mini_react/phase1/index.html', 'Phase 1 · Diff', ['Phase 1 · Diff', 'Diff Playground', 'Phase 1 페이지']],
+    ['/mini_react/phase2/index.html', 'Phase 2 · Hooks', ['Phase 2 · Hooks', '스터디 플래너', 'Phase 2 페이지']],
+    ['/mini_react/examples/index.html', '예제', ['예제 모음', '예제 페이지', '예제 탭']],
+    ['/mini_react/sandbox/index.html', '샌드박스', ['샌드박스']],
+    ['/mini_react/walkthrough/index.html', '코드 해설', ['코드 해설']],
+    ['/mini_react/theory/index.html', 'React 이론', ['React 이론', '이론 페이지', '이론 탭']],
+    ['/mini_react/deepdive/index.html', '개념 더 파고들기', ['개념 더 파고들기', '더 파고들기']],
+    ['/mini_react/cheatsheet/index.html', '한 장 요약', ['한 장 요약']],
+    ['/mini_react/docs/index.html', '설명서', ['설명서']],
+    ['/mini_redis/guide/index.html', '레디스 가이드', ['미니 레디스 학습 가이드', '레디스 가이드']],
+    ['/mini_redis/index.html', '미니 레디스 Playground', ['미니 레디스 Playground', '레디스 Playground', 'Mini Redis', 'MiniRedis']],
+    ['/mini_redis/examples/index.html', '레디스 예제', ['미니 레디스 예제', '레디스 예제']],
+    ['/mini_redis/sandbox/index.html', '레디스 샌드박스', ['미니 레디스 샌드박스', '레디스 샌드박스']],
+    ['/mini_redis/walkthrough/index.html', '레디스 코드 해설', ['미니 레디스 코드 해설', '레디스 코드 해설']],
+    ['/mini_redis/theory/index.html', '레디스 이론', ['레디스 이론']],
+    ['/mini_redis/deepdive/index.html', '레디스 더 파고들기', ['미니 레디스 개념 더 파고들기', '레디스 더 파고들기']],
+    ['/mini_redis/cheatsheet/index.html', '레디스 한 장 요약', ['미니 레디스 한 장 요약', '레디스 한 장 요약']],
+    ['/mini_redis/docs/index.html', '레디스 설명서', ['미니 레디스 설명서', '레디스 설명서']],
+    ['/mini_DBMS/guide/index.html', 'DBMS 가이드', ['미니 DBMS 학습 가이드', 'DBMS 가이드']],
+    ['/mini_DBMS/phase1/index.html', 'Phase 1 · SQL', ['Phase 1 · SQL', 'SQL 처리기 Playground']],
+    ['/mini_DBMS/phase2/index.html', 'Phase 2 · B+ 트리', ['Phase 2 · B+ 트리', 'B+ 트리 인덱스 Playground']],
+    ['/mini_DBMS/phase3/index.html', 'Phase 3 · API 서버', ['Phase 3 · API 서버', 'API 서버 Playground']],
+    ['/mini_DBMS/examples/index.html', 'DBMS 예제', ['미니 DBMS 예제', 'DBMS 예제']],
+    ['/mini_DBMS/sandbox/index.html', 'DBMS 샌드박스', ['미니 DBMS 샌드박스', 'DBMS 샌드박스']],
+    ['/mini_DBMS/walkthrough/index.html', 'DBMS 코드 해설', ['미니 DBMS 코드 해설', 'DBMS 코드 해설']],
+    ['/mini_DBMS/theory/index.html', 'DBMS 이론', ['DBMS 이론']],
+    ['/mini_DBMS/deepdive/index.html', 'DBMS 더 파고들기', ['미니 DBMS 개념 더 파고들기', 'DBMS 더 파고들기']],
+    ['/mini_DBMS/cheatsheet/index.html', 'DBMS 한 장 요약', ['미니 DBMS 한 장 요약', 'DBMS 한 장 요약']],
+    ['/mini_DBMS/docs/index.html', 'DBMS 설명서', ['미니 DBMS 설명서', 'DBMS 설명서']],
   ];
-  const DIRS = TABS.map(([p]) => p.split('/')[1]).filter((d) => d !== 'week2');
+  const DIRS = TABS.map(([p]) => p.split('/')).filter((s) => s[1] === 'mini_react').map((s) => s[2]); // 1주차 탭 폴더 (guide → /mini_react/guide/)
 
   /**
    * 모델이 쓴 주소를 이 사이트 경로로 맞춘다. 사이트 밖(https 제외) 주소면 null.
@@ -108,10 +108,10 @@
     if (/^[a-z][a-z0-9+.-]*:/i.test(url) || url.startsWith('//')) return null; // javascript:, data:, http:// 외부 등
     if (url.startsWith('#')) return url;
     url = url.replace(/^(\.\.?\/)+/, '').replace(/^\/+/, '');
-    const m = url.match(/^([a-z0-9-]+)(?:\/(?:index\.html)?)?(#[\w-]*)?$/i);
-    if (m && DIRS.includes(m[1].toLowerCase())) return `/${m[1].toLowerCase()}/index.html${m[2] || ''}`;
+    const m = url.replace(/^mini_react\//i, '').match(/^([a-z0-9-]+)(?:\/(?:index\.html)?)?(#[\w-]*)?$/i); // guide · mini_react/guide 둘 다
+    if (m && DIRS.includes(m[1].toLowerCase())) return `/mini_react/${m[1].toLowerCase()}/index.html${m[2] || ''}`;
     if (/^(index\.html)?$/.test(url)) return '/index.html';
-    return '/' + url.replace(/\/(#|$)/, '/index.html$1'); // week2/redis/ → /week2/redis/index.html
+    return '/' + url.replace(/\/(#|$)/, '/index.html$1'); // mini_redis/ → /mini_redis/index.html
   }
 
   /** 답변에 나온 탭 목록 (링크든 이름이든, 나온 순서대로) */
@@ -132,7 +132,7 @@
       if (tab) add(tab[0], url, m.index);
     }
     for (const [path, , names] of TABS) {
-      const week1 = !path.startsWith('/week2/');
+      const week1 = path.startsWith('/mini_react/');
       for (const n of names) {
         // "2주차 설명서" 의 '설명서' 를 1주차 설명서로 세지 않는다
         for (let i = plain.indexOf(n); i >= 0; i = plain.indexOf(n, i + 1)) {

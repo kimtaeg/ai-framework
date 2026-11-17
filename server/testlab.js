@@ -3,7 +3,7 @@
  *  - 비밀번호는 서버에서만 확인한다. 저장하는 것은 scrypt 해시뿐 (.env 의 TESTLAB_PASSWORD_HASH).
  *    해시가 없으면 실험실은 잠긴 채로 열리지 않는다.
  *  - 로그인하면 HttpOnly · SameSite=Strict 세션 쿠키 (12시간). 15분 안에 5번 틀리면 로그인 막힘.
- *  - 보호하는 경로: /testlab/ (로그인 페이지 제외), /bench/, /load/
+ *  - 보호하는 경로: /testlab/ (로그인 페이지 제외), /mini_react/bench/, /mini_redis/load/
  *  - 돌릴 수 있는 작업은 미리 정해 둔 명령뿐 (입력값으로 명령을 만들지 않는다). 한 번에 하나.
  *
  *  비밀번호 바꾸기:  node server/testlab.js --set-password   (입력은 화면에 보이지 않음)
@@ -27,7 +27,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000;
 const MAX_FAILS = 5;
 const FAIL_WINDOW_MS = 15 * 60 * 1000;
 const MAX_LINES = 5000;
-const PROTECTED = ['/testlab/', '/bench/', '/load/'];
+const PROTECTED = ['/testlab/', '/mini_react/bench/', '/mini_redis/load/'];
 const PUBLIC_IN_LAB = new Set(['/testlab/login.html']);
 
 // ------------------------------------------------------------------ 비밀번호 해시
@@ -80,9 +80,9 @@ export const METRICS = {
   recoverMs: { label: '다시 켤 때 복구', unit: 'ms', better: 'low' },
 };
 
-/** 대안 비교 (node load/alt-bench.js <what>) 의 마지막 줄 RESULT {json} 을 읽는다 */
+/** 대안 비교 (node mini_redis/load/alt-bench.js <what>) 의 마지막 줄 RESULT {json} 을 읽는다 */
 const altNodeJob = (what) => async ({ run, lines, record }) => {
-  const code = await run(process.execPath, ['load/alt-bench.js', what]);
+  const code = await run(process.execPath, ['mini_redis/load/alt-bench.js', what]);
   const m = lastMatch(lines, /^RESULT (\{.*\})$/);
   if (!code && m) record(JSON.parse(m[1]));
   return code || (m ? 0 : 1);
@@ -96,7 +96,7 @@ const altK6Job = ({ mode, variants, main = 'rps' }) => async ({ log, startTarget
     log(`── ${label}`);
     const target = await startTarget();
     try {
-      const r = await runK6('load/k6-compare.js', { MODE: mode, VARIANT: v, DURATION: option }, target.base);
+      const r = await runK6('mini_redis/load/k6-compare.js', { MODE: mode, VARIANT: v, DURATION: option }, target.base);
       if (r.code || !r.metrics) return r.code || 1;
       out.push({ label, metrics: r.metrics });
       log(`   초당 ${r.metrics.rps.toLocaleString()}개 · p95 ${r.metrics.p95}ms · 실패 ${r.metrics.fail}%`);
@@ -132,8 +132,8 @@ const k6Job = (script, name) => async ({ log, startTarget, runK6, record }) => {
   if (!needK6(log)) return 1;
   const target = await startTarget();
   try {
-    mkdirSync(join(ROOT, 'load', 'reports'), { recursive: true });
-    const report = `load/reports/${name}-${stamp()}.html`;
+    mkdirSync(join(ROOT, 'mini_redis', 'load', 'reports'), { recursive: true });
+    const report = `mini_redis/load/reports/${name}-${stamp()}.html`;
     log(`대상 서버: ${target.base} (임시 데이터, 실제 데이터는 건드리지 않음)`);
     log(`실시간 대시보드: http://127.0.0.1:5665 (이 PC 에서만) · 끝나면 리포트: /${report}`);
     log('※ 대시보드를 열어 두면 테스트가 끝난 뒤에도 그 탭을 닫을 때까지 작업이 끝나지 않습니다.');
@@ -156,7 +156,7 @@ const compareJob = ({ mode, a, b, targetA = {}, targetB = {} }) => async ({ log,
     log(`── ${v === 'a' ? '기술 있음' : '기술 없음'}: ${label}`);
     const target = await startTarget(tenv);
     try {
-      const r = await runK6('load/k6-compare.js', { MODE: mode, VARIANT: v, DURATION: option }, target.base);
+      const r = await runK6('mini_redis/load/k6-compare.js', { MODE: mode, VARIANT: v, DURATION: option }, target.base);
       if (r.code || !r.metrics) return r.code || 1;
       out[v] = { label, metrics: r.metrics };
       log(`   초당 ${r.metrics.rps.toLocaleString()}개 · p95 ${r.metrics.p95}ms · 실패 ${r.metrics.fail}%`);
@@ -190,19 +190,19 @@ export const DEFAULT_JOBS = {
   'k6-mixed': {
     title: '부하 테스트 (k6)',
     desc: '최대 200명이 페이지 · 레디스 · 캐시 · SQL 을 섞어서 요청. 약 1분 30초.',
-    run: k6Job('load/k6-mixed.js', 'mixed'),
+    run: k6Job('mini_redis/load/k6-mixed.js', 'mixed'),
   },
   'k6-limit': {
     title: '한계 찾기 (k6)',
     desc: '초당 요청을 1,000 → 15,000 회로 계단식으로 올림. 약 3분 30초.',
-    run: k6Job('load/k6-limit.js', 'limit'),
+    run: k6Job('mini_redis/load/k6-limit.js', 'limit'),
   },
   'dbms-bench': {
     title: 'DBMS 인덱스 vs 선형 탐색',
     desc: 'B+ 트리 인덱스와 전체 읽기 비교. 10만 건 약 10초, 100만 건 약 1~2분.',
     options: { '100000': '10만 건', '1000000': '100만 건' },
     run: async ({ run, option, lines, record }) => {
-      const code = await run(process.execPath, ['week2/dbms/bench.js', '--rows', option]);
+      const code = await run(process.execPath, ['mini_DBMS/bench.js', '--rows', option]);
       const i = lastMatch(lines, /^id = \?.*평균 ([\d.]+)ms/), s = lastMatch(lines, /^email = \?.*평균 ([\d.]+)ms/), x = lastMatch(lines, /약 ([\d,]+)배 빠름/);
       if (i && s) record({ metrics: { indexMs: num(i[1]), scanMs: num(s[1]), speedup: x ? num(x[1]) : null } });
       return code;
@@ -268,7 +268,7 @@ export const DEFAULT_JOBS = {
 };
 
 // ------------------------------------------------------------------ 실험실
-export function createTestLab({ root = ROOT, passwordHash, jobs = DEFAULT_JOBS, now = () => Date.now(), resultsFile = join(root, 'load', 'results', 'history.json') } = {}) {
+export function createTestLab({ root = ROOT, passwordHash, jobs = DEFAULT_JOBS, now = () => Date.now(), resultsFile = join(root, 'mini_redis', 'load', 'results', 'history.json') } = {}) {
   const getHash = () => passwordHash ?? process.env.TESTLAB_PASSWORD_HASH ?? '';
   const sessions = new Map(); // token → 만료 시각
   const fails = new Map(); // ip → { count, first }
@@ -411,9 +411,9 @@ export function createTestLab({ root = ROOT, passwordHash, jobs = DEFAULT_JOBS, 
   }
 
   function reports() {
-    const dir = join(root, 'load', 'reports');
+    const dir = join(root, 'mini_redis', 'load', 'reports');
     if (!existsSync(dir)) return [];
-    return readdirSync(dir).filter((f) => f.endsWith('.html')).map((f) => ({ path: `/load/reports/${f}`, name: f, at: statSync(join(dir, f)).mtimeMs })).sort((a, b) => b.at - a.at).slice(0, 20);
+    return readdirSync(dir).filter((f) => f.endsWith('.html')).map((f) => ({ path: `/mini_redis/load/reports/${f}`, name: f, at: statSync(join(dir, f)).mtimeMs })).sort((a, b) => b.at - a.at).slice(0, 20);
   }
 
   const view = (from = 0) => ({
@@ -499,7 +499,7 @@ export function createTestLab({ root = ROOT, passwordHash, jobs = DEFAULT_JOBS, 
         return true;
       }
       if (authed(req)) return false; // 로그인됨 → 정적 파일 그대로
-      const isPage = normLower.endsWith('/') || normLower.endsWith('.html') || normLower === '/testlab' || normLower === '/bench' || normLower === '/load';
+      const isPage = normLower.endsWith('/') || normLower.endsWith('.html') || normLower === '/testlab' || normLower === '/mini_react/bench' || normLower === '/mini_redis/load';
       if (isPage && req.method === 'GET') {
         res.writeHead(302, { Location: `/testlab/login.html?next=${encodeURIComponent(norm)}`, 'Cache-Control': 'no-store' }).end();
       } else {

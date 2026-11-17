@@ -7,10 +7,10 @@ import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gunzipSync } from 'node:zlib';
-import { Database } from '../week2/dbms/engine.js';
-import { MemoryStorage } from '../week2/dbms/storage.js';
-import { FileStorage } from '../week2/dbms/storage-file.js';
-import { createDbService } from '../week2/dbms/service.js';
+import { Database } from '../mini_DBMS/engine.js';
+import { MemoryStorage } from '../mini_DBMS/storage.js';
+import { FileStorage } from '../mini_DBMS/storage-file.js';
+import { createDbService } from '../mini_DBMS/service.js';
 import { createApp, createWeek2 } from '../server.js';
 
 const tmp = (name) => mkdtempSync(join(tmpdir(), `${name}-`));

@@ -1,10 +1,10 @@
 import './setup.js';
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { h } from '../src/lib/vdom.js';
+import { h } from '../mini_react/src/lib/vdom.js';
 import {
   FunctionComponent, useState, useEffect, useLayoutEffect, useMemo, useCallback, useRef, useReducer,
-} from '../src/lib/component.js';
+} from '../mini_react/src/lib/component.js';
 import { container, flushMicrotasks } from './setup.js';
 
 /** 컴포넌트 밖에서 setter 를 꺼내 쓰기 위한 헬퍼 */

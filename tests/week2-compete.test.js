@@ -8,12 +8,12 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { Database } from '../week2/dbms/engine.js';
-import { SqlError } from '../week2/dbms/sql.js';
-import { MemoryStorage } from '../week2/dbms/storage.js';
-import { FileStorage } from '../week2/dbms/storage-file.js';
-import { createDbService } from '../week2/dbms/service.js';
-import { startDbServer } from '../week2/dbms/server.js';
+import { Database } from '../mini_DBMS/engine.js';
+import { SqlError } from '../mini_DBMS/sql.js';
+import { MemoryStorage } from '../mini_DBMS/storage.js';
+import { FileStorage } from '../mini_DBMS/storage-file.js';
+import { createDbService } from '../mini_DBMS/service.js';
+import { startDbServer } from '../mini_DBMS/server.js';
 
 const tmp = (name) => mkdtempSync(join(tmpdir(), `${name}-`));
 const SCHEMA = { users: { columns: [{ name: 'id', type: 'INT' }, { name: 'name', type: 'TEXT' }, { name: 'age', type: 'INT' }, { name: 'email', type: 'TEXT' }] } };

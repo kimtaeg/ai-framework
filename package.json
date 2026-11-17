@@ -10,11 +10,11 @@
     "start": "node server.js",
     "pretest": "node build.js",
     "test": "node --test --test-timeout=20000 \"tests/**/*.test.js\"",
-    "redis": "node week2/redis/server.js",
-    "dbms": "node week2/dbms/server.js",
-    "bench:dbms": "node week2/dbms/bench.js --rows 1000000",
-    "bench:export": "node experiment/export.js",
-    "bench:compare": "node experiment/compare-hosts.js",
+    "redis": "node mini_redis/server.js",
+    "dbms": "node mini_DBMS/server.js",
+    "bench:dbms": "node mini_DBMS/bench.js --rows 1000000",
+    "bench:export": "node mini_redis/experiment/export.js",
+    "bench:compare": "node mini_redis/experiment/compare-hosts.js",
     "test:fuzz": "node tests/fuzz-400.js"
   },
   "devDependencies": {

@@ -19,67 +19,67 @@ const attemptTimeout = () => Number(process.env.GEMINI_TIMEOUT_MS) || 10000;
 
 // ---------------------------------------------------------------- 시스템 프롬프트
 export const PAGES = [
-  ['/guide/index.html', '학습 가이드', '볼 순서 12단계, 예측 → 실행 → 확인 → 설명 방법, 발표용 질문-시연 짝짓기'],
-  ['/phase1/index.html', 'Phase 1 · Diff Playground', '실제/테스트 영역, Patch·뒤로가기·앞으로가기, 예시 케이스 9개, 단계별 Patch, 예측 퀴즈, 이전 ↔ 새 트리 비교'],
-  ['/phase2/index.html', 'Phase 2 · 스터디 플래너', 'useState/useEffect/useMemo 할 일 앱, Batching 데모, 타이머, Inspector(렌더 원인, 단계별 시간, Hook 저장소)'],
-  ['/examples/index.html', '예제 모음', '장바구니, 회원가입 폼, 칸반, 1,000행 리스트, 스톱워치, Effect 타이밍(렌더 → useLayoutEffect → useEffect 실행 순서 보기, 경쟁 상태 실험은 없음), Context. 망가뜨리기 실험 7개, Virtual DOM vs 전체 다시 그리기 비교'],
-  ['/sandbox/index.html', '샌드박스', '틀 9개와 조각 15개로 miniReact 코드를 직접 만들어 실행'],
-  ['/walkthrough/index.html', '핵심 코드 해설', 'h, domToVNode, diff, diffChildren, applyPatch, render/getHookSlot, useState/scheduleUpdate, update/commit, useEffect/useMemo 를 조각마다 설명 + 설명 연습'],
-  ['/theory/index.html', 'React 이론', '브라우저 렌더링, Virtual DOM, Diff, key, Fiber, Hooks, 동시성, SSR, React 19. 직접 해보는 예제 4개'],
-  ['/deepdive/index.html', '개념 더 파고들기', '왜 그렇게 만들었는지 12주제(스냅샷/클로저, O(n³)→O(n) 가정, key 정체성, LIS, Hook 순서 설계, 이벤트 루프와 Batching, Effect=동기화와 경쟁 상태, 불변성과 Object.is, Fiber 시간 쪼개기, Render/Commit 분리, Virtual DOM vs Signals/컴파일러, miniReact 한계). 주제마다 실행해 보는 실험. 경쟁 상태(race condition)·index key 메모 버그·Hook 칸 표·이벤트 루프 순서 맞히기·시간 쪼개기 실험은 이 페이지에만 있다'],
-  ['/cheatsheet/index.html', '한 장 요약', '발표 직전용 15칸 요약, A4 인쇄'],
-  ['/docs/index.html', '설명서', '과제 중점 포인트 정리'],
+  ['/mini_react/guide/index.html', '학습 가이드', '볼 순서 12단계, 예측 → 실행 → 확인 → 설명 방법, 발표용 질문-시연 짝짓기'],
+  ['/mini_react/phase1/index.html', 'Phase 1 · Diff Playground', '실제/테스트 영역, Patch·뒤로가기·앞으로가기, 예시 케이스 9개, 단계별 Patch, 예측 퀴즈, 이전 ↔ 새 트리 비교'],
+  ['/mini_react/phase2/index.html', 'Phase 2 · 스터디 플래너', 'useState/useEffect/useMemo 할 일 앱, Batching 데모, 타이머, Inspector(렌더 원인, 단계별 시간, Hook 저장소)'],
+  ['/mini_react/examples/index.html', '예제 모음', '장바구니, 회원가입 폼, 칸반, 1,000행 리스트, 스톱워치, Effect 타이밍(렌더 → useLayoutEffect → useEffect 실행 순서 보기, 경쟁 상태 실험은 없음), Context. 망가뜨리기 실험 7개, Virtual DOM vs 전체 다시 그리기 비교'],
+  ['/mini_react/sandbox/index.html', '샌드박스', '틀 9개와 조각 15개로 miniReact 코드를 직접 만들어 실행'],
+  ['/mini_react/walkthrough/index.html', '핵심 코드 해설', 'h, domToVNode, diff, diffChildren, applyPatch, render/getHookSlot, useState/scheduleUpdate, update/commit, useEffect/useMemo 를 조각마다 설명 + 설명 연습'],
+  ['/mini_react/theory/index.html', 'React 이론', '브라우저 렌더링, Virtual DOM, Diff, key, Fiber, Hooks, 동시성, SSR, React 19. 직접 해보는 예제 4개'],
+  ['/mini_react/deepdive/index.html', '개념 더 파고들기', '왜 그렇게 만들었는지 12주제(스냅샷/클로저, O(n³)→O(n) 가정, key 정체성, LIS, Hook 순서 설계, 이벤트 루프와 Batching, Effect=동기화와 경쟁 상태, 불변성과 Object.is, Fiber 시간 쪼개기, Render/Commit 분리, Virtual DOM vs Signals/컴파일러, miniReact 한계). 주제마다 실행해 보는 실험. 경쟁 상태(race condition)·index key 메모 버그·Hook 칸 표·이벤트 루프 순서 맞히기·시간 쪼개기 실험은 이 페이지에만 있다'],
+  ['/mini_react/cheatsheet/index.html', '한 장 요약', '발표 직전용 15칸 요약, A4 인쇄'],
+  ['/mini_react/docs/index.html', '설명서', '과제 중점 포인트 정리'],
   // ---- 2주차
   ['/index.html#redis', '홈 (2주차 미니 레디스)', '왼쪽에서 2주차 미니 레디스를 고르면 레디스 페이지 목록'],
   ['/index.html#dbms', '홈 (2주차 미니 DBMS)', '왼쪽에서 2주차 미니 DBMS 를 고르면 DBMS 페이지 목록'],
-  ['/week2/redis/guide/index.html', '미니 레디스 학습 가이드', '예측 → 실행 → 확인 → 설명, 볼 순서 8단계, 예제별 질문, 망가뜨리기 목록, 도구, 발표 질문 → 시연, 요구사항 지도'],
-  ['/week2/redis/index.html', '미니 레디스 Playground', '1 명령 콘솔, 2 해시 테이블 버킷·점진적 리해시, 3 만료(지연/주기 삭제), 4 캐시·무효화·성능 비교, 5 동시성(GET+SET vs INCR), 6 AOF 서버 다운·복원(fsync 정책), 7 HTTP API'],
-  ['/week2/redis/examples/index.html', '미니 레디스 예제', '로그인 세션, 요청 횟수 제한, 분산 락, 좋아요 카운터 + 망가뜨리기 버튼 5개(TTL 없음, EXPIRE 빼먹기, 락 TTL 없음, 토큰 확인 없이 해제, GET→SET 나누기)'],
-  ['/week2/redis/sandbox/index.html', '미니 레디스 샌드박스', 'redis.exec() 로 직접 코딩. 틀 7개(기본 명령, 캐시, 요청 제한 완성하기, 해시 테이블, 태그 무효화, AOF 재생, 빈 틀)'],
-  ['/week2/redis/walkthrough/index.html', '미니 레디스 코드 해설', '핵심 함수 7개: fnv1a/set, 리해시, command/#lookup, activeExpireCycle, SET/AOF 기록, AofFile/loadAof, API + 설명 연습'],
-  ['/week2/redis/theory/index.html', '레디스 이론', 'Redis, Redis vs DBMS, 해시 테이블, 충돌, 리해시, TTL, 캐시 전략, 무효화, eviction, 단일 스레드 동시성, AOF/RDB, API, 예상 질문. 예제 2개(버킷, 만료)'],
-  ['/week2/redis/deepdive/index.html', '미니 레디스 개념 더 파고들기', '8주제와 실험: 해시 함수 분포, 부하율, 한 번에 vs 점진적 리해시, KEYS 가 막는 시간, 만료 표본 크기, 캐시 스탬피드, AOF 크기, 한계'],
-  ['/week2/redis/cheatsheet/index.html', '미니 레디스 한 장 요약', '발표 직전용 10칸, A4 인쇄'],
-  ['/week2/redis/docs/index.html', '미니 레디스 설명서', '구조, 해시 테이블, 동시성, 만료, API 목록, 무효화, 영속성, 테스트, 한계'],
-  ['/week2/dbms/guide/index.html', '미니 DBMS 학습 가이드', '예측 → 실행 → 확인 → 설명, 볼 순서 8단계, 예제별 질문, 망가뜨리기 목록, 도구, 발표 질문 → 시연, 요구사항 지도'],
-  ['/week2/dbms/phase1/index.html', 'Phase 1 · SQL 처리기', 'SQL 실행: 토큰 → AST → 실행 계획 → 결과, 읽은 파일 줄 표시, 예시 SQL 10개, CLI 명령'],
-  ['/week2/dbms/phase2/index.html', 'Phase 2 · B+ 트리', '1 B+ 트리 삽입·분할·검색 경로·범위, 2 인덱스 vs 선형 탐색 벤치마크 + 100만 건 결과'],
-  ['/week2/dbms/phase3/index.html', 'Phase 3 · API 서버', '1 스레드 풀·읽기/쓰기 락 시뮬레이션(락 끄면 중복 id), 2 실제 스레드 풀 서버에 요청(npm start 일 때)'],
-  ['/week2/dbms/examples/index.html', '미니 DBMS 예제', '회원 가입(따옴표 이스케이프, SQL 인젝션), 게시판 목록 캐시, 페이지 넘기기(id 기준 vs OFFSET), 이메일 보조 인덱스 + 망가뜨리기 버튼 3개'],
-  ['/week2/dbms/sandbox/index.html', '미니 DBMS 샌드박스', 'sql()·tokenize()·parse()·BPlusTree 로 직접 코딩. 틀 7개(SQL, 토큰과 AST, B+ 트리, 대용량 성능, SQL 인젝션, 레디스+DBMS, 빈 틀)'],
-  ['/week2/dbms/walkthrough/index.html', '미니 DBMS 코드 해설', '핵심 함수 9개: tokenize, parse, insert, select/choosePlan, FileStorage, B+ 트리 분할, RWLock, ThreadPool, service.query + 설명 연습'],
-  ['/week2/dbms/theory/index.html', 'DBMS 이론', 'DBMS, SQL 처리 흐름, 토크나이저·파서, 저장 형식, 인덱스, B+ 트리, 실행 계획, 스레드 풀, 락, API 서버 구조, 실제 DBMS 와 차이, 예상 질문. 예제 2개(토큰·AST, 실행 계획)'],
-  ['/week2/dbms/deepdive/index.html', '미니 DBMS 개념 더 파고들기', '8주제와 실험: 차수와 높이, 순차 삽입 채움률, 인덱스의 비용, 선택도, 실행 계획기, 교착 상태, 스레드 수, 한계'],
-  ['/week2/dbms/cheatsheet/index.html', '미니 DBMS 한 장 요약', '발표 직전용 10칸, A4 인쇄'],
-  ['/week2/dbms/docs/index.html', '미니 DBMS 설명서', '구조, Phase 1·2·3, 파일 저장 방식, CLI·API 목록, 테스트, 한계'],
+  ['/mini_redis/guide/index.html', '미니 레디스 학습 가이드', '예측 → 실행 → 확인 → 설명, 볼 순서 8단계, 예제별 질문, 망가뜨리기 목록, 도구, 발표 질문 → 시연, 요구사항 지도'],
+  ['/mini_redis/index.html', '미니 레디스 Playground', '1 명령 콘솔, 2 해시 테이블 버킷·점진적 리해시, 3 만료(지연/주기 삭제), 4 캐시·무효화·성능 비교, 5 동시성(GET+SET vs INCR), 6 AOF 서버 다운·복원(fsync 정책), 7 HTTP API'],
+  ['/mini_redis/examples/index.html', '미니 레디스 예제', '로그인 세션, 요청 횟수 제한, 분산 락, 좋아요 카운터 + 망가뜨리기 버튼 5개(TTL 없음, EXPIRE 빼먹기, 락 TTL 없음, 토큰 확인 없이 해제, GET→SET 나누기)'],
+  ['/mini_redis/sandbox/index.html', '미니 레디스 샌드박스', 'redis.exec() 로 직접 코딩. 틀 7개(기본 명령, 캐시, 요청 제한 완성하기, 해시 테이블, 태그 무효화, AOF 재생, 빈 틀)'],
+  ['/mini_redis/walkthrough/index.html', '미니 레디스 코드 해설', '핵심 함수 7개: fnv1a/set, 리해시, command/#lookup, activeExpireCycle, SET/AOF 기록, AofFile/loadAof, API + 설명 연습'],
+  ['/mini_redis/theory/index.html', '레디스 이론', 'Redis, Redis vs DBMS, 해시 테이블, 충돌, 리해시, TTL, 캐시 전략, 무효화, eviction, 단일 스레드 동시성, AOF/RDB, API, 예상 질문. 예제 2개(버킷, 만료)'],
+  ['/mini_redis/deepdive/index.html', '미니 레디스 개념 더 파고들기', '8주제와 실험: 해시 함수 분포, 부하율, 한 번에 vs 점진적 리해시, KEYS 가 막는 시간, 만료 표본 크기, 캐시 스탬피드, AOF 크기, 한계'],
+  ['/mini_redis/cheatsheet/index.html', '미니 레디스 한 장 요약', '발표 직전용 10칸, A4 인쇄'],
+  ['/mini_redis/docs/index.html', '미니 레디스 설명서', '구조, 해시 테이블, 동시성, 만료, API 목록, 무효화, 영속성, 테스트, 한계'],
+  ['/mini_DBMS/guide/index.html', '미니 DBMS 학습 가이드', '예측 → 실행 → 확인 → 설명, 볼 순서 8단계, 예제별 질문, 망가뜨리기 목록, 도구, 발표 질문 → 시연, 요구사항 지도'],
+  ['/mini_DBMS/phase1/index.html', 'Phase 1 · SQL 처리기', 'SQL 실행: 토큰 → AST → 실행 계획 → 결과, 읽은 파일 줄 표시, 예시 SQL 10개, CLI 명령'],
+  ['/mini_DBMS/phase2/index.html', 'Phase 2 · B+ 트리', '1 B+ 트리 삽입·분할·검색 경로·범위, 2 인덱스 vs 선형 탐색 벤치마크 + 100만 건 결과'],
+  ['/mini_DBMS/phase3/index.html', 'Phase 3 · API 서버', '1 스레드 풀·읽기/쓰기 락 시뮬레이션(락 끄면 중복 id), 2 실제 스레드 풀 서버에 요청(npm start 일 때)'],
+  ['/mini_DBMS/examples/index.html', '미니 DBMS 예제', '회원 가입(따옴표 이스케이프, SQL 인젝션), 게시판 목록 캐시, 페이지 넘기기(id 기준 vs OFFSET), 이메일 보조 인덱스 + 망가뜨리기 버튼 3개'],
+  ['/mini_DBMS/sandbox/index.html', '미니 DBMS 샌드박스', 'sql()·tokenize()·parse()·BPlusTree 로 직접 코딩. 틀 7개(SQL, 토큰과 AST, B+ 트리, 대용량 성능, SQL 인젝션, 레디스+DBMS, 빈 틀)'],
+  ['/mini_DBMS/walkthrough/index.html', '미니 DBMS 코드 해설', '핵심 함수 9개: tokenize, parse, insert, select/choosePlan, FileStorage, B+ 트리 분할, RWLock, ThreadPool, service.query + 설명 연습'],
+  ['/mini_DBMS/theory/index.html', 'DBMS 이론', 'DBMS, SQL 처리 흐름, 토크나이저·파서, 저장 형식, 인덱스, B+ 트리, 실행 계획, 스레드 풀, 락, API 서버 구조, 실제 DBMS 와 차이, 예상 질문. 예제 2개(토큰·AST, 실행 계획)'],
+  ['/mini_DBMS/deepdive/index.html', '미니 DBMS 개념 더 파고들기', '8주제와 실험: 차수와 높이, 순차 삽입 채움률, 인덱스의 비용, 선택도, 실행 계획기, 교착 상태, 스레드 수, 한계'],
+  ['/mini_DBMS/cheatsheet/index.html', '미니 DBMS 한 장 요약', '발표 직전용 10칸, A4 인쇄'],
+  ['/mini_DBMS/docs/index.html', '미니 DBMS 설명서', '구조, Phase 1·2·3, 파일 저장 방식, CLI·API 목록, 테스트, 한계'],
 ];
 
 export const ANCHORS = [
-  '/theory/index.html#what (React 란?)', '/theory/index.html#flow (전체 흐름)', '/theory/index.html#browser (Reflow/Repaint)',
-  '/theory/index.html#vdom (Virtual DOM)', '/theory/index.html#diff (Diff 동작)', '/theory/index.html#cases (5가지 케이스)',
-  '/theory/index.html#key (key)', '/theory/index.html#patch (Patch)', '/theory/index.html#phases (Render/Commit)',
-  '/theory/index.html#fiber (Fiber)', '/theory/index.html#hooks-how (Hooks 원리)', '/theory/index.html#hooks-rules (Hooks 규칙)',
-  '/theory/index.html#batching (setState와 Batching)', '/theory/index.html#useeffect (useEffect)', '/theory/index.html#usememo (useMemo)',
-  '/theory/index.html#lifting (State 위치)', '/theory/index.html#interview (예상 질문)',
-  '/deepdive/index.html#snapshot (렌더는 사진)', '/deepdive/index.html#reconcile (재조정 가정)', '/deepdive/index.html#identity (key 정체성)',
-  '/deepdive/index.html#lis (LIS 최소 이동)', '/deepdive/index.html#hook-order (Hook 순서 설계)', '/deepdive/index.html#event-loop (이벤트 루프)',
-  '/deepdive/index.html#sync (Effect 동기화, 경쟁 상태)', '/deepdive/index.html#equality (불변성)', '/deepdive/index.html#slicing (Fiber 시간 쪼개기)',
-  '/deepdive/index.html#two-phase (Render/Commit)', '/deepdive/index.html#tradeoff (VDOM vs Signals)', '/deepdive/index.html#limits (miniReact 한계)',
-  '/examples/index.html#ex-cart', '/examples/index.html#ex-form', '/examples/index.html#ex-kanban', '/examples/index.html#ex-list',
-  '/examples/index.html#ex-stopwatch', '/examples/index.html#ex-effect', '/examples/index.html#ex-context',
-  '/walkthrough/index.html#diff', '/walkthrough/index.html#children', '/walkthrough/index.html#patch',
-  '/walkthrough/index.html#render', '/walkthrough/index.html#usestate', '/walkthrough/index.html#update',
-  '/guide/index.html#method', '/guide/index.html#roadmap', '/guide/index.html#demo-map',
-  '/week2/redis/index.html#console', '/week2/redis/index.html#hashtable', '/week2/redis/index.html#ttl', '/week2/redis/index.html#cache',
-  '/week2/redis/index.html#race', '/week2/redis/index.html#aof', '/week2/redis/index.html#api', '/week2/redis/examples/index.html#ex-session',
-  '/week2/redis/examples/index.html#ex-rate', '/week2/redis/examples/index.html#ex-lock', '/week2/redis/examples/index.html#ex-likes', '/week2/redis/theory/index.html#hash (해시 테이블)',
-  '/week2/redis/theory/index.html#resize (리해시)', '/week2/redis/theory/index.html#ttl (만료)', '/week2/redis/theory/index.html#cache (캐시 전략)', '/week2/redis/theory/index.html#invalidate (무효화)',
-  '/week2/redis/theory/index.html#concurrency (동시성)', '/week2/redis/theory/index.html#persistence (영속성)', '/week2/redis/theory/index.html#qa (레디스 예상 질문)', '/week2/dbms/phase1/index.html#sql',
-  '/week2/dbms/phase2/index.html#bptree', '/week2/dbms/phase2/index.html#bench', '/week2/dbms/phase3/index.html#pool', '/week2/dbms/phase3/index.html#server',
-  '/week2/dbms/examples/index.html#ex-signup', '/week2/dbms/examples/index.html#ex-board', '/week2/dbms/examples/index.html#ex-paging', '/week2/dbms/examples/index.html#ex-email',
-  '/week2/dbms/theory/index.html#sqlflow (SQL 처리)', '/week2/dbms/theory/index.html#parser (파서)', '/week2/dbms/theory/index.html#index (인덱스)', '/week2/dbms/theory/index.html#bptree (B+ 트리)',
-  '/week2/dbms/theory/index.html#plan (실행 계획)', '/week2/dbms/theory/index.html#threadpool (스레드 풀)', '/week2/dbms/theory/index.html#locks (락)', '/week2/dbms/theory/index.html#qa (DBMS 예상 질문)',
-  '/week2/redis/guide/index.html#roadmap', '/week2/redis/guide/index.html#demo-map', '/week2/dbms/guide/index.html#roadmap', '/week2/dbms/guide/index.html#demo-map',
+  '/mini_react/theory/index.html#what (React 란?)', '/mini_react/theory/index.html#flow (전체 흐름)', '/mini_react/theory/index.html#browser (Reflow/Repaint)',
+  '/mini_react/theory/index.html#vdom (Virtual DOM)', '/mini_react/theory/index.html#diff (Diff 동작)', '/mini_react/theory/index.html#cases (5가지 케이스)',
+  '/mini_react/theory/index.html#key (key)', '/mini_react/theory/index.html#patch (Patch)', '/mini_react/theory/index.html#phases (Render/Commit)',
+  '/mini_react/theory/index.html#fiber (Fiber)', '/mini_react/theory/index.html#hooks-how (Hooks 원리)', '/mini_react/theory/index.html#hooks-rules (Hooks 규칙)',
+  '/mini_react/theory/index.html#batching (setState와 Batching)', '/mini_react/theory/index.html#useeffect (useEffect)', '/mini_react/theory/index.html#usememo (useMemo)',
+  '/mini_react/theory/index.html#lifting (State 위치)', '/mini_react/theory/index.html#interview (예상 질문)',
+  '/mini_react/deepdive/index.html#snapshot (렌더는 사진)', '/mini_react/deepdive/index.html#reconcile (재조정 가정)', '/mini_react/deepdive/index.html#identity (key 정체성)',
+  '/mini_react/deepdive/index.html#lis (LIS 최소 이동)', '/mini_react/deepdive/index.html#hook-order (Hook 순서 설계)', '/mini_react/deepdive/index.html#event-loop (이벤트 루프)',
+  '/mini_react/deepdive/index.html#sync (Effect 동기화, 경쟁 상태)', '/mini_react/deepdive/index.html#equality (불변성)', '/mini_react/deepdive/index.html#slicing (Fiber 시간 쪼개기)',
+  '/mini_react/deepdive/index.html#two-phase (Render/Commit)', '/mini_react/deepdive/index.html#tradeoff (VDOM vs Signals)', '/mini_react/deepdive/index.html#limits (miniReact 한계)',
+  '/mini_react/examples/index.html#ex-cart', '/mini_react/examples/index.html#ex-form', '/mini_react/examples/index.html#ex-kanban', '/mini_react/examples/index.html#ex-list',
+  '/mini_react/examples/index.html#ex-stopwatch', '/mini_react/examples/index.html#ex-effect', '/mini_react/examples/index.html#ex-context',
+  '/mini_react/walkthrough/index.html#diff', '/mini_react/walkthrough/index.html#children', '/mini_react/walkthrough/index.html#patch',
+  '/mini_react/walkthrough/index.html#render', '/mini_react/walkthrough/index.html#usestate', '/mini_react/walkthrough/index.html#update',
+  '/mini_react/guide/index.html#method', '/mini_react/guide/index.html#roadmap', '/mini_react/guide/index.html#demo-map',
+  '/mini_redis/index.html#console', '/mini_redis/index.html#hashtable', '/mini_redis/index.html#ttl', '/mini_redis/index.html#cache',
+  '/mini_redis/index.html#race', '/mini_redis/index.html#aof', '/mini_redis/index.html#api', '/mini_redis/examples/index.html#ex-session',
+  '/mini_redis/examples/index.html#ex-rate', '/mini_redis/examples/index.html#ex-lock', '/mini_redis/examples/index.html#ex-likes', '/mini_redis/theory/index.html#hash (해시 테이블)',
+  '/mini_redis/theory/index.html#resize (리해시)', '/mini_redis/theory/index.html#ttl (만료)', '/mini_redis/theory/index.html#cache (캐시 전략)', '/mini_redis/theory/index.html#invalidate (무효화)',
+  '/mini_redis/theory/index.html#concurrency (동시성)', '/mini_redis/theory/index.html#persistence (영속성)', '/mini_redis/theory/index.html#qa (레디스 예상 질문)', '/mini_DBMS/phase1/index.html#sql',
+  '/mini_DBMS/phase2/index.html#bptree', '/mini_DBMS/phase2/index.html#bench', '/mini_DBMS/phase3/index.html#pool', '/mini_DBMS/phase3/index.html#server',
+  '/mini_DBMS/examples/index.html#ex-signup', '/mini_DBMS/examples/index.html#ex-board', '/mini_DBMS/examples/index.html#ex-paging', '/mini_DBMS/examples/index.html#ex-email',
+  '/mini_DBMS/theory/index.html#sqlflow (SQL 처리)', '/mini_DBMS/theory/index.html#parser (파서)', '/mini_DBMS/theory/index.html#index (인덱스)', '/mini_DBMS/theory/index.html#bptree (B+ 트리)',
+  '/mini_DBMS/theory/index.html#plan (실행 계획)', '/mini_DBMS/theory/index.html#threadpool (스레드 풀)', '/mini_DBMS/theory/index.html#locks (락)', '/mini_DBMS/theory/index.html#qa (DBMS 예상 질문)',
+  '/mini_redis/guide/index.html#roadmap', '/mini_redis/guide/index.html#demo-map', '/mini_DBMS/guide/index.html#roadmap', '/mini_DBMS/guide/index.html#demo-map',
 ];
 
 export const ROADMAP = [
@@ -109,12 +109,12 @@ export function systemPrompt(progress = [], page = '') {
 - 실제 React 와 차이: Fiber 없이 재귀 비교(중단 불가), Hook 저장은 배열(React 는 연결 리스트), Lane 우선순위 없음, 이벤트 위임 없음, Suspense·SSR 없음.
 
 ## 2주차 과제 (같은 사이트. 홈 왼쪽에서 "2주차 미니 레디스" 와 "2주차 미니 DBMS" 를 따로 고르고, 둘은 페이지 묶음이 따로 있다)
-- 미니 레디스 (week2/redis): 직접 만든 해시 테이블(FNV-1a, 체이닝, 부하율 1 초과 시 2배, 0.1 미만 시 축소, Redis 처럼 테이블 두 개로 점진적 리해시) 위의 키-값 저장소.
+- 미니 레디스 (mini_redis): 직접 만든 해시 테이블(FNV-1a, 체이닝, 부하율 1 초과 시 2배, 0.1 미만 시 축소, Redis 처럼 테이블 두 개로 점진적 리해시) 위의 키-값 저장소.
   명령: SET(EX/PX/EXAT/PXAT, NX/XX, KEEPTTL) GET GETDEL MSET MGET DEL EXISTS EXPIRE PEXPIRE PEXPIREAT TTL PTTL PERSIST INCR DECR INCRBY DECRBY KEYS DBSIZE FLUSHALL INFO + 확장 TAG/INVALIDATE/DELPATTERN.
   만료: 읽을 때 지우는 지연 삭제 + 100ms 마다 TTL 키 20개 표본을 지우는 주기 삭제(25% 넘으면 반복). 동시성: 한 스레드에서 동기 함수로 명령 실행 → 명령 하나는 원자적, GET+SET 조합은 아님(INCR, pipeline 사용).
   영속성: AOF(JSON 한 줄, TTL 은 절대 시각 PXAT, INCR 은 결과값 SET 으로 기록), fsync always/everysec/no, 잘린 마지막 줄 무시, 임시 파일 + rename 으로 원자적 재작성. RDB·eviction(LRU)은 미구현.
   외부 사용: HTTP JSON API(/keys/:key GET·PUT·DELETE, /expire, /incr, /invalidate, /command, /pipeline, /info), client.js, 느린 상품 API 에 cache-aside 를 적용한 demo-api(negative caching 포함).
-- 미니 DBMS (week2/dbms): Phase 1 SQL 처리기(토크나이저 + 재귀 하강 파서 → AST, INSERT/SELECT, WHERE =,!=,<,<=,>,>=,BETWEEN, AND, LIMIT, 행·열 위치가 붙은 에러, CLI cli.js run/exec/seed/info),
+- 미니 DBMS (mini_DBMS): Phase 1 SQL 처리기(토크나이저 + 재귀 하강 파서 → AST, INSERT/SELECT, WHERE =,!=,<,<=,>,>=,BETWEEN, AND, LIMIT, 행·열 위치가 붙은 에러, CLI cli.js run/exec/seed/info),
   테이블당 파일(.tbl, CSV 비슷한 한 줄 = 한 레코드, NULL 은 \\N), Phase 2 메모리 B+ 트리(id → 바이트 offset, 차수 64, 리프 연결로 범위 검색, 삭제 미구현), 실행 계획 index-lookup/index-range/full-scan,
   100만 건 측정: INSERT 2.09초, id 조회 0.038ms vs email 선형 탐색 1032ms(약 27,000배), 높이 4. Phase 3 worker_threads 스레드 풀 API 서버(POST /api/sql), 메인 스레드에서 파싱·테이블별 읽기/쓰기 락,
   INSERT 후 다른 워커에 인덱스 갱신을 알린 뒤 락 해제, 잠금 순서 고정으로 교착 방지, 대기 중인 쓰기가 있으면 새 읽기는 뒤로(기아 방지). 트랜잭션·MVCC·행 단위 락은 미구현.
@@ -140,7 +140,7 @@ ${progress.length ? progress.map((p) => `- ${p}`).join('\n') : '- (아직 없음
 - 짧게: 보통 3~8문장 또는 짧은 목록. 길게 요청받았을 때만 길게.
 - 관련 페이지를 1~3개 안내하고, "어디서 무엇을 눌러 확인하라" 처럼 구체적으로.
 - 페이지를 추천하거나 이름을 말할 때는 매번 [이름](/경로) 마크다운 링크로 쓴다. 이름만 굵게 쓰고 링크를 빼지 않는다. 두 곳을 추천하면 링크도 두 개다.
-- 링크 주소는 위 목록의 경로를 / 부터 그대로 쓴다 (예: [개념 더 파고들기](/deepdive/index.html#identity)). localhost, 상대 경로, 없는 #위치를 쓰지 않는다.
+- 링크 주소는 위 목록의 경로를 / 부터 그대로 쓴다 (예: [개념 더 파고들기](/mini_react/deepdive/index.html#identity)). localhost, 상대 경로, 없는 #위치를 쓰지 않는다.
 - 어떤 실험이 어느 페이지에 있는지는 위 페이지 설명에 적힌 것만 말한다. 설명에 없는 버튼이나 실험을 지어내지 않는다.
 - 이 프로젝트(miniReact) 기준 설명과 실제 React 설명이 다르면 둘을 구분해서 말한다.
 - "Virtual DOM 이 실제 DOM 보다 빠르다" 고 말하지 않는다. 바꿀 곳을 정확히 알고 직접 고치는 게 가장 빠르고, Virtual DOM 은 바꿀 곳을 개발자가 관리하지 않아도 불필요한 DOM 조작을 줄여 주는 절충안이다.

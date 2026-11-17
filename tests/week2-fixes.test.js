@@ -9,18 +9,18 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { HashTable } from '../week2/redis/hashtable.js';
-import { MiniRedis } from '../week2/redis/miniredis.js';
-import { openPersistentRedis, readLines } from '../week2/redis/persistence.js';
-import { MiniRedisClient } from '../week2/redis/client.js';
-import { startRedisServer } from '../week2/redis/server.js';
-import { parse, SqlError } from '../week2/dbms/sql.js';
-import { BPlusTree } from '../week2/dbms/bptree.js';
-import { MemoryStorage } from '../week2/dbms/storage.js';
-import { FileStorage, DEFAULT_SCHEMA } from '../week2/dbms/storage-file.js';
-import { Database } from '../week2/dbms/engine.js';
-import { seedRows } from '../week2/dbms/seed.js';
-import { createDbService } from '../week2/dbms/service.js';
+import { HashTable } from '../mini_redis/hashtable.js';
+import { MiniRedis } from '../mini_redis/miniredis.js';
+import { openPersistentRedis, readLines } from '../mini_redis/persistence.js';
+import { MiniRedisClient } from '../mini_redis/client.js';
+import { startRedisServer } from '../mini_redis/server.js';
+import { parse, SqlError } from '../mini_DBMS/sql.js';
+import { BPlusTree } from '../mini_DBMS/bptree.js';
+import { MemoryStorage } from '../mini_DBMS/storage.js';
+import { FileStorage, DEFAULT_SCHEMA } from '../mini_DBMS/storage-file.js';
+import { Database } from '../mini_DBMS/engine.js';
+import { seedRows } from '../mini_DBMS/seed.js';
+import { createDbService } from '../mini_DBMS/service.js';
 import { createApp, createWeek2, isLoopback } from '../server.js';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'week2-fixes-'));
@@ -489,7 +489,7 @@ describe('DB 서비스: 묶음 처리 · params · 상한', () => {
 describe('웹 서버: 정적 파일 · API 접근 제한', () => {
   let app, base, dataDir;
   before(async () => {
-    // 실제 week2/data 가 아니라 임시 폴더를 쓴다 (테스트가 실제 데이터를 다시 쓰지 않고, 서버가 켜져 있어도 통과하게)
+    // 실제 data 가 아니라 임시 폴더를 쓴다 (테스트가 실제 데이터를 다시 쓰지 않고, 서버가 켜져 있어도 통과하게)
     dataDir = tmp();
     app = createApp({ week2: createWeek2(dataDir) });
     await new Promise((r) => app.listen(0, '127.0.0.1', r));

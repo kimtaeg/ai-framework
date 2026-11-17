@@ -1,9 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { startRedisServer } from '../week2/redis/server.js';
-import { MiniRedisClient } from '../week2/redis/client.js';
-import { nodeFetch } from '../week2/redis/node-fetch.js';
-import { runContrast } from '../load/redis-contrast.js';
+import { startRedisServer } from '../mini_redis/server.js';
+import { MiniRedisClient } from '../mini_redis/client.js';
+import { nodeFetch } from '../mini_redis/node-fetch.js';
+import { runContrast } from '../mini_redis/load/redis-contrast.js';
 
 describe('miniRedis 분산 Rate Limiter & 3자 대조 검증', () => {
   it('client.limit(): max 까지 허용 후 차단하고, TTL 이 빠진 키(-1)도 자동 복구한다', async () => {

@@ -6,8 +6,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { RWLock, LockManager } from '../week2/dbms/lock.js';
-import { startDbServer } from '../week2/dbms/server.js';
+import { RWLock, LockManager } from '../mini_DBMS/lock.js';
+import { startDbServer } from '../mini_DBMS/server.js';
 
 const tick = () => new Promise((r) => setTimeout(r, 5));
 

@@ -8,12 +8,12 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { FileStorage } from '../week2/dbms/storage-file.js';
-import { Database } from '../week2/dbms/engine.js';
-import { seedRows } from '../week2/dbms/seed.js';
-import { MiniRedisClient, createSingleFlight } from '../week2/redis/client.js';
-import { LocalCache } from '../week2/redis/demo-api.js';
-import { startRedisServer } from '../week2/redis/server.js';
+import { FileStorage } from '../mini_DBMS/storage-file.js';
+import { Database } from '../mini_DBMS/engine.js';
+import { seedRows } from '../mini_DBMS/seed.js';
+import { MiniRedisClient, createSingleFlight } from '../mini_redis/client.js';
+import { LocalCache } from '../mini_redis/demo-api.js';
+import { startRedisServer } from '../mini_redis/server.js';
 
 const tmp = () => mkdtempSync(join(tmpdir(), 'minidb-perf-'));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

@@ -5,13 +5,13 @@ import './setup.js';
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { FunctionComponent } from '../src/lib/component.js';
-import { diff, summarizePatches } from '../src/lib/diff.js';
-import { h } from '../src/lib/vdom.js';
+import { FunctionComponent } from '../mini_react/src/lib/component.js';
+import { diff, summarizePatches } from '../mini_react/src/lib/diff.js';
+import { h } from '../mini_react/src/lib/vdom.js';
 import {
   parseKeys, lisPlan, visiblePatches, naiveMoves, hookSlots, diffCost, humanTime, scoreOrder,
   SnapshotApp, KeyIdentityApp, RaceApp, ImmutableApp, HookOrderApp,
-} from '../deepdive/labs.js';
+} from '../mini_react/deepdive/labs.js';
 import { container, flushMicrotasks } from './setup.js';
 
 const click = (el) => el.dispatchEvent(new window.Event('click', { bubbles: true }));
@@ -183,7 +183,7 @@ describe('실험 앱', () => {
 });
 
 describe('페이지', () => {
-  const html = readFileSync(new URL('../deepdive/index.html', import.meta.url), 'utf8');
+  const html = readFileSync(new URL('../mini_react/deepdive/index.html', import.meta.url), 'utf8');
   test('12개 주제마다 이해 체크가 있고 목차와 id 가 맞는다', () => {
     const ids = [...html.matchAll(/<section class="card deep" id="([^"]+)"/g)].map((m) => m[1]);
     const checks = [...html.matchAll(/class="got-it" data-id="([^"]+)"/g)].map((m) => m[1]);
@@ -193,7 +193,7 @@ describe('페이지', () => {
     assert.deepEqual(toc, ids);
   });
   test('실험이 쓰는 요소가 HTML 에 모두 있다', () => {
-    const main = readFileSync(new URL('../deepdive/main.js', import.meta.url), 'utf8');
+    const main = readFileSync(new URL('../mini_react/deepdive/main.js', import.meta.url), 'utf8');
     const used = new Set([...main.matchAll(/\$\('#([\w-]+)/g)].map((m) => m[1]));
     for (const m of main.matchAll(/safeMount\('([\w-]+)'/g)) used.add(m[1]);
     for (const id of used) assert.ok(html.includes(`id="${id}"`), id);

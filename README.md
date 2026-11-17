@@ -1,6 +1,6 @@
 # miniReact · miniRedis · miniDBMS — 2주차 발표 자료
 
-> 📢 **발표 안내:** 아래 [🔬 발표: 캐시는 정말 몇 배 빠를까?](#-발표-캐시는-정말-몇-배-빠를까--미니-레디스--미니-dbms-실측) 섹션을 위에서부터 스크롤하며 발표합니다. (발표 대본은 [`experiment/PRESENTATION.md`](experiment/PRESENTATION.md) 참고)
+> 📢 **발표 안내:** 아래 [🔬 발표: 캐시는 정말 몇 배 빠를까?](#-발표-캐시는-정말-몇-배-빠를까--미니-레디스--미니-dbms-실측) 섹션을 위에서부터 스크롤하며 발표합니다. (발표 대본은 [`mini_redis/experiment/PRESENTATION.md`](mini_redis/experiment/PRESENTATION.md) 참고)
 
 ---
 
@@ -64,7 +64,7 @@ flowchart LR
 
 #### 발견 1 · 무거운 쿼리: 히트율이 곧 처리량 배율
 
-![E2 처리량 그래프](experiment/results/e2-throughput.svg)
+![E2 처리량 그래프](mini_redis/experiment/results/e2-throughput.svg)
 
 | 히트율 ($h$) | 이론 공식 배율 $\frac{1}{1-h}$ | 미니 레디스 실측 | Redis 7 실측 |
 | :---: | :---: | :---: | :---: |
@@ -97,7 +97,7 @@ flowchart LR
 
 #### 발견 3 · 캐시까지 왕복 +1ms: 동시 요청이 많으면 견디고, 대기열이 없으면 손해
 
-![E6 지연 응답시간 그래프](experiment/results/e6-latency-delay.svg)
+![E6 지연 응답시간 그래프](mini_redis/experiment/results/e6-latency-delay.svg)
 
 > **추가 측정 E7 · DB도 1ms 멀리 두면**: 캐시만 멀리 있을 때(E6)는 히트율 100%여도 3.8배 느렸지만, 둘 다 멀리 있으면 Redis · 미니 RESP는 히트율 **약 96%**를 넘어야 이득이고 최대 이득도 **약 6%** 입니다 (미니 HTTP는 100%여도 본전). 결론의 방향은 같고 정도만 줄어듭니다.
 

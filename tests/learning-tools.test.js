@@ -5,14 +5,14 @@ import './setup.js';
 import { test, describe, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { Playground } from '../phase1/playground.js';
-import { PRESETS } from '../phase1/presets.js';
-import { computeMarks, markOfNew, markOfOld, renderTree } from '../phase1/vtree.js';
-import { h, createElement } from '../src/lib/vdom.js';
-import { diff } from '../src/lib/diff.js';
-import * as lib from '../src/lib/component.js';
-import { TEMPLATES, SNIPPETS } from '../sandbox/templates.js';
-import { EffectTimingApp, ContextApp } from '../examples/apps.js';
+import { Playground } from '../mini_react/phase1/playground.js';
+import { PRESETS } from '../mini_react/phase1/presets.js';
+import { computeMarks, markOfNew, markOfOld, renderTree } from '../mini_react/phase1/vtree.js';
+import { h, createElement } from '../mini_react/src/lib/vdom.js';
+import { diff } from '../mini_react/src/lib/diff.js';
+import * as lib from '../mini_react/src/lib/component.js';
+import { TEMPLATES, SNIPPETS } from '../mini_react/sandbox/templates.js';
+import { EffectTimingApp, ContextApp } from '../mini_react/examples/apps.js';
 import { describeHook, preview } from '../tools/inspector.js';
 import { container, flushMicrotasks } from './setup.js';
 
@@ -20,7 +20,7 @@ const { FunctionComponent } = lib;
 
 // ================================================================ 단계별 Patch
 describe('Phase 1 단계별 Patch', () => {
-  const page = readFileSync(new URL('../phase1/index.html', import.meta.url), 'utf8');
+  const page = readFileSync(new URL('../mini_react/phase1/index.html', import.meta.url), 'utf8');
   const sample = page.match(/<div id="actual" class="sample">([\s\S]*?)<\/div>\s*<div id="overlay"/)[1];
   let actual, pg, commits;
   beforeEach(() => {

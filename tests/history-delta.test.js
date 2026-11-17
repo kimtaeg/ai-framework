@@ -1,11 +1,11 @@
 import './setup.js';
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { h, createElement, createText } from '../src/lib/vdom.js';
-import { diff } from '../src/lib/diff.js';
-import { applyPatches, applyPatchesToVNode } from '../src/lib/patch.js';
-import { StateHistory, DeltaHistory } from '../src/lib/history.js';
-import { devConfig } from '../src/lib/warn.js';
+import { h, createElement, createText } from '../mini_react/src/lib/vdom.js';
+import { diff } from '../mini_react/src/lib/diff.js';
+import { applyPatches, applyPatchesToVNode } from '../mini_react/src/lib/patch.js';
+import { StateHistory, DeltaHistory } from '../mini_react/src/lib/history.js';
+import { devConfig } from '../mini_react/src/lib/warn.js';
 
 devConfig.warnings = false;
 let seed = 4242;
@@ -107,8 +107,8 @@ describe('DeltaHistory — 키프레임 + 델타', () => {
 });
 
 describe('Playground — 히스토리를 이동해도 실제 영역의 사용자 상태가 남는다', async () => {
-  const { Playground } = await import('../phase1/playground.js');
-  const { htmlToVNode } = await import('../src/lib/vdom.js');
+  const { Playground } = await import('../mini_react/phase1/playground.js');
+  const { htmlToVNode } = await import('../mini_react/src/lib/vdom.js');
   const listHTML = (keys) => `<ul>${keys.map((k) => `<li data-key="${k}"><span>${k}</span><input data-k="${k}"></li>`).join('')}</ul>`;
   const setup = () => {
     const actual = document.createElement('div');

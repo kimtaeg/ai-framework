@@ -8,11 +8,11 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MiniRedis, globMatcher, globToRegExp } from '../week2/redis/miniredis.js';
-import { startRedisServer } from '../week2/redis/server.js';
-import { MiniRedisClient } from '../week2/redis/client.js';
-import { createDbService } from '../week2/dbms/service.js';
-import { startDbServer } from '../week2/dbms/server.js';
+import { MiniRedis, globMatcher, globToRegExp } from '../mini_redis/miniredis.js';
+import { startRedisServer } from '../mini_redis/server.js';
+import { MiniRedisClient } from '../mini_redis/client.js';
+import { createDbService } from '../mini_DBMS/service.js';
+import { startDbServer } from '../mini_DBMS/server.js';
 
 const tmp = (name) => mkdtempSync(join(tmpdir(), `${name}-`));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

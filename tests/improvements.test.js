@@ -5,12 +5,12 @@
 import './setup.js';
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { h, createElement, createText } from '../src/lib/vdom.js';
-import { diff, diffProps } from '../src/lib/diff.js';
-import { applyPatches, applyPatchesToVNode } from '../src/lib/patch.js';
-import { DeltaHistory, invertPatches } from '../src/lib/history.js';
-import { mount, useState, memo } from '../src/lib/component.js';
-import { devConfig, resetWarnings } from '../src/lib/warn.js';
+import { h, createElement, createText } from '../mini_react/src/lib/vdom.js';
+import { diff, diffProps } from '../mini_react/src/lib/diff.js';
+import { applyPatches, applyPatchesToVNode } from '../mini_react/src/lib/patch.js';
+import { DeltaHistory, invertPatches } from '../mini_react/src/lib/history.js';
+import { mount, useState, memo } from '../mini_react/src/lib/component.js';
+import { devConfig, resetWarnings } from '../mini_react/src/lib/warn.js';
 
 let seed = 777;
 const rand = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
@@ -312,8 +312,8 @@ describe('9 · 14 · 분기 히스토리', () => {
 });
 
 describe('15 · 히스토리 이동 뒤에도 스크롤 위치가 남는다', async () => {
-  const { Playground } = await import('../phase1/playground.js');
-  const { htmlToVNode } = await import('../src/lib/vdom.js');
+  const { Playground } = await import('../mini_react/phase1/playground.js');
+  const { htmlToVNode } = await import('../mini_react/src/lib/vdom.js');
   test('실제 영역의 스크롤 상자 scrollTop 이 뒤로 · 앞으로 이동 뒤에도 그대로', () => {
     const page = (label) => `<div data-key="box" class="scroll"><p data-key="p1">${label}</p><p data-key="p2">고정</p></div>`;
     const actual = document.createElement('div');

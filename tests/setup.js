@@ -13,7 +13,7 @@ if (!g.localStorage) {
 }
 
 // 테스트 출력이 지저분해지지 않도록 개발 경고는 기본으로 끈다 (경고 자체를 검사하는 테스트에서만 켬)
-import { devConfig } from "../src/lib/warn.js";
+import { devConfig } from "../mini_react/src/lib/warn.js";
 devConfig.warnings = false;
 
 /**
