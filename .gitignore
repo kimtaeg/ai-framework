@@ -31,3 +31,18 @@ core
 # Claude Code 개인 설정 (Jev 훅)
 .claude/settings.local.json
 .claude/hooks/
+
+# miniReact · miniRedis · miniDBMS
+node_modules/
+# 비밀 값 (Gemini API 키, 테스트 실험실 비밀번호 해시) — .env.example 을 복사해서 쓰기
+.env
+# 로컬 설정
+.claude/
+# 실행하면 생기는 데이터 · 리포트
+/data/
+mini_redis/load/reports/
+mini_redis/load/limit-report.html
+# 빌드 산출물 (npm start / npm test / npm run build 가 다시 만든다)
+bundle.js
+# 캐시 실험: 호스트에서 app.js 를 직접 돌릴 때 생기는 데이터
+mini_redis/experiment/.data/

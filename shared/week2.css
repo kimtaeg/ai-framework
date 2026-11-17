@@ -1,0 +1,191 @@
+/* 2주차 공용 스타일 — 페이지 틀은 1주차 CSS(guide/examples/sandbox/theory/deepdive/walkthrough)를 그대로 쓰고,
+   여기에는 실습 위젯(콘솔, 버킷, 막대, B+ 트리, 스레드 풀, SQL 상자)과 Phase 페이지 모양만 둔다. */
+:root {
+  --hit: #1f9d6b;
+  --miss: #d98a00;
+  --lost: #d64545;
+  --db: #2b7bd6;
+}
+
+.small { font-size: 12.5px; }
+.mono { font-family: var(--mono); }
+.muted { color: var(--muted); }
+.ok, .good { color: var(--hit); font-weight: 700; }
+.bad, .err { color: var(--lost); font-weight: 700; }
+.warnc { color: var(--miss); font-weight: 700; }
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.row + .row { margin-top: 8px; }
+.grow { flex: 1; min-width: 160px; }
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; margin-top: 10px; }
+input:not([type]), input[type='number'], select { font: inherit; }
+input:not([type]), input[type='number'] { padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); min-width: 0; }
+input[type='number'] { width: 90px; }
+select { max-width: 100%; }
+/* 공백 없이 긴 코드·경로(a/b/c/d…)가 휴대폰 폭을 넘지 않게 */
+main p, main li, main td, .note, .why { overflow-wrap: anywhere; }
+
+/* ---------------------------------------------------------------- Phase 페이지 (1주차 Phase 1 의 툴바 + 카드) */
+.toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 12px; margin-bottom: 16px; position: sticky; top: 58px; z-index: 10; }
+.toolbar .spacer { flex: 1; }
+.tb-label { font-size: 13px; font-weight: 700; color: var(--muted); }
+.btn.small, a.btn.small { padding: 4px 10px; font-size: 13px; text-decoration: none; color: var(--text); background: var(--surface); }
+.history-pos { padding: 4px 10px; border-radius: 999px; background: var(--surface-2); font-size: 13px; }
+.phase-steps { display: inline-flex; gap: 2px; background: var(--surface-2); padding: 2px; border-radius: 8px; }
+.phase-steps a { padding: 5px 10px; border-radius: 6px; font-size: 13px; color: var(--muted); text-decoration: none; }
+.phase-steps a.on { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: var(--shadow); }
+section.panel { margin-bottom: 16px; scroll-margin-top: 120px; }
+.panel .why { margin: 0 0 12px; color: var(--muted); font-size: 14px; line-height: 1.7; }
+.panel .why b { color: var(--text); }
+
+/* 설명 상자 (1주차 가이드의 tip · 예제의 ex-guide 와 같은 톤) */
+.note { border-radius: 10px; padding: 12px 14px; margin: 12px 0 0; font-size: 14px; line-height: 1.7; background: var(--surface-2); }
+.note.warn { background: color-mix(in srgb, #f0b429 12%, transparent); border: 1px solid color-mix(in srgb, #f0b429 35%, transparent); }
+.note.good { background: color-mix(in srgb, var(--ok) 8%, transparent); border: 1px solid color-mix(in srgb, var(--ok) 28%, transparent); color: var(--text); font-weight: 400; }
+.note > b:first-child { display: block; margin-bottom: 2px; }
+
+/* ---------------------------------------------------------------- 콘솔 · 표 · 통계 */
+.console-box { background: #10131c; color: #d8dcea; border-radius: 10px; padding: 10px 12px; font: 13px/1.6 var(--mono); height: 260px; overflow: auto; }
+#con-log { background: #10131c; color: #d8dcea; border-radius: 10px; padding: 10px 12px; font: 13px/1.6 var(--mono); height: 260px; overflow: auto; }
+#con-log .in { color: #8fb4ff; }
+#con-log .in::before { content: '> '; color: #5d6785; }
+#con-log .out { white-space: pre-wrap; word-break: break-all; }
+#con-log .err { color: #ff8a80; white-space: pre-wrap; font-weight: 400; }
+#con-log .sys { color: #7b8299; font-style: italic; }
+.prompt { display: flex; gap: 8px; margin-top: 8px; }
+.prompt input { flex: 1; font-family: var(--mono); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip-btn { padding: 3px 10px; font: 12px var(--mono); border-radius: 99px; }
+.table-wrap { overflow: auto; }
+table.data { border-collapse: collapse; width: 100%; font-size: 13px; }
+table.data th, table.data td { border-bottom: 1px solid var(--border); padding: 5px 8px; text-align: left; vertical-align: top; }
+table.data th { color: var(--muted); font-weight: 600; white-space: nowrap; background: transparent; border-left: 0; border-right: 0; border-top: 0; }
+table.data td { border-left: 0; border-right: 0; border-top: 0; }
+table.data td.mono { font-family: var(--mono); font-size: 12.5px; word-break: break-all; }
+table.data tr.expired td { color: var(--muted); text-decoration: line-through; }
+.stats { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 10px 0; font-size: 13.5px; }
+.stats b { font-family: var(--mono); font-size: 15px; }
+.stats .stat { border: 1px solid var(--border); border-radius: 10px; padding: 6px 10px; background: var(--surface); min-width: 110px; }
+.stats .stat span { display: block; font-size: 11.5px; color: var(--muted); }
+
+/* ---------------------------------------------------------------- 해시 테이블 */
+.ht { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.ht-table { border: 1px solid var(--border); border-radius: 10px; padding: 8px; background: var(--surface); }
+.ht-table.new { border-color: var(--hit); }
+.ht-head { font: 700 12px var(--mono); color: var(--muted); margin-bottom: 6px; }
+.buckets { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 4px; margin-top: 8px; }
+.bucket { border: 1px solid var(--border); border-radius: 6px; padding: 3px 5px; min-height: 42px; font: 11px var(--mono); background: var(--surface-2); }
+.bucket .bi { color: var(--muted); font-size: 10px; }
+.bucket.next { outline: 2px dashed var(--accent); }
+.bucket.done { opacity: .35; }
+.bucket .k { display: block; padding: 1px 4px; margin-top: 2px; border-radius: 4px; background: var(--accent-weak); color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bucket .k + .k { background: color-mix(in srgb, var(--miss) 18%, transparent); color: var(--miss); }
+.bucket .k.hl { background: var(--accent); color: #fff; }
+
+/* ---------------------------------------------------------------- 막대 */
+.bars { display: flex; flex-direction: column; gap: 3px; margin-top: 10px; font: 11.5px var(--mono); }
+.bar-row { display: grid; grid-template-columns: 80px minmax(0, 1fr) minmax(70px, auto); gap: 8px; align-items: center; }
+.bar { height: 14px; border-radius: 4px; min-width: 2px; }
+.bar.hit { background: var(--hit); }
+.bar.miss { background: var(--miss); }
+.bar.db { background: var(--db); }
+.bar.lost { background: var(--lost); }
+.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 6px; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; }
+.cmp-out { margin-top: 10px; display: flex; flex-direction: column; gap: 4px; }
+.cmp-row { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 13px; }
+.cmp-row b { font: 600 12.5px var(--mono); }
+
+/* ---------------------------------------------------------------- AOF */
+.aof { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; font: 12px/1.6 var(--mono); height: 180px; overflow: auto; white-space: pre; }
+.aof .buf { color: var(--miss); }
+.aof .lost { color: var(--lost); text-decoration: line-through; }
+
+/* ---------------------------------------------------------------- B+ 트리 */
+.bpt { overflow-x: auto; padding: 10px 0; }
+.bpt-level { display: flex; justify-content: center; gap: 10px; margin-bottom: 18px; flex-wrap: nowrap; min-width: max-content; }
+.bpt-node { display: flex; border: 1.5px solid var(--border); border-radius: 6px; background: var(--surface); }
+.bpt-node.leaf { border-color: var(--db); }
+.bpt-node.path { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak); }
+.bpt-node.new { animation: flash 1.2s; }
+.bpt-node span { padding: 3px 7px; font: 12px var(--mono); border-right: 1px solid var(--border); min-width: 22px; text-align: center; }
+.bpt-node span:last-child { border-right: 0; }
+.bpt-node span.hit { background: var(--accent); color: #fff; }
+.bpt-node.leaf + .bpt-node.leaf { position: relative; }
+.bpt-node.leaf + .bpt-node.leaf::before { content: '→'; position: absolute; left: -10px; top: 50%; transform: translate(-50%, -50%); color: var(--db); font-size: 12px; }
+@keyframes flash { from { background: color-mix(in srgb, var(--accent) 25%, transparent); } to { background: transparent; } }
+
+/* ---------------------------------------------------------------- 스레드 풀 시뮬레이션 */
+.pool { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: 12px; margin-top: 10px; }
+.queue { border: 1px dashed var(--border); border-radius: 10px; padding: 6px; min-height: 140px; display: flex; flex-direction: column; gap: 4px; }
+.lanes { display: flex; flex-direction: column; gap: 6px; }
+.lane { display: grid; grid-template-columns: 70px minmax(0, 1fr); gap: 8px; align-items: center; }
+.lane .lname { font: 12px var(--mono); color: var(--muted); }
+.lane .slot { height: 30px; border-radius: 8px; background: var(--surface-2); display: flex; align-items: center; padding: 0 8px; font: 12px var(--mono); }
+.job { padding: 3px 8px; border-radius: 6px; font: 11.5px var(--mono); }
+.job.read { background: color-mix(in srgb, var(--db) 16%, transparent); color: var(--db); }
+.job.write { background: color-mix(in srgb, var(--miss) 18%, transparent); color: var(--miss); }
+.job.dup { background: color-mix(in srgb, var(--lost) 18%, transparent); color: var(--lost); font-weight: 700; }
+.lockbox { display: inline-flex; gap: 6px; align-items: center; font: 12px var(--mono); padding: 3px 10px; border-radius: 99px; background: var(--surface-2); }
+.lockbox.w { background: color-mix(in srgb, var(--miss) 18%, transparent); color: var(--miss); }
+.lockbox.r { background: color-mix(in srgb, var(--db) 16%, transparent); color: var(--db); }
+
+/* ---------------------------------------------------------------- SQL */
+textarea.sql { width: 100%; min-height: 130px; font: 13px/1.55 var(--mono); padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); resize: vertical; }
+.plan { display: inline-block; font: 700 11.5px var(--mono); padding: 2px 8px; border-radius: 99px; }
+.plan.index-lookup, .plan.index-range { background: color-mix(in srgb, var(--hit) 16%, transparent); color: var(--hit); }
+.plan.full-scan { background: color-mix(in srgb, var(--miss) 18%, transparent); color: var(--miss); }
+.result-block { margin-top: 10px; border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; background: var(--surface); }
+.result-block .meta { font-size: 12.5px; color: var(--muted); margin-bottom: 6px; }
+.pipeline { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.pipeline > div { border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; background: var(--surface); min-width: 0; }
+.pipeline b { display: block; font-size: 12px; margin-bottom: 4px; }
+.pipeline pre, .demo-ast { margin: 0; font: 11px/1.45 var(--mono); max-height: 160px; overflow: auto; white-space: pre-wrap; word-break: break-all; }
+.demo-ast { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; margin-top: 8px; }
+.tok { display: inline-block; margin: 1px; padding: 0 4px; border-radius: 4px; font: 11px var(--mono); background: var(--surface-2); }
+.tok.keyword { color: var(--accent); font-weight: 700; }
+.tok.string { color: var(--hit); }
+.tok.number { color: var(--miss); }
+.filebox { background: var(--surface-2); border-radius: 8px; padding: 8px 10px; font: 12px/1.6 var(--mono); max-height: 200px; overflow: auto; white-space: pre; }
+.filebox .off { color: var(--muted); display: inline-block; min-width: 4.5em; }
+.filebox .hl { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.sqlbox { margin: 4px 0 10px; padding: 8px 10px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border); font: 12px/1.55 var(--mono); white-space: pre-wrap; word-break: break-all; }
+
+/* ---------------------------------------------------------------- 예제 페이지 (1주차 examples.css 위에) */
+.ses-list, .lock-log, .board-list { list-style: none; padding: 0; margin: 10px 0 0; font-size: 13.5px; }
+.ses-row { display: grid; grid-template-columns: 110px 110px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--border); }
+.ses-dev { font-weight: 600; }
+.lock-log li { padding: 3px 0; border-bottom: 1px dashed var(--border); font-size: 13px; }
+.board-list li { padding: 6px 0; border-bottom: 1px solid var(--border); }
+.reqs { display: flex; flex-wrap: wrap; gap: 4px; margin: 10px 0 6px; min-height: 26px; }
+.req { padding: 2px 7px; border-radius: 6px; font: 700 11.5px var(--mono); }
+.req.ok { background: color-mix(in srgb, var(--hit) 16%, transparent); color: var(--hit); }
+.req.no { background: color-mix(in srgb, var(--lost) 16%, transparent); color: var(--lost); }
+.likes { display: flex; align-items: baseline; gap: 10px; margin: 4px 0 12px; }
+.likes-heart { font-size: 28px; }
+.likes b { font: 800 34px var(--mono); }
+.ex-stat .err { color: var(--danger); font-weight: 600; }
+
+/* ---------------------------------------------------------------- 샌드박스 (1주차 sandbox.css 위에) */
+.sb-out .console { max-height: 360px; min-height: 220px; }
+.sb-state .card-head + .table-wrap { padding: 4px 10px 10px; }
+.sb-state-foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; border-top: 1px solid var(--border); padding: 10px 14px; }
+
+/* ---------------------------------------------------------------- 이론 예제 · 더 파고들기 (1주차 theory.css · deepdive.css 위에) */
+.demo .stats { margin: 6px 0 0; }
+.hist { display: flex; align-items: flex-end; gap: 2px; height: 90px; padding: 6px; border-radius: 8px; background: var(--surface-2); margin: 8px 0; }
+.hist i { flex: 1; min-height: 1px; background: var(--accent); border-radius: 2px 2px 0 0; }
+.deep .bars .bar-row { grid-template-columns: 90px minmax(0, 1fr) minmax(0, 1.6fr); }
+.deep .bar-row > span:last-child { font-size: 11.5px; }
+ul.log { list-style: none; padding: 0; font: 12.5px/1.8 var(--mono); }
+.deep .cost-table { margin-top: 8px; }
+.deep .cost-table th { width: auto; }
+
+@media (max-width: 900px) {
+  .split, .pipeline, .pool { grid-template-columns: 1fr; }
+  .toolbar { position: static; }
+}
+@media (max-width: 600px) {
+  .bar-row { grid-template-columns: 54px minmax(0, 1fr) 54px; }
+  .cmp-row { grid-template-columns: 1fr; }
+  .ses-row { grid-template-columns: 1fr 1fr; }
+}

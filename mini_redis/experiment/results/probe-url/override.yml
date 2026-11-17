@@ -1,0 +1,5 @@
+# k6 결과만 이 폴더로 받는다 (스크립트는 experiment/k6/cache.js 그대로 · NAMED=0|1 로 예전/새 방식을 고른다)
+services:
+  k6:
+    volumes:
+      - "./results/probe-url/out:/out"

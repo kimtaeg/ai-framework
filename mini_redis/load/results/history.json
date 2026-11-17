@@ -1,0 +1,671 @@
+[
+ {
+  "id": "1794033431046-7",
+  "job": "alt-persist",
+  "title": "영속성: AOF everysec vs always vs 스냅샷",
+  "option": null,
+  "compare": false,
+  "alt": true,
+  "at": 1794033431046,
+  "sec": 7,
+  "main": "writesPerSec",
+  "variants": [
+   {
+    "label": "AOF everysec — 우리 기본 (꺼지면 최대 1초치 손실)",
+    "metrics": {
+     "writesPerSec": 603867,
+     "blockMs": 16.2,
+     "fileKB": 9907,
+     "recoverMs": 540.21
+    }
+   },
+   {
+    "label": "AOF always (손실 없음)",
+    "metrics": {
+     "writesPerSec": 520,
+     "blockMs": 404.27,
+     "fileKB": 2190,
+     "recoverMs": 82.54
+    }
+   },
+   {
+    "label": "스냅샷, 쓰기 50,000번마다 전체 저장 — RDB 방식 (꺼지면 최대 50,000개 손실)",
+    "metrics": {
+     "writesPerSec": 382371,
+     "blockMs": 73.12,
+     "fileKB": 2593,
+     "recoverMs": 109.12
+    }
+   }
+  ],
+  "note": "키 100,000개를 채운 뒤 최대 300,000번(또는 4초) SET 으로 덮어씀 · AOF 는 재작성(rewrite) 없이 쌓인 크기"
+ },
+ {
+  "id": "1794033424931-6",
+  "job": "alt-pool",
+  "title": "동시성: 스레드 풀 vs 요청마다 워커 vs 메인 스레드",
+  "option": null,
+  "compare": false,
+  "alt": true,
+  "at": 1794033424931,
+  "sec": 3,
+  "main": "msPerQuery",
+  "variants": [
+   {
+    "label": "스레드 풀 재사용 (워커 4개)",
+    "metrics": {
+     "msPerQuery": 5.29,
+     "mainBusy": 3
+    }
+   },
+   {
+    "label": "요청마다 새 워커",
+    "metrics": {
+     "msPerQuery": 24.61,
+     "mainBusy": 7
+    }
+   },
+   {
+    "label": "메인 스레드에서 바로",
+    "metrics": {
+     "msPerQuery": 15.85,
+     "mainBusy": 100
+    }
+   }
+  ],
+  "note": "users 20,000행에서 email 로 찾기(전체 읽기) · 동시에 4개씩"
+ },
+ {
+  "id": "1794033413699-5",
+  "job": "alt-pool",
+  "title": "동시성: 스레드 풀 vs 요청마다 워커 vs 메인 스레드",
+  "option": null,
+  "compare": false,
+  "alt": true,
+  "at": 1794033413699,
+  "sec": 3,
+  "main": "msPerQuery",
+  "variants": [
+   {
+    "label": "스레드 풀 재사용 (워커 4개)",
+    "metrics": {
+     "msPerQuery": 5.38,
+     "mainBusy": 3
+    }
+   },
+   {
+    "label": "요청마다 새 워커",
+    "metrics": {
+     "msPerQuery": 24.41,
+     "mainBusy": 6
+    }
+   },
+   {
+    "label": "메인 스레드에서 바로",
+    "metrics": {
+     "msPerQuery": 16.34,
+     "mainBusy": 100
+    }
+   }
+  ],
+  "note": "users 20,000행에서 email 로 찾기(전체 읽기) · 동시에 4개씩"
+ },
+ {
+  "id": "1794033409488-4",
+  "job": "alt-index",
+  "title": "인덱스: B+ 트리 vs 해시 vs 정렬 배열",
+  "option": null,
+  "compare": false,
+  "alt": true,
+  "at": 1794033409488,
+  "sec": 2,
+  "main": "rangeMs",
+  "variants": [
+   {
+    "label": "B+ 트리 (우리 DBMS)",
+    "metrics": {
+     "buildMs": 24.45,
+     "lookupUs": 0.121,
+     "rangeMs": 0.017
+    }
+   },
+   {
+    "label": "해시 인덱스 (Map)",
+    "metrics": {
+     "buildMs": 4.74,
+     "lookupUs": 0.031,
+     "rangeMs": 1
+    }
+   },
+   {
+    "label": "정렬 배열 + 이진 탐색",
+    "metrics": {
+     "buildMs": 658.01,
+     "lookupUs": 0.09,
+     "rangeMs": 0.016
+    }
+   }
+  ],
+  "note": "키 100,000개 (무작위 순서로 넣음) · 점 조회 100,000번 · 1,000개 범위 200번"
+ },
+ {
+  "id": "1794033405579-3",
+  "job": "alt-index",
+  "title": "인덱스: B+ 트리 vs 해시 vs 정렬 배열",
+  "option": null,
+  "compare": false,
+  "alt": true,
+  "at": 1794033405579,
+  "sec": 2,
+  "main": "rangeMs",
+  "variants": [
+   {
+    "label": "B+ 트리 (우리 DBMS)",
+    "metrics": {
+     "buildMs": 23.1,
+     "lookupUs": 0.12,
+     "rangeMs": 0.016
+    }
+   },
+   {
+    "label": "해시 인덱스 (Map)",
+    "metrics": {
+     "buildMs": 5.22,
+     "lookupUs": 0.032,
+     "rangeMs": 0.976
+    }
+   },
+   {
+    "label": "정렬 배열 + 이진 탐색",
+    "metrics": {
+     "buildMs": 611.95,
+     "lookupUs": 0.092,
+     "rangeMs": 0.015
+    }
+   }
+  ],
+  "note": "키 100,000개 (무작위 순서로 넣음) · 점 조회 100,000번 · 1,000개 범위 200번"
+ },
+ {
+  "id": "1794033402032-2",
+  "job": "alt-index",
+  "title": "인덱스: B+ 트리 vs 해시 vs 정렬 배열",
+  "option": null,
+  "compare": false,
+  "alt": true,
+  "at": 1794033402032,
+  "sec": 2,
+  "main": "rangeMs",
+  "variants": [
+   {
+    "label": "B+ 트리 (우리 DBMS)",
+    "metrics": {
+     "buildMs": 22.77,
+     "lookupUs": 0.115,
+     "rangeMs": 0.017
+    }
+   },
+   {
+    "label": "해시 인덱스 (Map)",
+    "metrics": {
+     "buildMs": 5.58,
+     "lookupUs": 0.032,
+     "rangeMs": 1
+    }
+   },
+   {
+    "label": "정렬 배열 + 이진 탐색",
+    "metrics": {
+     "buildMs": 642.02,
+     "lookupUs": 0.092,
+     "rangeMs": 0.018
+    }
+   }
+  ],
+  "note": "키 100,000개 (무작위 순서로 넣음) · 점 조회 100,000번 · 1,000개 범위 200번"
+ },
+ {
+  "id": "1794033388739-1",
+  "job": "alt-index",
+  "title": "인덱스: B+ 트리 vs 해시 vs 정렬 배열",
+  "option": null,
+  "compare": false,
+  "alt": true,
+  "at": 1794033388739,
+  "sec": 2,
+  "main": "rangeMs",
+  "variants": [
+   {
+    "label": "B+ 트리 (우리 DBMS)",
+    "metrics": {
+     "buildMs": 22.73,
+     "lookupUs": 0.122,
+     "rangeMs": 0.015
+    }
+   },
+   {
+    "label": "해시 인덱스 (Map)",
+    "metrics": {
+     "buildMs": 6.94,
+     "lookupUs": 0.039,
+     "rangeMs": 1.02
+    }
+   },
+   {
+    "label": "정렬 배열 + 이진 탐색",
+    "metrics": {
+     "buildMs": 632.15,
+     "lookupUs": 0.098,
+     "rangeMs": 0.016
+    }
+   }
+  ],
+  "note": "키 100,000개 (무작위 순서로 넣음) · 점 조회 100,000번 · 1,000개 범위 200번"
+ },
+ {
+  "id": "1794033176396-4",
+  "job": "alt-cache",
+  "title": "캐시: 미니 레디스 vs 서버 안 메모리",
+  "option": "20s",
+  "compare": false,
+  "alt": true,
+  "at": 1794033176396,
+  "sec": 62,
+  "main": "rps",
+  "variants": [
+   {
+    "label": "미니 레디스 캐시 (우리)",
+    "metrics": {
+     "rps": 3735.49,
+     "p95": 20.2,
+     "med": 12.22,
+     "fail": 0,
+     "cacheHit": 99.93
+    }
+   },
+   {
+    "label": "서버 안 메모리 캐시 (Map)",
+    "metrics": {
+     "rps": 14701.54,
+     "p95": 5.52,
+     "med": 3.02,
+     "fail": 0,
+     "cacheHit": 99.98
+    }
+   },
+   {
+    "label": "캐시 없음",
+    "metrics": {
+     "rps": 395.64,
+     "p95": 138.48,
+     "med": 124.18,
+     "fail": 0,
+     "cacheHit": 0
+    }
+   }
+  ]
+ },
+ {
+  "id": "1794033149279-3",
+  "job": "alt-persist",
+  "title": "영속성: AOF everysec vs always vs 스냅샷",
+  "option": null,
+  "compare": false,
+  "alt": true,
+  "at": 1794033149279,
+  "sec": 7,
+  "main": "writesPerSec",
+  "variants": [
+   {
+    "label": "AOF everysec — 우리 기본 (꺼지면 최대 1초치 손실)",
+    "metrics": {
+     "writesPerSec": 587596,
+     "blockMs": 14.52,
+     "fileKB": 9907,
+     "recoverMs": 574.02
+    }
+   },
+   {
+    "label": "AOF always (손실 없음)",
+    "metrics": {
+     "writesPerSec": 475,
+     "blockMs": 440.97,
+     "fileKB": 2185,
+     "recoverMs": 75.56
+    }
+   },
+   {
+    "label": "스냅샷, 쓰기 50,000번마다 전체 저장 — RDB 방식 (꺼지면 최대 50,000개 손실)",
+    "metrics": {
+     "writesPerSec": 407747,
+     "blockMs": 64.8,
+     "fileKB": 2593,
+     "recoverMs": 115.61
+    }
+   }
+  ],
+  "note": "키 100,000개를 채운 뒤 최대 300,000번(또는 4초) SET 으로 덮어씀 · AOF 는 재작성(rewrite) 없이 쌓인 크기"
+ },
+ {
+  "id": "1794033129240-2",
+  "job": "alt-pool",
+  "title": "동시성: 스레드 풀 vs 요청마다 워커 vs 메인 스레드",
+  "option": null,
+  "compare": false,
+  "alt": true,
+  "at": 1794033129240,
+  "sec": 3,
+  "main": "msPerQuery",
+  "variants": [
+   {
+    "label": "스레드 풀 재사용 (워커 4개)",
+    "metrics": {
+     "msPerQuery": 5.37,
+     "mainBusy": 3
+    }
+   },
+   {
+    "label": "요청마다 새 워커",
+    "metrics": {
+     "msPerQuery": 24.6,
+     "mainBusy": 6
+    }
+   },
+   {
+    "label": "메인 스레드에서 바로",
+    "metrics": {
+     "msPerQuery": 15.61,
+     "mainBusy": 100
+    }
+   }
+  ],
+  "note": "users 20,000행에서 email 로 찾기(전체 읽기) · 동시에 4개씩"
+ },
+ {
+  "id": "1794033107721-1",
+  "job": "alt-index",
+  "title": "인덱스: B+ 트리 vs 해시 vs 정렬 배열",
+  "option": null,
+  "compare": false,
+  "alt": true,
+  "at": 1794033107721,
+  "sec": 2,
+  "main": "rangeMs",
+  "variants": [
+   {
+    "label": "B+ 트리 (우리 DBMS)",
+    "metrics": {
+     "buildMs": 23.79,
+     "lookupUs": 0.121,
+     "rangeMs": 0.017
+    }
+   },
+   {
+    "label": "해시 인덱스 (Map)",
+    "metrics": {
+     "buildMs": 5.73,
+     "lookupUs": 0.039,
+     "rangeMs": 1.01
+    }
+   },
+   {
+    "label": "정렬 배열 + 이진 탐색",
+    "metrics": {
+     "buildMs": 623.18,
+     "lookupUs": 0.093,
+     "rangeMs": 0.014
+    }
+   }
+  ],
+  "note": "키 100,000개 (무작위 순서로 넣음) · 점 조회 100,000번 · 1,000개 범위 200번"
+ },
+ {
+  "id": "1794030354103-4",
+  "job": "cmp-aof",
+  "title": "AOF 묶어 쓰기 vs 매번 쓰기",
+  "option": "60s",
+  "compare": true,
+  "at": 1794030354103,
+  "sec": 121,
+  "a": {
+   "label": "everysec (묶어 쓰기)",
+   "metrics": {
+    "rps": 14958.09,
+    "p95": 5.17,
+    "med": 3.01,
+    "fail": 0
+   }
+  },
+  "b": {
+   "label": "always (매번 디스크)",
+   "metrics": {
+    "rps": 638.1,
+    "p95": 116.27,
+    "med": 58.34,
+    "fail": 0
+   }
+  }
+ },
+ {
+  "id": "1794029426200-3",
+  "job": "cmp-pool",
+  "title": "스레드 풀 4개 vs 1개",
+  "option": "60s",
+  "compare": true,
+  "at": 1794029426200,
+  "sec": 122,
+  "a": {
+   "label": "워커 4개",
+   "metrics": {
+    "rps": 382.18,
+    "p95": 154.06,
+    "med": 131.48,
+    "fail": 0
+   }
+  },
+  "b": {
+   "label": "워커 1개",
+   "metrics": {
+    "rps": 133.5,
+    "p95": 434.74,
+    "med": 365.37,
+    "fail": 0
+   }
+  }
+ },
+ {
+  "id": "1794028697583-2",
+  "job": "cmp-aof",
+  "title": "AOF 묶어 쓰기 vs 매번 쓰기",
+  "option": "60s",
+  "compare": true,
+  "at": 1794028697583,
+  "sec": 121,
+  "a": {
+   "label": "everysec (묶어 쓰기)",
+   "metrics": {
+    "rps": 11002.74,
+    "p95": 7.53,
+    "med": 4.11,
+    "fail": 0
+   }
+  },
+  "b": {
+   "label": "always (매번 디스크)",
+   "metrics": {
+    "rps": 753.59,
+    "p95": 114.88,
+    "med": 59.54,
+    "fail": 0
+   }
+  }
+ },
+ {
+  "id": "1794028588231-1",
+  "job": "cmp-cache",
+  "title": "캐시 있음 vs 없음",
+  "option": "20s",
+  "compare": true,
+  "at": 1794028588231,
+  "sec": 41,
+  "a": {
+   "label": "캐시 있음 (cache-aside)",
+   "metrics": {
+    "rps": 4154.87,
+    "p95": 17.57,
+    "med": 11.03,
+    "fail": 0,
+    "cacheHit": 99.94
+   }
+  },
+  "b": {
+   "label": "캐시 없음 (매번 원본)",
+   "metrics": {
+    "rps": 398.23,
+    "p95": 137.87,
+    "med": 123.31,
+    "fail": 0,
+    "cacheHit": 0
+   }
+  }
+ },
+ {
+  "id": "1794028196001-5",
+  "job": "cmp-cache",
+  "title": "캐시 있음 vs 없음",
+  "option": "20s",
+  "compare": true,
+  "at": 1794028196001,
+  "sec": 41,
+  "a": {
+   "label": "캐시 있음 (cache-aside)",
+   "metrics": {
+    "rps": 4116.63,
+    "p95": 17.72,
+    "med": 11.01,
+    "fail": 0,
+    "cacheHit": 99.94
+   }
+  },
+  "b": {
+   "label": "캐시 없음 (매번 원본)",
+   "metrics": {
+    "rps": 394.24,
+    "p95": 138.38,
+    "med": 124,
+    "fail": 0,
+    "cacheHit": 0
+   }
+  }
+ },
+ {
+  "id": "1794028135271-4",
+  "job": "cmp-aof",
+  "title": "AOF 묶어 쓰기 vs 매번 쓰기",
+  "option": "20s",
+  "compare": true,
+  "at": 1794028135271,
+  "sec": 41,
+  "a": {
+   "label": "everysec (묶어 쓰기)",
+   "metrics": {
+    "rps": 13982.77,
+    "p95": 5.11,
+    "med": 3.52,
+    "fail": 0
+   }
+  },
+  "b": {
+   "label": "always (매번 디스크)",
+   "metrics": {
+    "rps": 842.74,
+    "p95": 63.92,
+    "med": 58.44,
+    "fail": 0
+   }
+  }
+ },
+ {
+  "id": "1794028078714-3",
+  "job": "cmp-pool",
+  "title": "스레드 풀 4개 vs 1개",
+  "option": "20s",
+  "compare": true,
+  "at": 1794028078714,
+  "sec": 42,
+  "a": {
+   "label": "워커 4개",
+   "metrics": {
+    "rps": 421.77,
+    "p95": 148.79,
+    "med": 109.56,
+    "fail": 0
+   }
+  },
+  "b": {
+   "label": "워커 1개",
+   "metrics": {
+    "rps": 132.78,
+    "p95": 442.01,
+    "med": 363.03,
+    "fail": 0
+   }
+  }
+ },
+ {
+  "id": "1794028022016-2",
+  "job": "cmp-index",
+  "title": "인덱스 있음 vs 없음",
+  "option": "20s",
+  "compare": true,
+  "at": 1794028022016,
+  "sec": 41,
+  "a": {
+   "label": "B+ 트리 인덱스 (id)",
+   "metrics": {
+    "rps": 10534.33,
+    "p95": 6.02,
+    "med": 4.52,
+    "fail": 0
+   }
+  },
+  "b": {
+   "label": "전체 읽기 (email)",
+   "metrics": {
+    "rps": 405.69,
+    "p95": 135.27,
+    "med": 122.62,
+    "fail": 0
+   }
+  }
+ },
+ {
+  "id": "1794027965513-1",
+  "job": "cmp-cache",
+  "title": "캐시 있음 vs 없음",
+  "option": "20s",
+  "compare": true,
+  "at": 1794027965513,
+  "sec": 41,
+  "a": {
+   "label": "캐시 있음 (cache-aside)",
+   "metrics": {
+    "rps": 4296.05,
+    "p95": 16.31,
+    "med": 10.76,
+    "fail": 0,
+    "cacheHit": 99.94
+   }
+  },
+  "b": {
+   "label": "캐시 없음 (매번 원본)",
+   "metrics": {
+    "rps": 401.37,
+    "p95": 136.04,
+    "med": 123.47,
+    "fail": 0,
+    "cacheHit": 0
+   }
+  }
+ }
+]

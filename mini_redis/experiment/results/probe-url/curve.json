@@ -1,0 +1,542 @@
+[
+  {
+    "BACKEND": "none",
+    "HIT": 0,
+    "NAMED": 1,
+    "rep": 1,
+    "rps": 10565.8,
+    "avg": 4.57,
+    "p95": 8.17
+  },
+  {
+    "BACKEND": "mini",
+    "HIT": 0,
+    "NAMED": 1,
+    "rep": 1,
+    "rps": 3109.3,
+    "avg": 15.95,
+    "p95": 21.88
+  },
+  {
+    "BACKEND": "mini",
+    "HIT": 0.5,
+    "NAMED": 1,
+    "rep": 1,
+    "rps": 3748,
+    "avg": 13.22,
+    "p95": 23.92
+  },
+  {
+    "BACKEND": "mini",
+    "HIT": 0.7,
+    "NAMED": 1,
+    "rep": 1,
+    "rps": 4517.8,
+    "avg": 10.96,
+    "p95": 21.52
+  },
+  {
+    "BACKEND": "mini",
+    "HIT": 0.9,
+    "NAMED": 1,
+    "rep": 1,
+    "rps": 5460.6,
+    "avg": 9.05,
+    "p95": 16.17
+  },
+  {
+    "BACKEND": "mini",
+    "HIT": 1,
+    "NAMED": 1,
+    "rep": 1,
+    "rps": 6932.5,
+    "avg": 7.11,
+    "p95": 11.11
+  },
+  {
+    "BACKEND": "miniresp",
+    "HIT": 0,
+    "NAMED": 1,
+    "rep": 1,
+    "rps": 8282.8,
+    "avg": 5.89,
+    "p95": 10.22
+  },
+  {
+    "BACKEND": "miniresp",
+    "HIT": 0.5,
+    "NAMED": 1,
+    "rep": 1,
+    "rps": 10335.1,
+    "avg": 4.71,
+    "p95": 9.24
+  },
+  {
+    "BACKEND": "miniresp",
+    "HIT": 0.7,
+    "NAMED": 1,
+    "rep": 1,
+    "rps": 11886.7,
+    "avg": 4.08,
+    "p95": 8.67
+  },
+  {
+    "BACKEND": "miniresp",
+    "HIT": 0.9,
+    "NAMED": 1,
+    "rep": 1,
+    "rps": 12869.5,
+    "avg": 3.77,
+    "p95": 7.19
+  },
+  {
+    "BACKEND": "miniresp",
+    "HIT": 1,
+    "NAMED": 1,
+    "rep": 1,
+    "rps": 18361.4,
+    "avg": 2.62,
+    "p95": 5.28
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0,
+    "NAMED": 1,
+    "rep": 1,
+    "rps": 7626.5,
+    "avg": 6.4,
+    "p95": 10.81
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0.5,
+    "NAMED": 1,
+    "rep": 1,
+    "rps": 10354.4,
+    "avg": 4.72,
+    "p95": 8.84
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0.7,
+    "NAMED": 1,
+    "rep": 1,
+    "rps": 12217.5,
+    "avg": 3.99,
+    "p95": 8.02
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0.9,
+    "NAMED": 1,
+    "rep": 1,
+    "rps": 14271.5,
+    "avg": 3.41,
+    "p95": 6.61
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 1,
+    "NAMED": 1,
+    "rep": 1,
+    "rps": 18639.2,
+    "avg": 2.59,
+    "p95": 5.15
+  },
+  {
+    "BACKEND": "none",
+    "HIT": 0,
+    "NAMED": 0,
+    "rep": 1,
+    "rps": 3695.9,
+    "avg": 12.83,
+    "p95": 39.67
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 1,
+    "NAMED": 0,
+    "rep": 1,
+    "rps": 19031.4,
+    "avg": 2.54,
+    "p95": 5.02
+  },
+  {
+    "BACKEND": "miniresp",
+    "HIT": 1,
+    "NAMED": 0,
+    "rep": 1,
+    "rps": 20081,
+    "avg": 2.4,
+    "p95": 4.72
+  },
+  {
+    "BACKEND": "mini",
+    "HIT": 1,
+    "NAMED": 0,
+    "rep": 1,
+    "rps": 5807.3,
+    "avg": 8.5,
+    "p95": 14.08
+  },
+  {
+    "BACKEND": "mini",
+    "HIT": 1,
+    "NAMED": 0,
+    "rep": 2,
+    "rps": 6482,
+    "avg": 7.61,
+    "p95": 12.35
+  },
+  {
+    "BACKEND": "miniresp",
+    "HIT": 1,
+    "NAMED": 0,
+    "rep": 2,
+    "rps": 18963.9,
+    "avg": 2.54,
+    "p95": 4.51
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 1,
+    "NAMED": 0,
+    "rep": 2,
+    "rps": 18012.4,
+    "avg": 2.69,
+    "p95": 5.27
+  },
+  {
+    "BACKEND": "none",
+    "HIT": 0,
+    "NAMED": 0,
+    "rep": 2,
+    "rps": 4012.6,
+    "avg": 11.32,
+    "p95": 38.12
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 1,
+    "NAMED": 1,
+    "rep": 2,
+    "rps": 17766.5,
+    "avg": 2.71,
+    "p95": 5.48
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0.9,
+    "NAMED": 1,
+    "rep": 2,
+    "rps": 14268.2,
+    "avg": 3.4,
+    "p95": 6.8
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0.7,
+    "NAMED": 1,
+    "rep": 2,
+    "rps": 12772.1,
+    "avg": 3.81,
+    "p95": 7.6
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0.5,
+    "NAMED": 1,
+    "rep": 2,
+    "rps": 10760.4,
+    "avg": 4.53,
+    "p95": 8.66
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0,
+    "NAMED": 1,
+    "rep": 2,
+    "rps": 8716.6,
+    "avg": 5.6,
+    "p95": 8.94
+  },
+  {
+    "BACKEND": "miniresp",
+    "HIT": 1,
+    "NAMED": 1,
+    "rep": 2,
+    "rps": 20158.7,
+    "avg": 2.38,
+    "p95": 4.7
+  },
+  {
+    "BACKEND": "miniresp",
+    "HIT": 0.9,
+    "NAMED": 1,
+    "rep": 2,
+    "rps": 15153.1,
+    "avg": 3.2,
+    "p95": 6.17
+  },
+  {
+    "BACKEND": "miniresp",
+    "HIT": 0.7,
+    "NAMED": 1,
+    "rep": 2,
+    "rps": 13148.5,
+    "avg": 3.69,
+    "p95": 7.46
+  },
+  {
+    "BACKEND": "miniresp",
+    "HIT": 0.5,
+    "NAMED": 1,
+    "rep": 2,
+    "rps": 11695.5,
+    "avg": 4.16,
+    "p95": 8.04
+  },
+  {
+    "BACKEND": "miniresp",
+    "HIT": 0,
+    "NAMED": 1,
+    "rep": 2,
+    "rps": 9014.3,
+    "avg": 5.4,
+    "p95": 8.98
+  },
+  {
+    "BACKEND": "mini",
+    "HIT": 1,
+    "NAMED": 1,
+    "rep": 2,
+    "rps": 6537.5,
+    "avg": 7.55,
+    "p95": 12.06
+  },
+  {
+    "BACKEND": "mini",
+    "HIT": 0.9,
+    "NAMED": 1,
+    "rep": 2,
+    "rps": 5493.9,
+    "avg": 9,
+    "p95": 15.84
+  },
+  {
+    "BACKEND": "mini",
+    "HIT": 0.7,
+    "NAMED": 1,
+    "rep": 2,
+    "rps": 4332.9,
+    "avg": 11.43,
+    "p95": 22.25
+  },
+  {
+    "BACKEND": "mini",
+    "HIT": 0.5,
+    "NAMED": 1,
+    "rep": 2,
+    "rps": 3790.1,
+    "avg": 13.07,
+    "p95": 23.17
+  },
+  {
+    "BACKEND": "mini",
+    "HIT": 0,
+    "NAMED": 1,
+    "rep": 2,
+    "rps": 2959.4,
+    "avg": 16.76,
+    "p95": 24.45
+  },
+  {
+    "BACKEND": "none",
+    "HIT": 0,
+    "NAMED": 1,
+    "rep": 2,
+    "rps": 12911.5,
+    "avg": 3.72,
+    "p95": 6.58
+  },
+  {
+    "BACKEND": "none",
+    "HIT": 0,
+    "NAMED": 1,
+    "rep": 3,
+    "rps": 13897.5,
+    "avg": 3.46,
+    "p95": 6.01
+  },
+  {
+    "BACKEND": "mini",
+    "HIT": 0,
+    "NAMED": 1,
+    "rep": 3,
+    "rps": 3224.6,
+    "avg": 15.37,
+    "p95": 21.06
+  },
+  {
+    "BACKEND": "mini",
+    "HIT": 0.5,
+    "NAMED": 1,
+    "rep": 3,
+    "rps": 3561.9,
+    "avg": 13.92,
+    "p95": 25.37
+  },
+  {
+    "BACKEND": "mini",
+    "HIT": 0.7,
+    "NAMED": 1,
+    "rep": 3,
+    "rps": 4344.6,
+    "avg": 11.4,
+    "p95": 22.13
+  },
+  {
+    "BACKEND": "mini",
+    "HIT": 0.9,
+    "NAMED": 1,
+    "rep": 3,
+    "rps": 5640.8,
+    "avg": 8.76,
+    "p95": 15.44
+  },
+  {
+    "BACKEND": "mini",
+    "HIT": 1,
+    "NAMED": 1,
+    "rep": 3,
+    "rps": 7118.1,
+    "avg": 6.93,
+    "p95": 10.47
+  },
+  {
+    "BACKEND": "miniresp",
+    "HIT": 0,
+    "NAMED": 1,
+    "rep": 3,
+    "rps": 8941.2,
+    "avg": 5.46,
+    "p95": 8.94
+  },
+  {
+    "BACKEND": "miniresp",
+    "HIT": 0.5,
+    "NAMED": 1,
+    "rep": 3,
+    "rps": 10818,
+    "avg": 4.5,
+    "p95": 8.77
+  },
+  {
+    "BACKEND": "miniresp",
+    "HIT": 0.7,
+    "NAMED": 1,
+    "rep": 3,
+    "rps": 13627.4,
+    "avg": 3.56,
+    "p95": 7.23
+  },
+  {
+    "BACKEND": "miniresp",
+    "HIT": 0.9,
+    "NAMED": 1,
+    "rep": 3,
+    "rps": 16905,
+    "avg": 2.86,
+    "p95": 5.67
+  },
+  {
+    "BACKEND": "miniresp",
+    "HIT": 1,
+    "NAMED": 1,
+    "rep": 3,
+    "rps": 21071.2,
+    "avg": 2.28,
+    "p95": 4.65
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0,
+    "NAMED": 1,
+    "rep": 3,
+    "rps": 8243.3,
+    "avg": 5.92,
+    "p95": 9.54
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0.5,
+    "NAMED": 1,
+    "rep": 3,
+    "rps": 10319.8,
+    "avg": 4.72,
+    "p95": 9
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0.7,
+    "NAMED": 1,
+    "rep": 3,
+    "rps": 11039.2,
+    "avg": 4.41,
+    "p95": 9.11
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0.9,
+    "NAMED": 1,
+    "rep": 3,
+    "rps": 12499.9,
+    "avg": 3.88,
+    "p95": 7.95
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 1,
+    "NAMED": 1,
+    "rep": 3,
+    "rps": 17968.1,
+    "avg": 2.69,
+    "p95": 5.18
+  },
+  {
+    "BACKEND": "none",
+    "HIT": 0,
+    "NAMED": 0,
+    "rep": 3,
+    "rps": 3830.9,
+    "avg": 11.91,
+    "p95": 37.99
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 1,
+    "NAMED": 0,
+    "rep": 3,
+    "rps": 18353,
+    "avg": 2.63,
+    "p95": 5.42
+  },
+  {
+    "BACKEND": "miniresp",
+    "HIT": 1,
+    "NAMED": 0,
+    "rep": 3,
+    "rps": 20344.2,
+    "avg": 2.36,
+    "p95": 4.79
+  },
+  {
+    "BACKEND": "mini",
+    "HIT": 1,
+    "NAMED": 0,
+    "rep": 3,
+    "rps": 7356.3,
+    "avg": 6.7,
+    "p95": 10.31
+  }
+]

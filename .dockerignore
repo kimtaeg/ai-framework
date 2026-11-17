@@ -1,0 +1,7 @@
+node_modules
+.env
+.git
+data
+mini_redis/experiment/.data
+mini_redis/experiment/results
+mini_redis/load/reports

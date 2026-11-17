@@ -1,0 +1,137 @@
+[
+  {
+    "BACKEND": "none",
+    "HIT": 0,
+    "NAMED": 0,
+    "rep": 1,
+    "rps": 4935.8,
+    "avg": 9.85,
+    "p95": 27.66
+  },
+  {
+    "BACKEND": "none",
+    "HIT": 0,
+    "NAMED": 1,
+    "rep": 1,
+    "rps": 9125.4,
+    "avg": 5.28,
+    "p95": 9.37
+  },
+  {
+    "BACKEND": "none",
+    "HIT": 1,
+    "NAMED": 0,
+    "rep": 1,
+    "rps": 12517.6,
+    "avg": 3.89,
+    "p95": 6.64
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0,
+    "NAMED": 0,
+    "rep": 1,
+    "rps": 4483.3,
+    "avg": 10.15,
+    "p95": 24.69
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0,
+    "NAMED": 1,
+    "rep": 1,
+    "rps": 7515,
+    "avg": 6.51,
+    "p95": 9.47
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0,
+    "NAMED": 1,
+    "rep": 2,
+    "rps": 8120.3,
+    "avg": 5.99,
+    "p95": 9.94
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0,
+    "NAMED": 0,
+    "rep": 2,
+    "rps": 4755.4,
+    "avg": 9.83,
+    "p95": 31.7
+  },
+  {
+    "BACKEND": "none",
+    "HIT": 1,
+    "NAMED": 0,
+    "rep": 2,
+    "rps": 12740.2,
+    "avg": 3.82,
+    "p95": 6.07
+  },
+  {
+    "BACKEND": "none",
+    "HIT": 0,
+    "NAMED": 1,
+    "rep": 2,
+    "rps": 12250.1,
+    "avg": 3.92,
+    "p95": 6.62
+  },
+  {
+    "BACKEND": "none",
+    "HIT": 0,
+    "NAMED": 0,
+    "rep": 2,
+    "rps": 4364.2,
+    "avg": 9.36,
+    "p95": 27.72
+  },
+  {
+    "BACKEND": "none",
+    "HIT": 0,
+    "NAMED": 0,
+    "rep": 3,
+    "rps": 4684.8,
+    "avg": 9.42,
+    "p95": 34.01
+  },
+  {
+    "BACKEND": "none",
+    "HIT": 0,
+    "NAMED": 1,
+    "rep": 3,
+    "rps": 8574.4,
+    "avg": 5.62,
+    "p95": 10.24
+  },
+  {
+    "BACKEND": "none",
+    "HIT": 1,
+    "NAMED": 0,
+    "rep": 3,
+    "rps": 13316.1,
+    "avg": 3.64,
+    "p95": 6.78
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0,
+    "NAMED": 0,
+    "rep": 3,
+    "rps": 4344.8,
+    "avg": 11.02,
+    "p95": 29.15
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0,
+    "NAMED": 1,
+    "rep": 3,
+    "rps": 6714.8,
+    "avg": 7.29,
+    "p95": 11.73
+  }
+]

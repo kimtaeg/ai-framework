@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>테스트 실험실 로그인</title>
+  <link rel="stylesheet" href="../styles/base.css">
+  <style>
+    .wrap { display: grid; place-items: center; min-height: calc(100vh - 140px); }
+    .box { width: min(400px, calc(100vw - 32px)); padding: 28px; }
+    .box h1 { font-size: 22px; margin: 0 0 6px; }
+    .box p { color: var(--muted); margin: 0 0 18px; font-size: 14px; }
+    .box input { width: 100%; box-sizing: border-box; padding: 10px 12px; font-size: 16px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); }
+    .box button { width: 100%; margin-top: 12px; padding: 10px; font-size: 15px; }
+    #msg { min-height: 20px; margin-top: 10px; font-size: 14px; color: var(--danger); }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/index.html">mini<span>Lab</span></a>
+    <nav>
+      <a href="/index.html">사이트 홈</a>
+      <a href="/testlab/login.html" aria-current="page">테스트 실험실 로그인</a>
+    </nav>
+  </header>
+  <main class="wrap">
+  <form class="card box" id="form" autocomplete="off">
+    <h1>테스트 실험실</h1>
+    <p>비밀번호를 넣어야 들어갈 수 있습니다.</p>
+    <label for="pw" class="sr-only" style="position:absolute;left:-9999px">비밀번호</label>
+    <input id="pw" type="password" name="password" placeholder="비밀번호" autocomplete="current-password" required autofocus>
+    <button class="primary" type="submit" id="go">들어가기</button>
+    <div id="msg" role="alert"></div>
+  </form>
+  </main>
+  <script>
+    // 로그인 뒤 돌아갈 곳: 잠긴 경로 안쪽만 (다른 사이트로 보내는 주소는 무시)
+    const raw = new URLSearchParams(location.search).get('next') || '';
+    const next = /^\/(testlab|bench|load)(\/[\w\-./%]*)?$/.test(raw) && !raw.includes('..') ? raw : '/testlab/';
+    const form = document.getElementById('form'), msg = document.getElementById('msg'), go = document.getElementById('go');
+    if (location.protocol === 'file:') msg.innerHTML = '서버로 열어야 합니다: <code>npm start</code> 후 <a href="http://localhost:5200/testlab/">http://localhost:5200/testlab/</a>';
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      msg.textContent = '';
+      go.disabled = true;
+      try {
+        const r = await fetch('/api/testlab/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: form.password.value }) });
+        const d = await r.json().catch(() => ({}));
+        if (r.ok) { location.replace(next); return; }
+        msg.textContent = (d.error || '로그인하지 못했습니다.') + (d.left != null ? ` (남은 기회 ${d.left}번)` : '');
+        form.password.select();
+      } catch {
+        msg.textContent = '서버에 연결할 수 없습니다.';
+      } finally {
+        go.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

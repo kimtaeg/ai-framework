@@ -1,0 +1,11 @@
+# 계측 사본을 컨테이너의 app.js 위에 덮어 씌운다 (프로젝트 파일 · 이미지는 그대로)
+services:
+  app:
+    environment:
+      MAX_BATCH: ${MAX_BATCH:-}
+      SPIN: ${SPIN:-}
+    volumes:
+      - "./results/probe-h0/app.js:/app/experiment/app.js:ro"
+  k6:
+    volumes:
+      - "./results/probe-h0/out:/out"

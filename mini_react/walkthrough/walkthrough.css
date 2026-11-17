@@ -1,0 +1,34 @@
+.wt-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 28px; align-items: start; }
+.wt-toc { position: sticky; top: 76px; padding: 12px; font-size: 13.5px; }
+.wt-toc .wt-group { font: 700 11px var(--mono); color: var(--muted); margin: 12px 8px 4px; }
+.wt-toc .wt-group:first-child { margin-top: 2px; }
+.wt-toc a { display: block; padding: 3px 8px; border-radius: 6px; color: var(--muted); text-decoration: none; }
+.wt-toc a:hover { background: var(--surface-2); color: var(--text); }
+.wt-toc a.active { background: var(--accent-weak); color: var(--accent); font-weight: 600; }
+
+.wt-part { font-size: 17px; font-weight: 800; margin: 30px 0 10px; }
+.wt-part:first-child { margin-top: 0; }
+.wt-sec { padding: 20px 22px; margin-bottom: 18px; scroll-margin-top: 76px; }
+.wt-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.wt-head h2 { margin: 0; font-size: 19px; }
+.wt-file { font: 12px var(--mono); padding: 2px 8px; border-radius: 6px; background: var(--surface-2); color: var(--muted); }
+.wt-sum { margin: 8px 0 14px; padding: 10px 12px; border-radius: 8px; background: var(--surface-2); line-height: 1.7; }
+
+.wt-row { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 14px; margin-bottom: 12px; align-items: start; }
+.wt-row pre { margin: 0; padding: 12px 14px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border); overflow: auto; font: 12.5px/1.65 var(--mono); }
+.wt-note { display: flex; gap: 10px; font-size: 14px; line-height: 1.75; }
+.wt-note p { margin: 0; }
+.wt-num { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--accent); color: #fff; font: 700 12px var(--mono); margin-top: 2px; }
+
+.wt-explain { margin-top: 6px; padding: 12px 14px; border-radius: 10px; border: 1px dashed color-mix(in srgb, var(--accent) 50%, var(--border)); background: color-mix(in srgb, var(--accent) 4%, var(--surface)); font-size: 14px; }
+.wt-explain .q { margin: 6px 0 8px; font-weight: 600; }
+.wt-explain textarea { width: 100%; min-height: 70px; resize: vertical; font: inherit; font-size: 13.5px; }
+.wt-explain details { margin-top: 8px; }
+.wt-explain summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+.wt-explain .a { margin: 6px 0 0; line-height: 1.75; }
+
+@media (max-width: 960px) {
+  .wt-layout { grid-template-columns: 1fr; }
+  .wt-toc { position: static; }
+  .wt-row { grid-template-columns: 1fr; }
+}

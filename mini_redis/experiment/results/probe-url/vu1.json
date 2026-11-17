@@ -1,0 +1,152 @@
+[
+  {
+    "BACKEND": "none",
+    "HIT": 0,
+    "NAMED": 0,
+    "VUS": 1,
+    "rep": 1,
+    "rps": 1853,
+    "avg": 0.41,
+    "p95": 0.65
+  },
+  {
+    "BACKEND": "none",
+    "HIT": 0,
+    "NAMED": 1,
+    "VUS": 1,
+    "rep": 1,
+    "rps": 1947.1,
+    "avg": 0.41,
+    "p95": 0.65
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0,
+    "NAMED": 0,
+    "VUS": 1,
+    "rep": 1,
+    "rps": 1214.5,
+    "avg": 0.69,
+    "p95": 1.08
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0,
+    "NAMED": 1,
+    "VUS": 1,
+    "rep": 1,
+    "rps": 1184.8,
+    "avg": 0.72,
+    "p95": 1.14
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 1,
+    "NAMED": 1,
+    "VUS": 1,
+    "rep": 1,
+    "rps": 2231.3,
+    "avg": 0.37,
+    "p95": 0.57
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 1,
+    "NAMED": 1,
+    "VUS": 1,
+    "rep": 2,
+    "rps": 2366.7,
+    "avg": 0.34,
+    "p95": 0.54
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0,
+    "NAMED": 1,
+    "VUS": 1,
+    "rep": 2,
+    "rps": 1137.6,
+    "avg": 0.75,
+    "p95": 1.21
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0,
+    "NAMED": 0,
+    "VUS": 1,
+    "rep": 2,
+    "rps": 1118.9,
+    "avg": 0.75,
+    "p95": 1.2
+  },
+  {
+    "BACKEND": "none",
+    "HIT": 0,
+    "NAMED": 1,
+    "VUS": 1,
+    "rep": 2,
+    "rps": 1820.5,
+    "avg": 0.44,
+    "p95": 0.67
+  },
+  {
+    "BACKEND": "none",
+    "HIT": 0,
+    "NAMED": 0,
+    "VUS": 1,
+    "rep": 2,
+    "rps": 1743.5,
+    "avg": 0.44,
+    "p95": 0.68
+  },
+  {
+    "BACKEND": "none",
+    "HIT": 0,
+    "NAMED": 0,
+    "VUS": 1,
+    "rep": 3,
+    "rps": 1866.7,
+    "avg": 0.41,
+    "p95": 0.65
+  },
+  {
+    "BACKEND": "none",
+    "HIT": 0,
+    "NAMED": 1,
+    "VUS": 1,
+    "rep": 3,
+    "rps": 2005.2,
+    "avg": 0.4,
+    "p95": 0.63
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0,
+    "NAMED": 0,
+    "VUS": 1,
+    "rep": 3,
+    "rps": 1182.4,
+    "avg": 0.71,
+    "p95": 1.14
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 0,
+    "NAMED": 1,
+    "VUS": 1,
+    "rep": 3,
+    "rps": 1300.9,
+    "avg": 0.66,
+    "p95": 1.05
+  },
+  {
+    "BACKEND": "redis",
+    "HIT": 1,
+    "NAMED": 1,
+    "VUS": 1,
+    "rep": 3,
+    "rps": 2338.8,
+    "avg": 0.35,
+    "p95": 0.55
+  }
+]
