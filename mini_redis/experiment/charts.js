@@ -3,7 +3,7 @@
  *   analyze.js 가 불러서 results/*.svg 를 만든다.
  */
 const C = { none: '#8A93A3', mini: '#E07B24', miniresp: '#8B3FB8', redis: '#2F6FD6', ink: '#1A2233', soft: '#5A6578', grid: '#E3E1DA', bg: '#FBFAF7' };
-const NAME = { none: '캐시 없음', mini: '미니 레디스 (HTTP)', miniresp: '미니 레디스 (RESP)', redis: 'Redis 7' };
+const NAME = { none: '캐시 없음', mini: '미니 레디스 (HTTP)', miniresp: '미니 레디스 (RESP)', redis: 'Redis 7.4' };
 const ORDER = ['none', 'mini', 'miniresp', 'redis'];
 const FONT = "font-family=\"-apple-system, 'Segoe UI', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif\"";
 const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');

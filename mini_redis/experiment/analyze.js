@@ -276,12 +276,12 @@ if (none6 && DELAY) svg('e6-latency-delay.svg', renderHitChart({
   series: LIGHT.filter((b) => has(b, 'E6')).map((b) => ({ key: b, color: COLORS[b], points: pts('E6', b, 'avg', DELAY), model: pts('E6', b, 'avg', 0).map(({ h, y }) => ({ h, y })) })),
   baseline: { y: med(none6.avg), label: `캐시 없음 ${f(med(none6.avg), 2)}ms` },
   legendItems: [...LIGHT.filter((b) => has(b, 'E6')).map((b) => [NAME[b], COLORS[b]]), ['지연 없음', COLORS.soft, true]],
-  note: `+${DELAY}ms 면 히트율 100%여도 ${f(at('E6', 'redis', 'avg', 1, DELAY), 2)}ms · 캐시 없음(${f(med(none6.avg), 2)}ms)보다 느림 (Redis 7)`,
+  note: `+${DELAY}ms 면 히트율 100%여도 ${f(at('E6', 'redis', 'avg', 1, DELAY), 2)}ms · 캐시 없음(${f(med(none6.avg), 2)}ms)보다 느림 (Redis 7.4)`,
 }));
 // 통신 방식: 요청 하나당 CPU (앱 서버 · 캐시 서버)
 if (protocol.length && protocol.every((p) => p.appMsPerReq != null && p.cacheMsPerReq != null)) svg('e3-cpu-protocol.svg', renderBarChart({
   title: '통신 방식 비교 · 요청 하나에 드는 CPU (가벼운 쿼리, 히트율 100%)',
-  subtitle: '같은 미니 레디스 저장소를 HTTP+JSON / RESP 로 · 실제 Redis 7 · 중앙값, 오차 막대 = 95% 신뢰구간',
+  subtitle: '같은 미니 레디스 저장소를 HTTP+JSON / RESP 로 · 실제 Redis 7.4 · 중앙값, 오차 막대 = 95% 신뢰구간',
   yLabel: 'CPU 시간 (ms / 요청)',
   groups: [['cpuApp', '앱 서버 (캐시를 부르는 쪽)'], ['cpuCache', '캐시 서버 (응답하는 쪽)']].map(([field, label]) => ({
     label, bars: protocol.map((p) => { const c = find('E3', p.backend, { HIT: 1 }); return { key: p.backend, y: med(c[field]), ci: c[field].ci95, note: med(c[field]).toFixed(3) }; }),
